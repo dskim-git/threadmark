@@ -1,0 +1,252 @@
+/**
+ * 마이그레이션 보안 불변조건 검사.
+ *
+ * 로컬에 Docker와 PostgreSQL이 없어 SQL을 실행해 검증할 수 없으므로,
+ * 실수로 무너지기 쉬운 보안 속성을 파일 내용에서 정적으로 확인한다.
+ * 데이터베이스 동작 검증을 대신하지는 않는다. (8단계 권한·승인 흐름 테스트에서 수행)
+ *
+ * 실행: npm test
+ */
+
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const repoRoot = path.resolve(import.meta.dirname, "..");
+const migrationsDir = path.join(repoRoot, "supabase", "migrations");
+
+const migrationFiles = readdirSync(migrationsDir).filter((name) =>
+  name.endsWith(".sql"),
+);
+
+const sql = migrationFiles
+  .map((name) => readFileSync(path.join(migrationsDir, name), "utf8"))
+  .join("\n");
+
+/** 공백을 한 칸으로 줄여 줄바꿈에 영향받지 않게 만든 비교용 텍스트. */
+const flat = sql.replace(/\s+/g, " ").toLowerCase();
+
+/** RLS와 정책이 반드시 적용되어야 하는 테이블. */
+const PROTECTED_TABLES = [
+  "profiles",
+  "user_roles",
+  "app_settings",
+  "admin_audit_logs",
+];
+
+/** 세미콜론 기준으로 나눈 문장 목록. 주석 줄은 제외한다. */
+const statements = sql
+  .split("\n")
+  .filter((line) => !line.trim().startsWith("--"))
+  .join("\n")
+  .split(";")
+  .map((statement) => statement.replace(/\s+/g, " ").trim().toLowerCase())
+  .filter(Boolean);
+
+test("마이그레이션 파일이 존재한다", () => {
+  assert.ok(migrationFiles.length > 0, "supabase/migrations에 SQL 파일이 없다");
+});
+
+test("모든 앱 테이블에 RLS가 활성화되어 있다", () => {
+  for (const table of PROTECTED_TABLES) {
+    assert.ok(
+      flat.includes(`alter table public.${table} enable row level security`),
+      `${table}에 RLS가 활성화되지 않았다`,
+    );
+  }
+});
+
+test("모든 앱 테이블에 조회 정책이 있다", () => {
+  for (const table of PROTECTED_TABLES) {
+    assert.ok(
+      flat.includes(`on public.${table} for select`),
+      `${table}에 select 정책이 없다`,
+    );
+  }
+});
+
+test("SECURITY DEFINER 함수는 모두 search_path를 고정한다", () => {
+  // 빈 search_path 없이 정의자 권한으로 실행하면
+  // 호출자가 동명의 가짜 객체를 심어 함수 동작을 가로챌 수 있다.
+  const headers = sql
+    .split("create or replace function")
+    .slice(1)
+    .map((chunk) => chunk.split("as $$")[0]);
+
+  assert.ok(headers.length > 0, "함수 정의를 찾을 수 없다");
+
+  for (const header of headers) {
+    if (!header.includes("security definer")) {
+      continue;
+    }
+
+    const name = header.trim().split(/[\s(]/)[0];
+    assert.ok(
+      header.includes("set search_path = ''"),
+      `${name}이 SECURITY DEFINER인데 search_path를 고정하지 않았다`,
+    );
+  }
+});
+
+test("권한 가드 트리거 함수는 SECURITY DEFINER가 아니다", () => {
+  // 이 함수들은 current_user로 서비스 컨텍스트를 판별한다.
+  // SECURITY DEFINER가 되면 current_user가 항상 소유자(postgres)가 되어
+  // 서비스 컨텍스트 검사가 무조건 참이 되고 가드가 무력화된다.
+  const guardFunctions = [
+    "public.guard_profile_protected_columns()",
+    "public.guard_last_admin()",
+  ];
+
+  for (const fn of guardFunctions) {
+    const marker = `create or replace function ${fn}`;
+    const start = sql.indexOf(marker);
+
+    assert.notEqual(start, -1, `${fn} 정의를 찾을 수 없다`);
+
+    const header = sql.slice(start + marker.length).split("as $$")[0];
+    assert.ok(
+      !header.includes("security definer"),
+      `${fn}은 SECURITY DEFINER가 되어서는 안 된다`,
+    );
+  }
+});
+
+test("정책이 public 또는 anon 역할을 대상으로 하지 않는다", () => {
+  const offenders = statements.filter(
+    (statement) =>
+      statement.startsWith("create policy") &&
+      (statement.includes(" to public ") || statement.includes(" to anon ")),
+  );
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `비로그인 역할을 대상으로 한 정책이 있다: ${offenders.join(" | ")}`,
+  );
+});
+
+test("모든 정책이 authenticated 역할을 명시한다", () => {
+  // TO 절이 없는 정책은 암묵적으로 PUBLIC 대상이 되어 anon까지 포함된다.
+  const policies = statements.filter((statement) =>
+    statement.startsWith("create policy"),
+  );
+
+  assert.ok(policies.length > 0, "정책을 찾을 수 없다");
+
+  const offenders = policies.filter(
+    (statement) => !statement.includes(" to authenticated "),
+  );
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `대상 역할을 명시하지 않은 정책이 있다: ${offenders.join(" | ")}`,
+  );
+});
+
+test("anon 역할에 권한을 부여하지 않는다", () => {
+  const offenders = statements.filter(
+    (statement) => statement.startsWith("grant") && statement.includes("anon"),
+  );
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `anon에 권한을 부여하는 구문이 있다: ${offenders.join(" | ")}`,
+  );
+});
+
+test("감사 로그에 쓰기 정책이 없다", () => {
+  // 트리거(SECURITY DEFINER)만 기록할 수 있어야 한다.
+  for (const action of ["insert", "update", "delete"]) {
+    assert.ok(
+      !flat.includes(`on public.admin_audit_logs for ${action}`),
+      `감사 로그에 ${action} 정책이 존재한다`,
+    );
+  }
+});
+
+test("감사 로그에는 select 권한만 부여한다", () => {
+  const grants = statements.filter(
+    (statement) =>
+      statement.startsWith("grant") &&
+      statement.includes("public.admin_audit_logs"),
+  );
+
+  assert.deepEqual(
+    grants,
+    ["grant select on table public.admin_audit_logs to authenticated"],
+    "감사 로그 권한 부여가 select 하나가 아니다",
+  );
+});
+
+test("profiles에 insert/delete 정책을 두지 않는다", () => {
+  // 생성은 가입 트리거가, 삭제는 auth.users cascade가 담당한다.
+  for (const action of ["insert", "delete"]) {
+    assert.ok(
+      !flat.includes(`on public.profiles for ${action}`),
+      `profiles에 ${action} 정책이 존재한다`,
+    );
+  }
+});
+
+test("신규 가입 승인 필요 설정의 초기값이 true다", () => {
+  assert.ok(
+    flat.includes("'require_user_approval', 'true'::jsonb"),
+    "require_user_approval 초기값이 true가 아니다",
+  );
+});
+
+test("관리자 권한을 자동으로 부여하지 않는다", () => {
+  assert.ok(
+    !flat.includes("insert into public.user_roles"),
+    "마이그레이션이 관리자 역할을 자동 부여하고 있다",
+  );
+});
+
+test("auth.users의 데이터를 변경하지 않는다", () => {
+  for (const forbidden of [
+    "insert into auth.users",
+    "update auth.users",
+    "delete from auth.users",
+    "alter table auth.users",
+  ]) {
+    assert.ok(!flat.includes(forbidden), `금지된 구문이 있다: ${forbidden}`);
+  }
+});
+
+test("달러 인용 블록의 짝이 맞는다", () => {
+  const count = sql.split("$$").length - 1;
+  assert.equal(count % 2, 0, "$$ 블록이 짝을 이루지 않는다");
+});
+
+test("관리자 이메일이 소스 코드와 마이그레이션에 들어있지 않다", () => {
+  // 관리자 판정은 user_roles로만 한다. 코드에 이메일을 넣으면 안 된다.
+  const scanDirs = [
+    path.join(repoRoot, "src"),
+    path.join(repoRoot, "supabase", "migrations"),
+  ];
+  const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".sql"];
+
+  /**
+   * @param {string} dir
+   * @returns {string[]}
+   */
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      return entry.isDirectory() ? walk(full) : [full];
+    });
+
+  const offenders = scanDirs
+    .flatMap(walk)
+    .filter((file) => extensions.includes(path.extname(file)))
+    .filter((file) => readFileSync(file, "utf8").includes("daesobi"));
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `관리자 이메일이 포함된 파일이 있다: ${offenders.join(", ")}`,
+  );
+});
