@@ -1,9 +1,11 @@
-# 최초 관리자 부트스트랩 절차 (제안)
+# 최초 관리자 부트스트랩 절차
 
-> 상태: **제안. 아직 실행하지 않았다.**
-> 실행 시점: 전체 개발 순서 5단계 "최초 관리자 등록"
+> 상태: **운영 프로젝트에 실행 완료 (2026-09-20).**
+> 검증: `supabase/verify/002_verify_first_admin.sql` 8개 항목 통과
 > 선행 조건: 1단계 마이그레이션이 원격 Supabase에 적용되어 있고, 관리자 계정으로 Google 로그인을
 > 최소 한 번 완료해 `auth.users`에 행이 생성된 상태
+>
+> 새 환경(로컬 개발 DB 등)에서 다시 관리자를 지정할 때 이 절차를 사용한다.
 
 ## 왜 마이그레이션에 넣지 않았는가
 
@@ -25,15 +27,29 @@
 Supabase 대시보드 → SQL Editor에서 실행한다. SQL Editor는 `postgres` 역할로 동작하므로
 RLS를 우회하고, 가드 트리거도 서비스 컨텍스트로 인정한다.
 
-먼저 대상 계정이 존재하는지 확인한다. 이메일은 이 문서에 적지 말고 실행 시점에 직접 입력한다.
+먼저 아래 한 쿼리로 세 가지를 한 번에 확인한다. 이메일은 이 문서에 적지 말고
+실행 시점에 직접 입력한다.
 
 ```sql
-select id, email, created_at
-from auth.users
-where email = '<관리자 이메일>';
+select
+  current_user                                   as 현재역할,
+  (select count(*) from auth.users
+    where email = '<관리자 이메일>')              as 계정존재,
+  (select status::text from public.profiles p
+    join auth.users u on u.id = p.id
+    where u.email = '<관리자 이메일>')            as 현재상태;
 ```
 
-행이 나오지 않으면 아직 로그인하지 않은 것이다. 먼저 Google 로그인을 완료한다.
+| 항목 | 기대값 | 확인 이유 |
+| --- | --- | --- |
+| `현재역할` | `postgres`, `service_role`, `supabase_admin` 중 하나 | 바로 아래 설명 참고 |
+| `계정존재` | `1` | 아직 로그인하지 않았다면 `0`이다. 먼저 Google 로그인을 완료한다 |
+| `현재상태` | `pending` | 이미 `active`면 부트스트랩이 필요 없다 |
+
+`현재역할` 확인이 가장 중요하다. SQL Editor에서는 `auth.uid()`가 NULL이므로 `is_admin()`이
+false가 된다. `guard_profile_protected_columns` 트리거가 상태 변경을 허용하는 근거는
+`current_user`가 서비스 컨텍스트에 속하는지 하나뿐이다. 2026-09-20 확인 시점에
+Supabase 대시보드 SQL Editor는 `postgres` 역할로 동작했다.
 
 ### 2. 관리자 권한 부여 및 승인
 
