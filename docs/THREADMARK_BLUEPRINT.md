@@ -1037,7 +1037,13 @@ RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 �
 /shared
 /settings
 /settings/integrations
+/admin/users
+/admin/settings
 ```
+
+`/admin` 아래는 관리자 전용이다. 가입 승인 처리와 운영 설정 변경을 담당한다.
+일반 사용자에게는 링크를 보여주지 않지만, 링크를 감추는 것은 통제가 아니다.
+각 페이지와 Server Action이 `is_admin()`으로 직접 확인하고 RLS가 한 번 더 막는다.
 
 ### 데스크톱 내비게이션
 

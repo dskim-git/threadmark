@@ -40,6 +40,18 @@ export function canAccessProtectedArea(status: unknown): boolean {
   return status === "active";
 }
 
+/** 목록과 표에서 상태를 짧게 표시할 때 쓰는 이름. */
+const STATUS_LABELS: Record<AccountStatus, string> = {
+  pending: "승인 대기",
+  active: "승인됨",
+  rejected: "거절됨",
+  suspended: "정지됨",
+};
+
+export function getStatusLabel(status: unknown): string {
+  return isAccountStatus(status) ? STATUS_LABELS[status] : "알 수 없음";
+}
+
 /** 승인 대기 화면에서 상태별로 보여줄 내용. */
 export type StatusNotice = {
   title: string;

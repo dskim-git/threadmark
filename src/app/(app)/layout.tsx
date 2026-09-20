@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { signOut } from "@/app/auth/actions";
 import { requireActiveAccount } from "@/lib/auth/account";
 
@@ -19,11 +21,28 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <div className="flex min-h-full flex-1 flex-col bg-zinc-50 font-sans dark:bg-black">
       <header className="border-b border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-4 px-6 py-4">
-          <span className="text-sm font-semibold tracking-tight text-black dark:text-zinc-50">
+          <Link
+            href="/home"
+            className="text-sm font-semibold tracking-tight text-black dark:text-zinc-50"
+          >
             ThreadMark
-          </span>
+          </Link>
 
           <div className="flex items-center gap-4">
+            {/*
+              링크를 감추는 것은 통제가 아니다. 관리자 화면은 각 페이지와
+              Server Action이 직접 권한을 확인하고 RLS가 한 번 더 막는다.
+              여기서는 관리자에게만 진입 경로를 보여줄 뿐이다.
+            */}
+            {account.isAdmin ? (
+              <Link
+                href="/admin/users"
+                className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+              >
+                사용자 승인
+              </Link>
+            ) : null}
+
             <span className="hidden text-sm text-zinc-500 sm:inline">
               {account.displayName ?? account.email}
             </span>
