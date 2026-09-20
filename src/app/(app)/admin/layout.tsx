@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { requireAdminAccount } from "@/lib/auth/account";
 
 /**
@@ -10,5 +12,24 @@ import { requireAdminAccount } from "@/lib/auth/account";
 export default async function AdminLayout({ children }: LayoutProps<"/">) {
   await requireAdminAccount();
 
-  return children;
+  return (
+    <div className="flex flex-col gap-8">
+      <nav className="flex gap-4 border-b border-black/[.08] pb-3 dark:border-white/[.145]">
+        <Link
+          href="/admin/users"
+          className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+        >
+          사용자 승인
+        </Link>
+        <Link
+          href="/admin/settings"
+          className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+        >
+          가입 설정
+        </Link>
+      </nav>
+
+      {children}
+    </div>
+  );
 }

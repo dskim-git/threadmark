@@ -198,6 +198,46 @@ test("신규 가입 승인 필요 설정의 초기값이 true다", () => {
   );
 });
 
+test("가입 트리거는 INSERT에만 걸려 있다", () => {
+  // 개인정보 처리방침 1절: 승인 필요 설정을 꺼도 이미 대기 중인 계정은
+  // 자동 승인되지 않는다. 트리거가 UPDATE에도 걸리면 그 약속이 깨진다.
+  assert.ok(
+    flat.includes("after insert on auth.users"),
+    "가입 트리거가 INSERT에 걸려 있지 않다",
+  );
+
+  const forbidden = [
+    "after insert or update on auth.users",
+    "after update on auth.users",
+    "before update on auth.users",
+  ];
+
+  for (const statement of forbidden) {
+    assert.ok(
+      !flat.includes(statement),
+      `가입 트리거가 갱신에도 반응한다: ${statement}`,
+    );
+  }
+});
+
+test("승인 설정을 읽지 못하면 승인 필요로 처리한다", () => {
+  // 설정 누락이 곧 무제한 가입 허용이 되어서는 안 된다.
+  assert.ok(
+    flat.includes("coalesce(v_require_approval, true)"),
+    "가입 트리거의 fail closed 처리가 없다",
+  );
+});
+
+test("app_settings에 insert/delete 정책을 두지 않는다", () => {
+  // 설정 키는 마이그레이션으로만 정의한다.
+  for (const action of ["insert", "delete"]) {
+    assert.ok(
+      !flat.includes(`on public.app_settings for ${action}`),
+      `app_settings에 ${action} 정책이 존재한다`,
+    );
+  }
+});
+
 test("관리자 권한을 자동으로 부여하지 않는다", () => {
   assert.ok(
     !flat.includes("insert into public.user_roles"),
