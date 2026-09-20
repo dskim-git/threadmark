@@ -1,0 +1,594 @@
+-- =============================================================================
+-- RLS 격리 및 권한 통제 테스트
+-- =============================================================================
+-- 블루프린트 20절: RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 한다.
+-- 개인정보 처리방침 15절: 승인 모드와 자동 승인 모드 모두에 대한 권한·RLS 테스트.
+--
+-- 사용법
+--   Supabase 대시보드 SQL Editor에 이 파일 전체를 붙여넣고 실행한다.
+--   모두 통과하면 마지막에 "모든 RLS 검사를 통과했습니다"가 표시된다.
+--   하나라도 실패하면 그 지점에서 멈추고 어떤 검사가 왜 실패했는지 알려준다.
+--
+-- 안전성
+--   실제 사용자 역할로 전환해 차단되어야 할 동작을 시도한다.
+--   각 검사는 DO 블록 안에서 실행되며, 차단되지 않고 통과해 버린 변경은
+--   블록이 예외를 일으키면서 함께 되돌려진다. 데이터는 남지 않는다.
+--   조회만 하는 검사는 애초에 아무것도 바꾸지 않는다.
+--
+-- 전제
+--   관리자 1명과 관리자가 아닌 사용자가 최소 1명 있어야 한다.
+--   사용자 ID는 이메일이 아니라 user_roles를 기준으로 찾는다.
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- 0. 전제 확인
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_admins    integer;
+  v_nonadmins integer;
+begin
+  select count(*) into v_admins
+  from public.user_roles where role = 'admin'::public.app_role;
+
+  select count(*) into v_nonadmins
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  );
+
+  if v_admins < 1 then
+    raise exception '전제 실패: 관리자가 없습니다. 먼저 부트스트랩을 수행하세요.';
+  end if;
+
+  if v_nonadmins < 1 then
+    raise exception '전제 실패: 관리자가 아닌 사용자가 필요합니다. 두 번째 계정으로 로그인하세요.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 1. 사용자 격리: 일반 사용자는 자기 프로필만 본다
+-- -----------------------------------------------------------------------------
+-- 블루프린트 25절 1번: 사용자 A가 사용자 B의 자료를 읽을 수 없다.
+do $$
+declare
+  v_user  uuid;
+  v_total integer;
+  v_seen  integer;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  select count(*) into v_total from public.profiles;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.profiles;
+
+  reset role;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 1 실패: 일반 사용자에게 프로필 %건이 보였습니다. 1건이어야 합니다. (전체 %건)',
+      v_seen, v_total;
+  end if;
+
+  if v_total < 2 then
+    raise warning
+      '검사 1 주의: 전체 사용자가 %건뿐이라 격리가 충분히 검증되지 않았습니다.', v_total;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 2. 관리자는 전체 프로필을 본다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_admin uuid;
+  v_total integer;
+  v_seen  integer;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select count(*) into v_total from public.profiles;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.profiles;
+
+  reset role;
+
+  if v_seen <> v_total then
+    raise exception
+      '검사 2 실패: 관리자에게 %건만 보였습니다. 전체 %건이 보여야 합니다.',
+      v_seen, v_total;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 3. 일반 사용자는 자기 승인 상태를 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- RLS만으로는 막히지 않는 지점이다. WITH CHECK 식은 이전 행을 참조할 수 없어
+-- "본인 행 수정"과 "본인 상태 변경"을 구분하지 못한다.
+-- guard_profile_protected_columns 트리거가 실제로 막는지 확인한다.
+do $$
+declare
+  v_user    uuid;
+  v_blocked boolean := false;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.profiles
+    set status = 'active'::public.user_status
+    where id = v_user;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked then
+    -- 막히지 않았다. 아래 예외가 이 블록의 변경을 함께 되돌린다.
+    raise exception
+      '검사 3 실패: 일반 사용자가 자기 승인 상태를 active로 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 4. 일반 사용자는 자기 이메일을 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_user    uuid;
+  v_blocked boolean := false;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.profiles set email = 'changed@example.com' where id = v_user;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked then
+    raise exception '검사 4 실패: 일반 사용자가 프로필 이메일을 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 5. 일반 사용자는 다른 사용자의 상태를 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- 이 경우 RLS의 USING 식이 대상 행을 걸러내므로 오류 없이 0행이 영향받는다.
+-- 오류가 나지 않는다고 통과시키면 안 되고, 바뀐 행이 없는지를 봐야 한다.
+do $$
+declare
+  v_user    uuid;
+  v_other   uuid;
+  v_changed integer := 0;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  select user_id into v_other
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.profiles
+    set status = 'suspended'::public.user_status
+    where id = v_other;
+    get diagnostics v_changed = row_count;
+  exception when others then
+    v_changed := 0;
+  end;
+
+  reset role;
+
+  if v_changed <> 0 then
+    raise exception
+      '검사 5 실패: 일반 사용자가 다른 사용자의 상태를 %건 변경했습니다.', v_changed;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 6. 일반 사용자는 스스로에게 관리자 역할을 줄 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_user    uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.user_roles (user_id, role)
+    values (v_user, 'admin'::public.app_role);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 6 실패: 일반 사용자가 스스로에게 관리자 역할을 부여할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 7. 일반 사용자는 운영 설정을 읽을 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_user uuid;
+  v_seen integer;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.app_settings;
+
+  reset role;
+
+  if v_seen <> 0 then
+    raise exception '검사 7 실패: 일반 사용자에게 운영 설정 %건이 보였습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 8. 일반 사용자는 운영 설정을 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_user    uuid;
+  v_changed integer := 0;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.app_settings
+    set value = 'false'::jsonb
+    where key = 'require_user_approval';
+    get diagnostics v_changed = row_count;
+  exception when others then
+    v_changed := 0;
+  end;
+
+  reset role;
+
+  if v_changed <> 0 then
+    raise exception '검사 8 실패: 일반 사용자가 운영 설정을 변경했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 9. 일반 사용자는 감사 로그를 읽을 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_user uuid;
+  v_seen integer;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.admin_audit_logs;
+
+  reset role;
+
+  if v_seen <> 0 then
+    raise exception '검사 9 실패: 일반 사용자에게 감사 로그 %건이 보였습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 10. 일반 사용자는 감사 로그를 지울 수 없다
+-- -----------------------------------------------------------------------------
+-- 감사 로그는 append-only여야 한다. 권한 자체가 없으므로 오류가 나야 한다.
+do $$
+declare
+  v_user    uuid;
+  v_blocked boolean := false;
+  v_deleted integer := 0;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    delete from public.admin_audit_logs;
+    get diagnostics v_deleted = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked or v_deleted > 0 then
+    raise exception '검사 10 실패: 일반 사용자가 감사 로그를 삭제할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 11. 관리자도 감사 로그를 지울 수 없다
+-- -----------------------------------------------------------------------------
+-- 관리자에게도 삭제 권한을 주지 않았다. 기록을 남기는 쪽이 지우는 쪽보다 우선이다.
+do $$
+declare
+  v_admin   uuid;
+  v_blocked boolean := false;
+  v_deleted integer := 0;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    delete from public.admin_audit_logs;
+    get diagnostics v_deleted = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked or v_deleted > 0 then
+    raise exception '검사 11 실패: 관리자가 감사 로그를 삭제할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 12. 비로그인(anon)은 어떤 테이블도 읽을 수 없다
+-- -----------------------------------------------------------------------------
+-- anon에는 테이블 권한 자체를 부여하지 않았으므로 RLS 이전에 막혀야 한다.
+do $$
+declare
+  v_table   text;
+  v_blocked boolean;
+begin
+  foreach v_table in array array[
+    'profiles', 'user_roles', 'app_settings', 'admin_audit_logs'
+  ]
+  loop
+    v_blocked := false;
+
+    set local role anon;
+
+    begin
+      execute format('select 1 from public.%I limit 1', v_table);
+    exception when others then
+      v_blocked := true;
+    end;
+
+    reset role;
+
+    if not v_blocked then
+      raise exception '검사 12 실패: 비로그인 사용자가 %를 읽을 수 있었습니다.', v_table;
+    end if;
+  end loop;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 13. 관리자는 감사 로그를 읽을 수 있다
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다. 열려야 할 곳도 확인한다.
+do $$
+declare
+  v_admin uuid;
+  v_seen  integer;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.admin_audit_logs;
+
+  reset role;
+
+  if v_seen = 0 then
+    raise exception
+      '검사 13 실패: 관리자가 감사 로그를 읽지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 14. 관리자는 운영 설정을 읽을 수 있다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_admin uuid;
+  v_seen  integer;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.app_settings;
+
+  reset role;
+
+  if v_seen = 0 then
+    raise exception '검사 14 실패: 관리자가 운영 설정을 읽지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- =============================================================================
+-- 모두 통과
+-- =============================================================================
+select
+  '모든 RLS 검사를 통과했습니다' as 결과,
+  (select count(*) from public.profiles)                                as 전체_사용자,
+  (select count(*) from public.user_roles
+    where role = 'admin'::public.app_role)                              as 관리자,
+  (select count(*) from public.admin_audit_logs)                        as 감사_기록,
+  (select (value #>> '{}') from public.app_settings
+    where key = 'require_user_approval')                                as 승인_필요_설정;
