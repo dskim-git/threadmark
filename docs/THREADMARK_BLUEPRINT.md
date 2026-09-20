@@ -165,8 +165,28 @@ Supabase Auth URL 설정:
 - Redirect URLs: `http://localhost:3000/**`, `https://thread-mark.vercel.app/**`
 
 앱 콜백 경로는 `/auth/callback`이며 구현 위치는 `src/app/auth/callback/route.ts`다.
-로그인 후 이동할 경로를 `next` 쿼리 파라미터로 전달하므로 Redirect URL에 `**`를 사용한다.
-`next` 값은 같은 출처의 경로만 통과시켜 오픈 리디렉션을 차단한다.
+로그인 후 돌아갈 경로는 쿠키로 전달한다. 이 값을 `redirectTo`의 쿼리 문자열에 실으면
+공급자에게 넘기는 주소가 요청마다 달라져 Supabase의 Redirect URL 허용 목록과 맞추기 어렵고,
+맞지 않으면 Supabase가 오류 없이 Site URL로 되돌려 보내 로그인이 조용히 실패한다.
+돌아갈 경로는 같은 출처의 경로만 통과시켜 오픈 리디렉션을 차단한다.
+
+개발 중에는 포트가 바뀌면 Redirect URLs에 해당 주소를 추가해야 한다.
+개발 환경에서는 등록이 필요한 주소를 서버 로그에 출력한다.
+
+#### 동의 화면에 표시되는 이름 (미해결)
+
+Google은 브랜드 인증을 통과하기 전까지 앱 이름 대신 리디렉션 URI의 도메인을 표시한다.
+로그인 콜백이 Supabase 주소이므로 사용자에게는 `<프로젝트 ref>.supabase.co`가 보인다.
+브랜드 인증은 승인된 도메인 전부를 Google Search Console에서 소유 증명해야 하는데
+`supabase.co`는 증명할 수 없다. Google Cloud에서 앱 이름만 바꿔서는 해결되지 않는다.
+
+`ThreadMark`로 표시하려면 자체 도메인과 Supabase Custom Domain 부가 기능이 필요하다.
+월 고정 비용이 발생하므로 실제 사용자를 받기 시작하는 시점에 결정한다.
+그때까지는 Google Auth Platform의 Branding에 앱 이름·지원 이메일·홈페이지를 채워둔다.
+
+OAuth 동의 화면 설정은 클라이언트별이 아니라 Google Cloud 프로젝트 전체에 적용된다.
+12단계에서 `drive.file` 범위를 추가하면 심사 대상이 되므로, 그 전에 앱을 Production으로
+게시하지 않는다.
 
 ---
 
