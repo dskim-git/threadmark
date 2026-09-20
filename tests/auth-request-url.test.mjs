@@ -102,8 +102,8 @@ test("문자열이 아니거나 비어 있으면 기본 경로를 쓴다", () =>
   }
 });
 
-test("기본 경로는 루트다", () => {
-  assert.equal(DEFAULT_REDIRECT_PATH, "/");
+test("기본 경로는 보호된 앱 영역의 첫 화면이다", () => {
+  assert.equal(DEFAULT_REDIRECT_PATH, "/home");
 });
 
 test("originFromHeaders: 로컬 개발은 http를 쓴다", () => {

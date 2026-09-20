@@ -5,8 +5,27 @@
  * 로그인 흐름에서 가장 사고가 나기 쉬운 부분이라 단위 테스트로 검증한다.
  */
 
-/** 이동할 곳을 판단할 수 없을 때 보낼 기본 경로. */
-export const DEFAULT_REDIRECT_PATH = "/";
+/**
+ * 이동할 곳을 판단할 수 없을 때 보낼 기본 경로.
+ *
+ * 보호된 앱 영역의 첫 화면이다. 승인되지 않은 계정은 그곳에서 다시
+ * 승인 상태 안내 화면으로 이동한다.
+ */
+export const DEFAULT_REDIRECT_PATH = "/home";
+
+/**
+ * 로그인 후 돌아갈 경로를 잠시 담아두는 쿠키 이름.
+ *
+ * 이 값을 OAuth redirectTo의 쿼리 문자열에 실으면 인증 공급자에게 넘기는 주소가
+ * 요청마다 달라진다. 그러면 Supabase의 Redirect URL 허용 목록과 맞추기 까다롭고,
+ * 맞지 않으면 Supabase가 Site URL로 되돌려 보내 로그인이 조용히 실패한다.
+ *
+ * 그래서 공급자에게는 고정된 콜백 주소만 넘기고, 돌아갈 경로는 쿠키로 전달한다.
+ */
+export const NEXT_PATH_COOKIE = "threadmark-next-path";
+
+/** 쿠키 유효 시간. 로그인 한 번을 마치기에 충분하고 그 이상 남지 않을 만큼만 둔다. */
+export const NEXT_PATH_COOKIE_MAX_AGE_SECONDS = 600;
 
 /**
  * 로그인 후 이동할 경로를 안전한 값으로 정리한다.
