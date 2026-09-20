@@ -147,6 +147,27 @@ Google 로그인과 Google Drive 연결은 개념적으로 분리한다. 사용�
 - 최근 동기화 시각
 - 사용자별 기능 설정
 
+### 4.3 Google 로그인 설정 기록
+
+Google 로그인은 Supabase Auth가 처리하고 Google Drive 연결은 앱이 직접 처리한다.
+두 흐름은 서로 다른 OAuth client를 사용한다. 한쪽의 client secret이 유출되어도
+다른 쪽 연동에 영향이 가지 않게 하기 위해서다. 10.6절에 기록한 client는 Drive 전용이다.
+
+- OAuth client 이름: `ThreadMark Auth`
+- 애플리케이션 유형: 웹 애플리케이션
+- 승인된 리디렉션 URI: `https://<Supabase 프로젝트 ref>.supabase.co/auth/v1/callback`
+- client secret 보관 위치: Supabase 대시보드 Authentication > Providers > Google
+- 로그인 단계에서 Drive scope, offline 접근 및 refresh token을 요구하지 않는다.
+
+Supabase Auth URL 설정:
+
+- Site URL: `https://thread-mark.vercel.app`
+- Redirect URLs: `http://localhost:3000/**`, `https://thread-mark.vercel.app/**`
+
+앱 콜백 경로는 `/auth/callback`이며 구현 위치는 `src/app/auth/callback/route.ts`다.
+로그인 후 이동할 경로를 `next` 쿼리 파라미터로 전달하므로 Redirect URL에 `**`를 사용한다.
+`next` 값은 같은 출처의 경로만 통과시켜 오픈 리디렉션을 차단한다.
+
 ---
 
 ## 5. Source 모델
