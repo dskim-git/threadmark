@@ -172,6 +172,48 @@ export type Database = {
           },
         ]
       }
+      google_drive_connections: {
+        Row: {
+          connected_at: string
+          created_at: string
+          encrypted_refresh_token: string
+          folder_ids: Json
+          granted_scope: string
+          last_error: string | null
+          last_used_at: string | null
+          root_folder_id: string | null
+          status: Database["public"]["Enums"]["drive_connection_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connected_at?: string
+          created_at?: string
+          encrypted_refresh_token: string
+          folder_ids?: Json
+          granted_scope: string
+          last_error?: string | null
+          last_used_at?: string | null
+          root_folder_id?: string | null
+          status?: Database["public"]["Enums"]["drive_connection_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connected_at?: string
+          created_at?: string
+          encrypted_refresh_token?: string
+          folder_ids?: Json
+          granted_scope?: string
+          last_error?: string | null
+          last_used_at?: string | null
+          root_folder_id?: string | null
+          status?: Database["public"]["Enums"]["drive_connection_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           approved_at: string | null
@@ -434,6 +476,7 @@ export type Database = {
         | "handwriting"
         | "voice"
       capture_verification_status: "user_written"
+      drive_connection_status: "connected" | "revoked" | "error"
       project_status: "active"
       project_visibility: "private"
       source_status: "active"
@@ -594,6 +637,7 @@ export const Constants = {
         "voice",
       ],
       capture_verification_status: ["user_written"],
+      drive_connection_status: ["connected", "revoked", "error"],
       project_status: ["active"],
       project_visibility: ["private"],
       source_status: ["active"],

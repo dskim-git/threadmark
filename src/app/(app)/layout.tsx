@@ -50,6 +50,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               프로젝트
             </Link>
 
+            <Link
+              href="/settings/integrations"
+              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+            >
+              연결
+            </Link>
+
             {/*
               링크를 감추는 것은 통제가 아니다. 관리자 화면은 각 페이지와
               Server Action이 직접 권한을 확인하고 RLS가 한 번 더 막는다.
