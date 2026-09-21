@@ -74,6 +74,42 @@ export type Database = {
         }
         Relationships: []
       }
+      capture_projects: {
+        Row: {
+          capture_id: string
+          created_at: string
+          owner_id: string
+          project_id: string
+        }
+        Insert: {
+          capture_id: string
+          created_at?: string
+          owner_id?: string
+          project_id: string
+        }
+        Update: {
+          capture_id?: string
+          created_at?: string
+          owner_id?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_projects_capture_id_fkey"
+            columns: ["capture_id"]
+            isOneToOne: false
+            referencedRelation: "captures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_projects_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       captures: {
         Row: {
           ai_generated: boolean
@@ -193,6 +229,96 @@ export type Database = {
         }
         Relationships: []
       }
+      projects: {
+        Row: {
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          end_date: string | null
+          id: string
+          name: string
+          owner_id: string
+          project_type: string | null
+          research_question: string | null
+          start_date: string | null
+          status: Database["public"]["Enums"]["project_status"]
+          target_output: string | null
+          updated_at: string
+          visibility: Database["public"]["Enums"]["project_visibility"]
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          name: string
+          owner_id?: string
+          project_type?: string | null
+          research_question?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["project_status"]
+          target_output?: string | null
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["project_visibility"]
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          owner_id?: string
+          project_type?: string | null
+          research_question?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["project_status"]
+          target_output?: string | null
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["project_visibility"]
+        }
+        Relationships: []
+      }
+      source_projects: {
+        Row: {
+          created_at: string
+          owner_id: string
+          project_id: string
+          source_id: string
+        }
+        Insert: {
+          created_at?: string
+          owner_id?: string
+          project_id: string
+          source_id: string
+        }
+        Update: {
+          created_at?: string
+          owner_id?: string
+          project_id?: string
+          source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_projects_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "source_projects_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sources: {
         Row: {
           canonical_url: string | null
@@ -273,7 +399,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      assert_capture_source_owned: {
+      assert_capture_owned: {
+        Args: { p_capture_id: string; p_owner_id: string }
+        Returns: undefined
+      }
+      assert_project_owned: {
+        Args: { p_owner_id: string; p_project_id: string }
+        Returns: undefined
+      }
+      assert_source_owned: {
         Args: { p_owner_id: string; p_source_id: string }
         Returns: undefined
       }
@@ -281,6 +415,7 @@ export type Database = {
       is_active_user: { Args: { check_user_id?: string }; Returns: boolean }
       is_admin: { Args: { check_user_id?: string }; Returns: boolean }
       soft_delete_capture: { Args: { capture_id: string }; Returns: boolean }
+      soft_delete_project: { Args: { project_id: string }; Returns: boolean }
       soft_delete_source: { Args: { source_id: string }; Returns: boolean }
     }
     Enums: {
@@ -299,6 +434,8 @@ export type Database = {
         | "handwriting"
         | "voice"
       capture_verification_status: "user_written"
+      project_status: "active"
+      project_visibility: "private"
       source_status: "active"
       source_type:
         | "paper"
@@ -457,6 +594,8 @@ export const Constants = {
         "voice",
       ],
       capture_verification_status: ["user_written"],
+      project_status: ["active"],
+      project_visibility: ["private"],
       source_status: ["active"],
       source_type: [
         "paper",

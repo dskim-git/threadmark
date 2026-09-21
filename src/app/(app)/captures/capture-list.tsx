@@ -1,7 +1,9 @@
 import Link from "next/link";
 
+import { linkCaptureToProject } from "@/app/(app)/projects/actions";
 import type { Capture } from "@/lib/captures/queries";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
+import type { ProjectChip } from "@/lib/projects/queries";
 
 import { deleteCapture } from "./actions";
 
@@ -19,10 +21,13 @@ export function CaptureList({
   captures,
   returnTo,
   emptyText,
+  projects = [],
 }: {
   captures: Capture[];
   returnTo: string;
   emptyText: string;
+  /** 비어 있지 않으면 기록마다 프로젝트 연결 선택을 보여준다. */
+  projects?: ProjectChip[];
 }) {
   if (captures.length === 0) {
     return (
@@ -103,6 +108,36 @@ export function CaptureList({
                 삭제
               </button>
             </form>
+
+            {projects.length > 0 ? (
+              <form
+                action={linkCaptureToProject}
+                className="ml-auto flex items-center gap-2"
+              >
+                <input type="hidden" name="targetId" value={capture.id} />
+                <input type="hidden" name="returnTo" value={returnTo} />
+                <label htmlFor={`project-${capture.id}`} className="sr-only">
+                  연결할 프로젝트
+                </label>
+                <select
+                  id={`project-${capture.id}`}
+                  name="projectId"
+                  className="h-9 rounded-lg border border-black/[.08] bg-white px-2 text-xs text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+                >
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+                >
+                  프로젝트에 추가
+                </button>
+              </form>
+            ) : null}
           </div>
         </li>
       ))}

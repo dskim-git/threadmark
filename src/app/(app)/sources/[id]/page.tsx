@@ -5,8 +5,10 @@ import { notFound } from "next/navigation";
 import { createCapture } from "@/app/(app)/captures/actions";
 import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
+import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projects/actions";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listCapturesForSource } from "@/lib/captures/queries";
+import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { getSourceById } from "@/lib/sources/queries";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
@@ -31,14 +33,21 @@ export default async function SourceDetailPage({
     notFound();
   }
 
-  const [captures, query] = await Promise.all([
+  const [captures, linkedProjects, allProjects, query] = await Promise.all([
     listCapturesForSource(source.id),
+    listProjectsForSource(source.id),
+    listProjectChips(),
     searchParams,
   ]);
 
   const error = firstValue(query.error);
   const notice = firstValue(query.notice);
   const returnTo = `/sources/${source.id}`;
+
+  const linkedIds = new Set(linkedProjects.map((project) => project.id));
+  const linkableProjects = allProjects.filter(
+    (project) => !linkedIds.has(project.id),
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -126,6 +135,81 @@ export default async function SourceDetailPage({
         </section>
       ) : null}
 
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+          프로젝트
+        </h2>
+
+        {linkedProjects.length > 0 ? (
+          <ul className="flex flex-wrap gap-2">
+            {linkedProjects.map((project) => (
+              <li key={project.id}>
+                <form
+                  action={unlinkSourceFromProject}
+                  className="flex items-center gap-2 rounded-full border border-black/[.08] px-3 py-1 dark:border-white/[.145]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-2.5 w-2.5 rounded-full border border-black/10 dark:border-white/20"
+                    style={{ backgroundColor: project.color ?? "transparent" }}
+                  />
+                  <Link
+                    href={`/projects/${project.id}`}
+                    className="text-sm text-black hover:underline dark:text-zinc-50"
+                  >
+                    {project.name}
+                  </Link>
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="targetId" value={source.id} />
+                  <input type="hidden" name="returnTo" value={returnTo} />
+                  <button
+                    type="submit"
+                    aria-label={`${project.name} 연결 끊기`}
+                    className="text-sm text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
+                  >
+                    ×
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            연결된 프로젝트가 없습니다.
+          </p>
+        )}
+
+        {linkableProjects.length > 0 ? (
+          <form
+            action={linkSourceToProject}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <input type="hidden" name="targetId" value={source.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <label htmlFor="projectId" className="sr-only">
+              연결할 프로젝트
+            </label>
+            <select
+              id="projectId"
+              name="projectId"
+              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            >
+              {linkableProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="h-10 rounded-full border border-solid border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              프로젝트에 추가
+            </button>
+          </form>
+        ) : null}
+      </section>
+
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
         <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
           기록 {captures.length}건
@@ -133,6 +217,7 @@ export default async function SourceDetailPage({
         <CaptureList
           captures={captures}
           returnTo={returnTo}
+          projects={allProjects}
           emptyText="아직 이 자료에 남긴 기록이 없습니다."
         />
       </section>

@@ -1054,6 +1054,7 @@ RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 �
 /sources/[id]/reader
 /projects
 /projects/[id]
+/projects/[id]/edit
 /research/search
 /ai-search
 /shared

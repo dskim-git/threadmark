@@ -5,6 +5,7 @@ import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listInboxCaptures } from "@/lib/captures/queries";
+import { listProjectChips } from "@/lib/projects/queries";
 
 export const metadata: Metadata = {
   title: "빠른 기록 · ThreadMark",
@@ -23,7 +24,10 @@ export default async function InboxPage({
   await requireActiveAccount("/inbox");
 
   const params = await searchParams;
-  const captures = await listInboxCaptures();
+  const [captures, projects] = await Promise.all([
+    listInboxCaptures(),
+    listProjectChips(),
+  ]);
 
   const notice = firstValue(params.notice);
   const error = firstValue(params.error);
@@ -83,6 +87,7 @@ export default async function InboxPage({
         <CaptureList
           captures={captures}
           returnTo="/inbox"
+          projects={projects}
           emptyText="아직 남긴 기록이 없습니다. 위에서 바로 적어보세요."
         />
       </section>

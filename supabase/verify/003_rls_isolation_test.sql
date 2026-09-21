@@ -144,15 +144,27 @@ $$;
 do $$
 declare
   v_user    uuid;
+  v_current public.user_status;
+  v_target  public.user_status;
   v_blocked boolean := false;
 begin
-  select p.id into v_user
+  select p.id, p.status into v_user, v_current
   from public.profiles p
   where not exists (
     select 1 from public.user_roles ur
     where ur.user_id = p.id and ur.role = 'admin'::public.app_role
   )
   limit 1;
+
+  -- 지금 상태와 다른 값을 골라야 한다.
+  -- 가드 트리거는 값이 실제로 바뀔 때만 개입하므로, 같은 값으로 갱신하면
+  -- 막히지 않는 것이 정상이다. 그 경우를 실패로 읽으면 검사가 데이터 상태에
+  -- 따라 결과가 달라진다.
+  v_target := case
+    when v_current = 'active'::public.user_status
+      then 'suspended'::public.user_status
+    else 'active'::public.user_status
+  end;
 
   set local role authenticated;
   perform set_config(
@@ -162,9 +174,7 @@ begin
   );
 
   begin
-    update public.profiles
-    set status = 'active'::public.user_status
-    where id = v_user;
+    update public.profiles set status = v_target where id = v_user;
   exception when others then
     v_blocked := true;
   end;
@@ -174,7 +184,8 @@ begin
   if not v_blocked then
     -- 막히지 않았다. 아래 예외가 이 블록의 변경을 함께 되돌린다.
     raise exception
-      '검사 3 실패: 일반 사용자가 자기 승인 상태를 active로 바꿀 수 있었습니다.';
+      '검사 3 실패: 일반 사용자가 자기 승인 상태를 %에서 %로 바꿀 수 있었습니다.',
+      v_current, v_target;
   end if;
 end
 $$;
@@ -1209,6 +1220,351 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 28. 다른 사용자의 프로젝트를 읽을 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.projects where id = v_project;
+
+  reset role;
+
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 0 then
+    raise exception '검사 28 실패: 다른 사용자의 프로젝트가 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 29. 다른 사용자의 프로젝트에 내 자료를 연결할 수 없다
+-- -----------------------------------------------------------------------------
+-- 연결 테이블의 위험 하나다. 프로젝트 쪽만 남의 것이어도 막혀야 한다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 소유자의 프로젝트와, 다른 사용자의 자료를 만든다.
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_other, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 다른 사용자가 자기 자료를 남의 프로젝트에 밀어넣으려 한다.
+  begin
+    insert into public.source_projects (project_id, source_id)
+    values (v_project, v_source);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_projects where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 29 실패: 다른 사용자의 프로젝트에 자료를 연결할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 30. 내 프로젝트에 다른 사용자의 자료를 연결할 수 없다
+-- -----------------------------------------------------------------------------
+-- 연결 테이블의 반대쪽 위험이다. 자료 쪽만 남의 것이어도 막혀야 한다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 다른 사용자의 프로젝트와, 소유자의 자료를 만든다.
+  insert into public.projects (owner_id, name)
+  values (v_other, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 프로젝트 주인이 남의 자료를 자기 프로젝트에 끌어오려 한다.
+  begin
+    insert into public.source_projects (project_id, source_id)
+    values (v_project, v_source);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_projects where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 30 실패: 내 프로젝트에 다른 사용자의 자료를 연결할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 31. 기록 연결도 양쪽을 확인한다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_capture uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_other, 'note'::public.capture_type, 'RLS 격리 검사용 임시 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.capture_projects (project_id, capture_id)
+    values (v_project, v_capture);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.capture_projects where project_id = v_project;
+  delete from public.captures where id = v_capture;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 31 실패: 다른 사용자의 프로젝트에 기록을 연결할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 32. 소유자는 자기 자료를 자기 프로젝트에 연결할 수 있다
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.source_projects (project_id, source_id)
+  values (v_project, v_source);
+
+  select count(*) into v_seen
+  from public.source_projects where project_id = v_project;
+
+  reset role;
+
+  delete from public.source_projects where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 32 실패: 소유자가 자기 자료를 자기 프로젝트에 연결하지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 33. 다른 사용자의 연결을 볼 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.source_projects (owner_id, project_id, source_id)
+  values (v_owner, v_project, v_source);
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.source_projects where project_id = v_project;
+
+  reset role;
+
+  delete from public.source_projects where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 0 then
+    raise exception '검사 33 실패: 다른 사용자의 연결이 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 34. 연결 행에는 UPDATE 권한이 없다
+-- -----------------------------------------------------------------------------
+-- 연결은 만들거나 끊는 것뿐이다. 고칠 수 있으면 자료를 슬쩍 바꿔치기할 수 있다.
+do $$
+declare
+  v_count integer;
+begin
+  select count(*) into v_count
+  from information_schema.role_table_grants
+  where grantee = 'authenticated'
+    and table_schema = 'public'
+    and table_name in ('source_projects', 'capture_projects')
+    and privilege_type = 'UPDATE';
+
+  if v_count <> 0 then
+    raise exception '검사 34 실패: 연결 테이블에 UPDATE 권한이 부여되어 있습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -1222,6 +1578,8 @@ select
     where key = 'require_user_approval')                                as 승인_필요_설정,
   (select count(*) from public.sources where deleted_at is null)        as 저장된_자료,
   (select count(*) from public.captures where deleted_at is null)       as 저장된_기록,
+  (select count(*) from public.projects where deleted_at is null)       as 프로젝트,
+  (select count(*) from public.source_projects)                         as 자료_연결,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'
