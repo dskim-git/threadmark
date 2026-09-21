@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { createCapture } from "@/app/(app)/captures/actions";
+import { CaptureForm } from "@/app/(app)/captures/capture-form";
+import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { requireActiveAccount } from "@/lib/auth/account";
+import { listCapturesForSource } from "@/lib/captures/queries";
 import { getSourceById } from "@/lib/sources/queries";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
@@ -27,8 +31,14 @@ export default async function SourceDetailPage({
     notFound();
   }
 
-  const query = await searchParams;
+  const [captures, query] = await Promise.all([
+    listCapturesForSource(source.id),
+    searchParams,
+  ]);
+
   const error = firstValue(query.error);
+  const notice = firstValue(query.notice);
+  const returnTo = `/sources/${source.id}`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -47,6 +57,15 @@ export default async function SourceDetailPage({
           className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
         >
           {error}
+        </p>
+      ) : null}
+
+      {notice ? (
+        <p
+          role="status"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+        >
+          {notice}
         </p>
       ) : null}
 
@@ -106,6 +125,37 @@ export default async function SourceDetailPage({
           </p>
         </section>
       ) : null}
+
+      <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
+        <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
+          기록 {captures.length}건
+        </h2>
+        <CaptureList
+          captures={captures}
+          returnTo={returnTo}
+          emptyText="아직 이 자료에 남긴 기록이 없습니다."
+        />
+      </section>
+
+      <section className="rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">
+        <h2 className="mb-4 text-sm font-medium text-black dark:text-zinc-50">
+          새 기록
+        </h2>
+        <CaptureForm
+          action={createCapture}
+          submitLabel="기록하기"
+          returnTo={returnTo}
+          compact
+          values={{
+            sourceId: source.id,
+            captureType: "quote",
+            content: "",
+            originalText: "",
+            translatedText: "",
+            translationLanguage: "",
+          }}
+        />
+      </section>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-black/[.08] pt-6 dark:border-white/[.145]">
         <Link

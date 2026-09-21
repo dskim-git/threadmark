@@ -1038,6 +1038,7 @@ RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 �
 /login
 /home
 /inbox
+/captures/[id]/edit
 /library
 /library/papers
 /library/books

@@ -890,6 +890,325 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 21. 다른 사용자의 기록을 읽을 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_capture uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 임시 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.captures where id = v_capture;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+
+  if v_seen <> 0 then
+    raise exception '검사 21 실패: 다른 사용자의 기록이 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 22. 다른 사용자의 기록을 수정하거나 지울 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_capture uuid;
+  v_changed integer := 0;
+  v_deleted integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 임시 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.captures set content = '가로챈 내용' where id = v_capture;
+    get diagnostics v_changed = row_count;
+  exception when others then
+    v_changed := 0;
+  end;
+
+  begin
+    delete from public.captures where id = v_capture;
+    get diagnostics v_deleted = row_count;
+  exception when others then
+    v_deleted := 0;
+  end;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+
+  if v_changed <> 0 then
+    raise exception '검사 22 실패: 다른 사용자가 기록을 수정했습니다.';
+  end if;
+
+  if v_deleted <> 0 then
+    raise exception '검사 22 실패: 다른 사용자가 기록을 삭제했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 23. 다른 사용자의 자료에 기록을 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- Capture에만 있는 위험이다. 외래키 제약은 RLS를 보지 않으므로,
+-- source_id 값만 알면 남의 자료에 기록을 연결할 수 있다.
+-- check_capture_source_owner 트리거가 실제로 막는지 확인한다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 소유자의 자료를 하나 만든다.
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 다른 사용자가 그 자료에 기록을 붙이려 한다.
+  begin
+    insert into public.captures (source_id, capture_type, content)
+    values (v_source, 'note'::public.capture_type, '남의 자료에 붙인 기록');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.captures where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 23 실패: 다른 사용자의 자료에 기록을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 24. 소유자는 자기 자료에 기록을 붙이고 읽을 수 있다
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.captures (source_id, capture_type, content)
+  values (v_source, 'note'::public.capture_type, '내 자료에 붙인 기록');
+
+  select count(*) into v_seen
+  from public.captures where source_id = v_source;
+
+  reset role;
+
+  delete from public.captures where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 24 실패: 소유자가 자기 기록을 읽지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 25. 원문 없는 인용은 저장되지 않는다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 2.4절의 구분이 데이터 구조로 강제되는지 확인한다.
+-- 화면과 검증 스키마가 막더라도, 마지막으로 남는 보장은 제약조건이다.
+do $$
+declare
+  v_owner   uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  begin
+    insert into public.captures (owner_id, capture_type, content)
+    values (v_owner, 'quote'::public.capture_type, '원문 없이 인용이라고 주장');
+  exception when others then
+    v_blocked := true;
+  end;
+
+  if not v_blocked then
+    delete from public.captures
+    where owner_id = v_owner and content = '원문 없이 인용이라고 주장';
+
+    raise exception '검사 25 실패: 원문 없는 인용이 저장되었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 26. 번역은 원문, 번역문, 언어가 모두 있어야 저장된다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  begin
+    insert into public.captures (
+      owner_id, capture_type, translated_text
+    )
+    values (
+      v_owner,
+      'translation'::public.capture_type,
+      '원문 없이 옮긴 글만 저장'
+    );
+  exception when others then
+    v_blocked := true;
+  end;
+
+  if not v_blocked then
+    delete from public.captures
+    where owner_id = v_owner and translated_text = '원문 없이 옮긴 글만 저장';
+
+    raise exception '검사 26 실패: 원문 없는 번역이 저장되었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 27. 승인되지 않은 계정은 자기 기록도 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 승인 상태가 active가 아닌 계정이 있을 때만 실행된다.
+do $$
+declare
+  v_user    uuid;
+  v_capture uuid;
+  v_seen    integer;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where p.status <> 'active'::public.user_status
+  limit 1;
+
+  if v_user is null then
+    perform set_config('threadmark.check27', '건너뜀 (비활성 계정 없음)', false);
+    return;
+  end if;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_user, 'note'::public.capture_type, 'RLS 격리 검사용 임시 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.captures where id = v_capture;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+
+  if v_seen <> 0 then
+    raise exception
+      '검사 27 실패: 승인되지 않은 계정이 자기 기록을 볼 수 있었습니다.';
+  end if;
+
+  perform set_config('threadmark.check27', '실행됨', false);
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -902,7 +1221,12 @@ select
   (select (value #>> '{}') from public.app_settings
     where key = 'require_user_approval')                                as 승인_필요_설정,
   (select count(*) from public.sources where deleted_at is null)        as 저장된_자료,
+  (select count(*) from public.captures where deleted_at is null)       as 저장된_기록,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'
-  )                                                                     as 비활성_계정_검사;
+  )                                                                     as 비활성_자료_검사,
+  coalesce(
+    pg_catalog.current_setting('threadmark.check27', true),
+    '건너뜀'
+  )                                                                     as 비활성_기록_검사;

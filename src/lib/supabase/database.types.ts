@@ -74,6 +74,68 @@ export type Database = {
         }
         Relationships: []
       }
+      captures: {
+        Row: {
+          ai_generated: boolean
+          capture_type: Database["public"]["Enums"]["capture_type"]
+          content: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          locator: Json
+          original_text: string | null
+          owner_id: string
+          source_id: string | null
+          translated_text: string | null
+          translation_language: string | null
+          translation_provider: string | null
+          updated_at: string
+          verification_status: Database["public"]["Enums"]["capture_verification_status"]
+        }
+        Insert: {
+          ai_generated?: boolean
+          capture_type: Database["public"]["Enums"]["capture_type"]
+          content?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          locator?: Json
+          original_text?: string | null
+          owner_id?: string
+          source_id?: string | null
+          translated_text?: string | null
+          translation_language?: string | null
+          translation_provider?: string | null
+          updated_at?: string
+          verification_status?: Database["public"]["Enums"]["capture_verification_status"]
+        }
+        Update: {
+          ai_generated?: boolean
+          capture_type?: Database["public"]["Enums"]["capture_type"]
+          content?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          locator?: Json
+          original_text?: string | null
+          owner_id?: string
+          source_id?: string | null
+          translated_text?: string | null
+          translation_language?: string | null
+          translation_provider?: string | null
+          updated_at?: string
+          verification_status?: Database["public"]["Enums"]["capture_verification_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "captures_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           approved_at: string | null
@@ -211,13 +273,32 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assert_capture_source_owned: {
+        Args: { p_owner_id: string; p_source_id: string }
+        Returns: undefined
+      }
       count_admins: { Args: never; Returns: number }
       is_active_user: { Args: { check_user_id?: string }; Returns: boolean }
       is_admin: { Args: { check_user_id?: string }; Returns: boolean }
+      soft_delete_capture: { Args: { capture_id: string }; Returns: boolean }
       soft_delete_source: { Args: { source_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin"
+      capture_type:
+        | "quote"
+        | "translation"
+        | "summary"
+        | "paraphrase"
+        | "interpretation"
+        | "question"
+        | "counterpoint"
+        | "idea"
+        | "todo"
+        | "note"
+        | "handwriting"
+        | "voice"
+      capture_verification_status: "user_written"
       source_status: "active"
       source_type:
         | "paper"
@@ -361,6 +442,21 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin"],
+      capture_type: [
+        "quote",
+        "translation",
+        "summary",
+        "paraphrase",
+        "interpretation",
+        "question",
+        "counterpoint",
+        "idea",
+        "todo",
+        "note",
+        "handwriting",
+        "voice",
+      ],
+      capture_verification_status: ["user_written"],
       source_status: ["active"],
       source_type: [
         "paper",

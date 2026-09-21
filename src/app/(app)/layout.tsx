@@ -30,6 +30,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
           <div className="flex items-center gap-4">
             <Link
+              href="/inbox"
+              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+            >
+              빠른 기록
+            </Link>
+
+            <Link
               href="/library"
               className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
             >
