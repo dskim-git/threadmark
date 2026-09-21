@@ -74,7 +74,7 @@ with checks(순번, 항목, 기대, 실제) as (
   -- public 스키마에 새 테이블이 생기면 RLS를 자동으로 켜주는 이벤트 트리거 함수이며,
   -- 2026-09-20에 함수 본문을 직접 확인했다. 우리가 만든 것이 아니므로 허용 목록에 둔다.
   union all
-  select 8, '우리가 만든 DEFINER 함수 7개 모두 존재', '7',
+  select 8, '인증·승인 DEFINER 함수 7개 모두 존재', '7',
     (select count(*)::text
      from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
@@ -97,7 +97,10 @@ with checks(순번, 항목, 기대, 실제) as (
          'is_admin', 'is_active_user', 'count_admins', 'handle_new_user',
          'audit_profile_status_change', 'audit_user_role_change',
          'audit_app_setting_update',
-         'rls_auto_enable'
+         'rls_auto_enable',
+         -- 자료 삭제 표시 전용. sources 정책이 조회에서 삭제된 행을 제외하므로
+         -- PostgREST 갱신으로는 처리할 수 없어 함수로 분리했다.
+         'soft_delete_source'
        ))
 
   union all
@@ -188,26 +191,39 @@ with checks(순번, 항목, 기대, 실제) as (
        and table_name = 'profiles'
        and privilege_type in ('INSERT', 'DELETE'))
 
-  -- 7. 초기 데이터와 운영 상태 --------------------------------------------------
+  -- 7. 운영 상태 불변조건 ------------------------------------------------------
+  -- 시간이 지나도 계속 유효해야 하는 것만 확인한다.
+  -- "아직 아무것도 없는 상태"를 기대하면 운영이 시작된 뒤에는 늘 실패한다.
   union all
-  select 20, '신규 가입 승인 필요 설정 초기값 true', 'true',
-    (select coalesce((value #>> '{}'), '(행 없음)')
+  select 20, '신규 가입 승인 필요 설정이 존재한다', 'true',
+    (select (value is not null)::text
      from public.app_settings
      where key = 'require_user_approval')
 
   union all
-  select 21, '관리자 0명 (자동 부여하지 않음)', '0',
-    (select count(*)::text
+  select 21, '관리자가 최소 1명 있다', 'true',
+    (select (count(*) >= 1)::text
      from public.user_roles
      where role = 'admin'::public.app_role)
 
+  -- 가입 트리거가 빠뜨린 계정이 없는지 본다.
+  -- 프로필이 없는 계정은 승인 상태를 알 수 없어 어떤 화면에도 들어가지 못한다.
   union all
-  select 22, '프로필 0개 (아직 가입자 없음이면 0)', '0',
-    (select count(*)::text from public.profiles)
+  select 22, '프로필이 없는 계정 없음', '0',
+    (select count(*)::text
+     from auth.users u
+     where not exists (
+       select 1 from public.profiles p where p.id = u.id
+     ))
 
+  -- 승인된 계정에는 승인 시각이 남아 있어야 한다.
+  -- 개인정보 처리방침 2절이 기록하기로 한 항목이다.
   union all
-  select 23, '감사 로그 0건', '0',
-    (select count(*)::text from public.admin_audit_logs)
+  select 23, '승인 시각이 빠진 active 계정 없음', '0',
+    (select count(*)::text
+     from public.profiles
+     where status = 'active'::public.user_status
+       and approved_at is null)
 )
 select
   순번,
@@ -220,8 +236,7 @@ order by 순번;
 
 
 -- =============================================================================
--- 참고: 순번 21, 22는 이미 로그인한 사용자가 있으면 0이 아닐 수 있다.
---       그 경우 실패가 아니라 정상이다. 아래로 실제 내용을 확인한다.
+-- 참고: 실제 내용을 직접 확인하려면 아래를 실행한다.
 -- =============================================================================
 
 -- select id, email, status, requested_at from public.profiles order by requested_at;

@@ -18,6 +18,12 @@
 -- 전제
 --   관리자 1명과 관리자가 아닌 사용자가 최소 1명 있어야 한다.
 --   사용자 ID는 이메일이 아니라 user_roles를 기준으로 찾는다.
+--
+-- 주의
+--   Supabase SQL Editor는 스크립트 전체를 한 트랜잭션으로 실행한다.
+--   그래서 set_config(..., true)로 설정한 request.jwt.claims가 다음 DO 블록까지
+--   살아남는다. 자료를 만드는 검사는 삽입 전에 클레임을 비워, 트리거가
+--   owner_id를 엉뚱한 사용자로 덮어쓰지 않게 한다.
 -- =============================================================================
 
 
@@ -581,6 +587,309 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 15. 다른 사용자의 자료를 읽을 수 없다
+-- -----------------------------------------------------------------------------
+-- 블루프린트 25절 1번: 사용자 A가 사용자 B의 Source를 읽거나 수정할 수 없다.
+-- 임시 자료를 만들어 확인하고, 판정하기 전에 지운다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p
+  where p.id <> v_owner
+  limit 1;
+
+  if v_other is null then
+    raise exception '검사 15 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  -- auth.uid()가 없는 컨텍스트이므로 트리거가 owner_id를 덮어쓰지 않는다.
+  -- 앞선 검사에서 설정한 클레임이 남아 있으면 auth.uid()가 그 사용자를 가리키고,
+  -- set_source_owner 트리거가 owner_id를 덮어써 버린다. 먼저 비운다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.sources where id = v_source;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception '검사 15 실패: 다른 사용자의 자료가 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 16. 다른 사용자의 자료를 수정하거나 지울 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_changed integer := 0;
+  v_deleted integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  -- 앞선 검사에서 설정한 클레임이 남아 있으면 auth.uid()가 그 사용자를 가리키고,
+  -- set_source_owner 트리거가 owner_id를 덮어써 버린다. 먼저 비운다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.sources set title = '가로챈 제목' where id = v_source;
+    get diagnostics v_changed = row_count;
+  exception when others then
+    v_changed := 0;
+  end;
+
+  begin
+    delete from public.sources where id = v_source;
+    get diagnostics v_deleted = row_count;
+  exception when others then
+    v_deleted := 0;
+  end;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_changed <> 0 then
+    raise exception '검사 16 실패: 다른 사용자가 자료를 수정했습니다.';
+  end if;
+
+  if v_deleted <> 0 then
+    raise exception '검사 16 실패: 다른 사용자가 자료를 삭제했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 17. 소유자는 자기 자료를 읽을 수 있다
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  -- 앞선 검사에서 설정한 클레임이 남아 있으면 auth.uid()가 그 사용자를 가리키고,
+  -- set_source_owner 트리거가 owner_id를 덮어써 버린다. 먼저 비운다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.sources where id = v_source;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 17 실패: 소유자가 자기 자료를 읽지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 18. 삭제 표시된 자료는 조회에서 제외된다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  -- 앞선 검사에서 설정한 클레임이 남아 있으면 auth.uid()가 그 사용자를 가리키고,
+  -- set_source_owner 트리거가 owner_id를 덮어써 버린다. 먼저 비운다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title, deleted_at)
+  values (
+    v_owner,
+    'note'::public.source_type,
+    'RLS 격리 검사용 임시 자료',
+    pg_catalog.now()
+  )
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.sources where id = v_source;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception '검사 18 실패: 삭제 표시된 자료가 조회에 섞였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 19. 승인되지 않은 계정은 자기 자료도 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 소유자 확인만으로는 부족하다는 것을 확인하는 검사다.
+-- 승인 상태가 active가 아닌 계정이 있을 때만 실행된다.
+-- 없으면 건너뛰며, 마지막 요약에 실행 여부가 표시된다.
+do $$
+declare
+  v_user   uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select p.id into v_user
+  from public.profiles p
+  where p.status <> 'active'::public.user_status
+  limit 1;
+
+  if v_user is null then
+    perform set_config('threadmark.check19', '건너뜀 (비활성 계정 없음)', false);
+    return;
+  end if;
+
+  -- 앞선 검사에서 설정한 클레임이 남아 있으면 auth.uid()가 그 사용자를 가리키고,
+  -- set_source_owner 트리거가 owner_id를 덮어써 버린다. 먼저 비운다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_user, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.sources where id = v_source;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception
+      '검사 19 실패: 승인되지 않은 계정이 자기 자료를 볼 수 있었습니다.';
+  end if;
+
+  perform set_config('threadmark.check19', '실행됨', false);
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 20. 남의 자료를 내 것으로 가져올 수 없다
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_changed integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  -- 앞선 검사에서 설정한 클레임이 남아 있으면 auth.uid()가 그 사용자를 가리키고,
+  -- set_source_owner 트리거가 owner_id를 덮어써 버린다. 먼저 비운다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.sources set owner_id = v_other where id = v_source;
+    get diagnostics v_changed = row_count;
+  exception when others then
+    v_changed := 0;
+  end;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_changed <> 0 then
+    raise exception '검사 20 실패: 다른 사용자가 자료의 소유자를 바꿨습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -591,4 +900,9 @@ select
     where role = 'admin'::public.app_role)                              as 관리자,
   (select count(*) from public.admin_audit_logs)                        as 감사_기록,
   (select (value #>> '{}') from public.app_settings
-    where key = 'require_user_approval')                                as 승인_필요_설정;
+    where key = 'require_user_approval')                                as 승인_필요_설정,
+  (select count(*) from public.sources where deleted_at is null)        as 저장된_자료,
+  coalesce(
+    pg_catalog.current_setting('threadmark.check19', true),
+    '건너뜀'
+  )                                                                     as 비활성_계정_검사;

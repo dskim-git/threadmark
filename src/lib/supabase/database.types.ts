@@ -131,6 +131,60 @@ export type Database = {
         }
         Relationships: []
       }
+      sources: {
+        Row: {
+          canonical_url: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          metadata: Json
+          original_url: string | null
+          owner_id: string
+          status: Database["public"]["Enums"]["source_status"]
+          subtitle: string | null
+          thumbnail_url: string | null
+          title: string
+          type: Database["public"]["Enums"]["source_type"]
+          updated_at: string
+          visibility: Database["public"]["Enums"]["source_visibility"]
+        }
+        Insert: {
+          canonical_url?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          metadata?: Json
+          original_url?: string | null
+          owner_id?: string
+          status?: Database["public"]["Enums"]["source_status"]
+          subtitle?: string | null
+          thumbnail_url?: string | null
+          title: string
+          type: Database["public"]["Enums"]["source_type"]
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["source_visibility"]
+        }
+        Update: {
+          canonical_url?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          metadata?: Json
+          original_url?: string | null
+          owner_id?: string
+          status?: Database["public"]["Enums"]["source_status"]
+          subtitle?: string | null
+          thumbnail_url?: string | null
+          title?: string
+          type?: Database["public"]["Enums"]["source_type"]
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["source_visibility"]
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           granted_at: string
@@ -160,9 +214,24 @@ export type Database = {
       count_admins: { Args: never; Returns: number }
       is_active_user: { Args: { check_user_id?: string }; Returns: boolean }
       is_admin: { Args: { check_user_id?: string }; Returns: boolean }
+      soft_delete_source: { Args: { source_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin"
+      source_status: "active"
+      source_type:
+        | "paper"
+        | "book"
+        | "website"
+        | "music"
+        | "youtube"
+        | "media"
+        | "pdf"
+        | "image"
+        | "drawing"
+        | "audio"
+        | "note"
+      source_visibility: "private"
       user_status: "pending" | "active" | "rejected" | "suspended"
     }
     CompositeTypes: {
@@ -292,6 +361,21 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin"],
+      source_status: ["active"],
+      source_type: [
+        "paper",
+        "book",
+        "website",
+        "music",
+        "youtube",
+        "media",
+        "pdf",
+        "image",
+        "drawing",
+        "audio",
+        "note",
+      ],
+      source_visibility: ["private"],
       user_status: ["pending", "active", "rejected", "suspended"],
     },
   },
