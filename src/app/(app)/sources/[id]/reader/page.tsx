@@ -7,6 +7,7 @@ import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
 import { isReadable, listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
+import { isTranslationConfigured } from "@/lib/translation/anthropic";
 
 import { FileStatusNotice } from "./file-status-notice";
 import { ReaderView } from "./reader-view";
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
  * 한 자료에 파일이 여럿일 수 있어서 `?file=`로 고른다.
  * 지정하지 않으면 읽을 수 있는 첫 파일을 연다.
  *
- * 13-A에서는 읽기만 한다. 텍스트를 골라 기록으로 남기는 것은 13-B다.
+ * 고른 문장을 기록으로 남기고(13-B) 옮기는 것(13-C)은 ReaderView가 맡는다.
  */
 export default async function ReaderPage({
   params,
@@ -138,6 +139,11 @@ export default async function ReaderPage({
               fileChecksum={selected.checksum}
               initialPage={startPage}
               initialZoom={selected.lastZoom}
+              /*
+                번역을 쓸 수 있는지는 서버만 안다. API 키가 있는지를
+                브라우저에 내려보내지 않고, "쓸 수 있는가"만 내려보낸다.
+              */
+              translationEnabled={isTranslationConfigured()}
             />
           )}
         </>

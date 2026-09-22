@@ -6,14 +6,23 @@ import { useRouter } from "next/navigation";
 import {
   createPdfPageCapture,
   createPdfSelectionCapture,
+  createPdfTranslationCapture,
 } from "../../../captures/actions";
+import { translateSelection } from "../../../captures/translate-actions";
+import {
+  getTranslationLanguageLabel,
+  type TranslationLanguageCode,
+} from "@/lib/translation/types";
 import { PDF_PAGE_KIND } from "@/lib/captures/pdf-locator";
 
 import { saveReadingPosition } from "../../file-actions";
 import { PageMemoPanel } from "./page-memo-panel";
 import { PdfReader } from "./pdf-reader";
 import { readPdfSelection, type ReadSelection } from "./read-selection";
-import { SelectionPanel } from "./selection-panel";
+import {
+  SelectionPanel,
+  type TranslationSaveInput,
+} from "./selection-panel";
 
 /**
  * 뷰어와 나머지를 잇는 껍데기.
@@ -22,12 +31,13 @@ import { SelectionPanel } from "./selection-panel";
  * 그 둘을 여기서 잇는다. 뷰어를 다른 곳에서 쓰거나 저장 방식이 바뀌어도
  * 그리는 쪽은 손대지 않아도 된다.
  *
- * 여기가 맡는 일은 셋이다.
+ * 여기가 맡는 일은 넷이다.
  *   - 보던 자리 저장 (설계 문서 9.1절)
  *   - 고른 문장을 인용으로 남기기 (9.3절, 9.4절)
+ *   - 고른 문장을 옮겨 번역과 함께 남기기 (9.4절)
  *   - 지금 쪽에 메모 남기기 (22절의 `페이지 메모`)
  *
- * 세 번째가 스캔 이미지 PDF에서는 유일한 길이다. 고를 글자가 없기 때문이다.
+ * 마지막 것이 스캔 이미지 PDF에서는 유일한 길이다. 고를 글자가 없기 때문이다.
  */
 
 type SaveState = { phase: "idle" } | { phase: "saving" };
@@ -38,12 +48,20 @@ export function ReaderView({
   fileChecksum,
   initialPage,
   initialZoom,
+  translationEnabled,
 }: {
   sourceId: string;
   fileId: string;
   fileChecksum: string | null;
   initialPage: number;
   initialZoom: number | null;
+  /**
+   * 번역 기능이 설정되어 있는지. 서버가 판단해 내려준다.
+   *
+   * API 키가 있는지를 브라우저가 알 방법은 없고, 알아야 할 이유도 없다.
+   * 여기에 오는 것은 "쓸 수 있는가" 하나뿐이다.
+   */
+  translationEnabled: boolean;
 }) {
   const router = useRouter();
 
@@ -133,6 +151,62 @@ export function ReaderView({
 
     setSelection(null);
     afterSaved(`${page}쪽에서 인용을 남겼습니다.`);
+  }
+
+  /**
+   * 고른 문장을 옮긴다. (설계 문서 9.4절 2~3번)
+   *
+   * 옮기기만 하고 저장하지 않는다. 결과를 보고 저장할지 정하는 것은
+   * 다음 걸음이다. 그래서 여기서는 router.refresh()도 하지 않는다.
+   */
+  async function handleTranslate(
+    text: string,
+    language: TranslationLanguageCode,
+  ) {
+    const result = await translateSelection({ text, targetLanguage: language });
+
+    if (!result.ok) {
+      return { ok: false as const, message: result.message };
+    }
+
+    return {
+      ok: true as const,
+      translatedText: result.translatedText,
+      translatedAt: result.translatedAt,
+    };
+  }
+
+  /** 원문과 옮긴 글을 함께 기록으로 남긴다. (9.4절 4~5번) */
+  async function handleSaveTranslation(input: TranslationSaveInput) {
+    if (!selection) {
+      return;
+    }
+
+    setSave({ phase: "saving" });
+
+    const result = await createPdfTranslationCapture({
+      sourceId,
+      memo: input.memo,
+      locator: selection.locator,
+      targetLanguage: input.targetLanguage,
+      machineTranslatedText: input.machineTranslatedText,
+      translatedText: input.translatedText,
+      translatedAt: input.translatedAt,
+    });
+
+    setSave({ phase: "idle" });
+
+    if (!result.ok) {
+      setError(result.message);
+
+      return;
+    }
+
+    const page = selection.locator.page;
+    const languageLabel = getTranslationLanguageLabel(input.targetLanguage);
+
+    setSelection(null);
+    afterSaved(`${page}쪽 문장을 ${languageLabel} 번역과 함께 남겼습니다.`);
   }
 
   async function handleSaveMemo(memo: string) {
@@ -228,7 +302,10 @@ export function ReaderView({
           locator={selection.locator}
           anchor={selection.anchor}
           busy={save.phase === "saving"}
+          translationEnabled={translationEnabled}
+          onTranslate={handleTranslate}
           onSave={(memo) => void handleSaveQuote(memo)}
+          onSaveWithTranslation={(input) => void handleSaveTranslation(input)}
           onDismiss={() => {
             setSelection(null);
             window.getSelection()?.removeAllRanges();

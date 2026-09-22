@@ -122,8 +122,10 @@ export type Database = {
           original_text: string | null
           owner_id: string
           source_id: string | null
+          translated_at: string | null
           translated_text: string | null
           translation_language: string | null
+          translation_model: string | null
           translation_provider: string | null
           updated_at: string
           verification_status: Database["public"]["Enums"]["capture_verification_status"]
@@ -139,8 +141,10 @@ export type Database = {
           original_text?: string | null
           owner_id?: string
           source_id?: string | null
+          translated_at?: string | null
           translated_text?: string | null
           translation_language?: string | null
+          translation_model?: string | null
           translation_provider?: string | null
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["capture_verification_status"]
@@ -156,8 +160,10 @@ export type Database = {
           original_text?: string | null
           owner_id?: string
           source_id?: string | null
+          translated_at?: string | null
           translated_text?: string | null
           translation_language?: string | null
+          translation_model?: string | null
           translation_provider?: string | null
           updated_at?: string
           verification_status?: Database["public"]["Enums"]["capture_verification_status"]
@@ -540,7 +546,10 @@ export type Database = {
         | "note"
         | "handwriting"
         | "voice"
-      capture_verification_status: "user_written"
+      capture_verification_status:
+        | "user_written"
+        | "machine_generated"
+        | "user_edited"
       drive_connection_status: "connected" | "revoked" | "error"
       project_status: "active"
       project_visibility: "private"
@@ -703,7 +712,11 @@ export const Constants = {
         "handwriting",
         "voice",
       ],
-      capture_verification_status: ["user_written"],
+      capture_verification_status: [
+        "user_written",
+        "machine_generated",
+        "user_edited",
+      ],
       drive_connection_status: ["connected", "revoked", "error"],
       project_status: ["active"],
       project_visibility: ["private"],

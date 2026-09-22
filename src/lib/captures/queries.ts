@@ -2,7 +2,12 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
 import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
-import { isCaptureType, type CaptureType } from "./types";
+import {
+  isCaptureType,
+  isVerificationStatus,
+  type CaptureType,
+  type VerificationStatus,
+} from "./types";
 
 /**
  * Capture 조회 계층.
@@ -12,7 +17,7 @@ import { isCaptureType, type CaptureType } from "./types";
  */
 
 const CAPTURE_COLUMNS =
-  "id, source_id, capture_type, content, original_text, translated_text, translation_language, ai_generated, locator, created_at, updated_at";
+  "id, source_id, capture_type, content, original_text, translated_text, translation_language, translation_provider, translation_model, translated_at, ai_generated, verification_status, locator, created_at, updated_at";
 
 export type Capture = {
   id: string;
@@ -22,7 +27,14 @@ export type Capture = {
   originalText: string | null;
   translatedText: string | null;
   translationLanguage: string | null;
+  /** 무엇이 이 번역을 만들었는지. (설계 문서 9.4절) */
+  translationProvider: string | null;
+  translationModel: string | null;
+  /** 번역이 만들어진 시각. 나중에 고쳐도 움직이지 않는다. */
+  translatedAt: string | null;
   aiGenerated: boolean;
+  /** 사람이 쓴 것인지, 기계가 만든 그대로인지, 고친 것인지. */
+  verificationStatus: VerificationStatus;
   /** PDF에서 온 기록의 자리. 고른 문장이거나, 쪽만 가리키거나. 아니면 null. */
   pdfLocation: PdfLocator | null;
   createdAt: string;
@@ -37,7 +49,11 @@ type CaptureRow = {
   original_text: string | null;
   translated_text: string | null;
   translation_language: string | null;
+  translation_provider: string | null;
+  translation_model: string | null;
+  translated_at: string | null;
   ai_generated: boolean;
+  verification_status: string;
   locator: unknown;
   created_at: string;
   updated_at: string;
@@ -58,7 +74,18 @@ function toCapture(row: CaptureRow): Capture[] {
       originalText: row.original_text,
       translatedText: row.translated_text,
       translationLanguage: row.translation_language,
+      translationProvider: row.translation_provider,
+      translationModel: row.translation_model,
+      translatedAt: row.translated_at,
       aiGenerated: row.ai_generated,
+      /*
+        알 수 없는 값이면 "사람이 썼다"로 본다.
+        기계가 만들었다는 표시를 붙이려면 그렇다고 확인되어야 한다.
+        모르면서 붙이면 사람이 쓴 글에 기계 꼬리표가 달린다.
+      */
+      verificationStatus: isVerificationStatus(row.verification_status)
+        ? row.verification_status
+        : "user_written",
       // locator는 JSONB라 무엇이든 들어갈 수 있다. 읽는 쪽이 모양을 확인한다.
       pdfLocation: parsePdfLocator(row.locator),
       createdAt: row.created_at,

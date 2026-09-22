@@ -3,7 +3,14 @@ import Link from "next/link";
 import { linkCaptureToProject } from "@/app/(app)/projects/actions";
 import type { Capture } from "@/lib/captures/queries";
 import { locatorIsStale } from "@/lib/drive/file-check";
-import { getCaptureTypeLabel } from "@/lib/captures/types";
+import {
+  getCaptureTypeLabel,
+  getVerificationLabel,
+} from "@/lib/captures/types";
+import {
+  getTranslationLanguageLabel,
+  isTranslationLanguage,
+} from "@/lib/translation/types";
 import type { ProjectChip } from "@/lib/projects/queries";
 
 import { deleteCapture } from "./actions";
@@ -116,15 +123,29 @@ export function CaptureList({
           {capture.translatedText ? (
             <div className="flex flex-col gap-1">
               <p className="text-xs font-medium text-zinc-500">
-                옮긴 글
-                {capture.translationLanguage
-                  ? ` · ${capture.translationLanguage}`
-                  : null}
-                {capture.aiGenerated ? " · 기계 번역" : null}
+                {["옮긴 글", translationLanguageLabel(capture), verificationLabel(capture)]
+                  .filter((part) => part !== null)
+                  .join(" · ")}
               </p>
               <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-700 dark:text-zinc-300">
                 {capture.translatedText}
               </p>
+              {/*
+                설계 문서 9.4절: 번역 공급자, 모델, 언어, 생성 시각을 기록한다.
+                기록만 하고 보여주지 않으면 "무엇이 이 번역을 만들었는가"를
+                확인할 방법이 없다. 작게, 그러나 보이게 둔다.
+              */}
+              {capture.translationModel ? (
+                <p className="text-xs text-zinc-400">
+                  {capture.translationProvider
+                    ? `${capture.translationProvider} · `
+                    : null}
+                  {capture.translationModel}
+                  {capture.translatedAt
+                    ? ` · ${formatDateTime(capture.translatedAt)}`
+                    : null}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -192,6 +213,30 @@ export function CaptureList({
       ))}
     </ul>
   );
+}
+
+/**
+ * 어느 언어로 옮겼는지.
+ *
+ * 저장된 값은 "ko" 같은 코드다. 우리가 아는 코드면 사람이 읽는 이름으로
+ * 바꾸고, 모르는 값이면 저장된 그대로 보여준다. 예전에 손으로 적어 넣은
+ * 기록이나 나중에 다른 번역기가 남긴 값이 있을 수 있다.
+ */
+function translationLanguageLabel(capture: Capture): string | null {
+  const value = capture.translationLanguage;
+
+  if (!value) {
+    return null;
+  }
+
+  return isTranslationLanguage(value)
+    ? getTranslationLanguageLabel(value)
+    : value;
+}
+
+/** 기계가 만든 그대로인지, 사람이 손본 것인지. (설계 문서 9.4절) */
+function verificationLabel(capture: Capture): string | null {
+  return getVerificationLabel(capture.verificationStatus);
 }
 
 function formatDateTime(value: string): string {

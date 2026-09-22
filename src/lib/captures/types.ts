@@ -104,3 +104,47 @@ export function requiresOriginalText(type: CaptureType): boolean {
 export function requiresTranslation(type: CaptureType): boolean {
   return type === "translation";
 }
+
+type DatabaseVerificationStatus =
+  Database["public"]["Enums"]["capture_verification_status"];
+
+/**
+ * 이 글이 어디서 왔는지. (설계 문서 9.4절)
+ *
+ *   user_written       사람이 썼다.
+ *   machine_generated  기계가 만든 그대로. 사람이 확인하지 않았다.
+ *   user_edited        기계가 만든 것을 사람이 손봤다.
+ *
+ * 9.4절이 "수정본과 AI 원본을 구분할 수 있게 한다"고 한 것이 뒤의 둘이다.
+ * 이 구분이 없으면, 고친 번역과 고치지 않은 번역이 화면에서 똑같아 보인다.
+ */
+export const VERIFICATION_STATUSES = [
+  "user_written",
+  "machine_generated",
+  "user_edited",
+] as const satisfies readonly DatabaseVerificationStatus[];
+
+export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
+
+export function isVerificationStatus(
+  value: unknown,
+): value is VerificationStatus {
+  return (
+    typeof value === "string" &&
+    (VERIFICATION_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+/** 번역 옆에 붙일 짧은 꼬리표. 사람이 쓴 글에는 붙이지 않는다. */
+export function getVerificationLabel(
+  value: VerificationStatus,
+): string | null {
+  switch (value) {
+    case "machine_generated":
+      return "기계 번역 그대로";
+    case "user_edited":
+      return "기계 번역을 고침";
+    default:
+      return null;
+  }
+}

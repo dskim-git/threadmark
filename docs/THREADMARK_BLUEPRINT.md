@@ -271,12 +271,23 @@ note        출처 없는 독립 메모
 - `translated_text`
 - `translation_language`
 - `translation_provider`
+- `translation_model`
+- `translated_at`
 - `ai_generated`
 - `verification_status`
 - `locator` JSONB
 - `created_at`
 - `updated_at`
 - `deleted_at`
+
+`translation_model`과 `translated_at`은 13-C에서 더했다. 9.4절이 "번역 공급자, 모델,
+언어, 생성 시각을 기록한다"고 하는데 이 목록에 모델과 시각을 담을 자리가 없었다.
+공급자와 모델을 한 칸에 몰아 적으면 나중에 모델별로 찾아볼 수 없고, 생성 시각을
+`updated_at`으로 대신하면 번역문을 고치는 순간 언제 만들어진 번역인지 알 수 없게 된다.
+
+`verification_status`는 `user_written`, `machine_generated`, `user_edited` 셋이다.
+9.4절의 "수정본과 AI 원본을 구분할 수 있게 한다"를 맡는 값이고, 기계 번역문을 고치면
+데이터베이스 트리거가 `user_edited`로 옮긴다. 화면이 같이 보내주기를 기대하지 않는다.
 
 ### 6.3 위치 정보 예시
 

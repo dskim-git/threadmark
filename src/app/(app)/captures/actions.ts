@@ -16,6 +16,11 @@ import {
   formValue,
 } from "@/lib/captures/schema";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
+import {
+  ANTHROPIC_PROVIDER_NAME,
+  getAnthropicModel,
+} from "@/lib/translation/anthropic";
+import { isTranslationLanguage } from "@/lib/translation/types";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -141,6 +146,129 @@ export async function createPdfSelectionCapture(
 
   return { ok: true };
 }
+
+/**
+ * 고른 문장을 번역과 함께 기록으로 남긴다. (설계 문서 9.4절)
+ *
+ * 9.4절의 흐름 가운데 마지막 두 걸음이다.
+ *   4. 사용자가 `번역과 함께 저장`을 선택하면 Capture로 저장한다.
+ *   5. 번역 공급자, 모델, 언어, 생성 시각을 기록한다.
+ *
+ * 인용 저장과 나눠 담는 자리가 하나 더 있다.
+ *
+ *   PDF에서 고른 문장  ->  original_text   (자료가 한 말)
+ *   옮긴 글            ->  translated_text (기계가 만든 것)
+ *   사용자가 쓴 메모    ->  content         (내가 한 말)
+ *
+ * 세 가지가 섞이지 않는 것이 설계 문서 2.4절이 요구하는 것이다.
+ *
+ * 공급자와 모델은 화면이 보낸 값을 쓰지 않고 서버가 자기 설정에서 읽는다.
+ * 보안 원칙 2와 같은 생각이다. "무엇이 이 번역을 만들었는가"를 화면이 정할 수
+ * 있으면 그 값은 기록이 아니라 주장이 된다.
+ *
+ * 생성 시각만 화면이 보낸 값을 받는다. 번역한 때와 저장하는 때가 다르기
+ * 때문이다. 다만 앞날의 시각이거나 형태가 이상하면 버리고 지금 시각을 쓴다.
+ */
+const pdfTranslationSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  memo: z
+    .string()
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`)
+    .transform((value) => value.trim())
+    .transform((value) => (value.length > 0 ? value : null)),
+  locator: pdfSelectionLocatorSchema,
+  targetLanguage: z.string().refine(isTranslationLanguage, {
+    message: "옮긴 언어를 알 수 없습니다.",
+  }),
+  /** 번역기가 내놓은 그대로. 사람이 손댔는지 판단하는 데만 쓴다. */
+  machineTranslatedText: z
+    .string()
+    .trim()
+    .min(1, "번역 결과가 없습니다.")
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`),
+  /** 실제로 저장할 번역문. 사용자가 고쳤다면 고친 것이 여기에 온다. */
+  translatedText: z
+    .string()
+    .trim()
+    .min(1, "번역 결과가 없습니다.")
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`),
+  translatedAt: z.string(),
+});
+
+/** 앞날의 시각이거나 읽을 수 없는 형태면 지금 시각으로 바꾼다. */
+function trustedTranslatedAt(value: string, now: number): string {
+  const parsed = Date.parse(value);
+
+  if (Number.isNaN(parsed) || parsed > now) {
+    return new Date(now).toISOString();
+  }
+
+  return new Date(parsed).toISOString();
+}
+
+export async function createPdfTranslationCapture(
+  input: unknown,
+): Promise<PdfCaptureResult> {
+  await requireActiveAccount();
+
+  const parsed = pdfTranslationSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: firstIssueMessage(parsed.error) };
+  }
+
+  const {
+    sourceId,
+    memo,
+    locator,
+    targetLanguage,
+    machineTranslatedText,
+    translatedText,
+    translatedAt,
+  } = parsed.data;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
+    source_id: sourceId,
+    capture_type: "translation",
+    original_text: locator.selectedText,
+    translated_text: translatedText,
+    translation_language: targetLanguage,
+    // 화면이 보낸 값이 아니라 서버 설정에서 읽는다.
+    translation_provider: ANTHROPIC_PROVIDER_NAME,
+    translation_model: getAnthropicModel(),
+    translated_at: trustedTranslatedAt(translatedAt, Date.now()),
+    content: memo,
+    // 기계에서 나온 글이라는 표시. 설계 문서 9.4절의 "기계 번역임을 표시한다".
+    ai_generated: true,
+    /*
+      저장하기 전에 이미 고쳤다면 그 사실을 여기서 남긴다.
+      저장한 뒤에 고치는 경우는 트리거가 맡는다. 두 길 모두 막아두지 않으면
+      "AI 원본과 수정본을 구분한다"가 한쪽에서만 지켜진다.
+    */
+    verification_status:
+      translatedText === machineTranslatedText
+        ? "machine_generated"
+        : "user_edited",
+    locator,
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 번역 기록 생성 실패:", error.message);
+
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  revalidatePath(`/sources/${sourceId}`);
+
+  return { ok: true };
+}
+
 
 /**
  * 지금 보는 쪽에 메모를 남긴다. (설계 문서 22절의 `페이지 메모`)

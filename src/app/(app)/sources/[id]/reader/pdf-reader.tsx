@@ -415,7 +415,27 @@ export function PdfReader({
      * selectionchange는 드래그하는 내내 계속 불린다. 그때마다 창을 띄우면
      * 글을 고르는 동안 창이 따라다니며 깜빡인다.
      */
-    const onPointerUp = () => {
+    const onPointerUp = (event: PointerEvent) => {
+      /*
+        고른 문장 창 안을 누른 것은 여기서 다루지 않는다.
+
+        이 손질이 없으면 창이 쓸 수 없게 된다. 창 안의 입력란이나 버튼을
+        누르는 순간 브라우저가 문서의 선택을 풀고, 아래 판단이 그것을
+        "고른 글이 없어졌다"로 읽어 창을 닫아버린다. 번역을 고치려고
+        글상자를 누르면 창째로 사라지는 식이다.
+
+        창은 고른 글에 딸린 것이지 페이지의 일부가 아니다. 창을 누르는 것과
+        페이지의 다른 곳을 눌러 선택을 푸는 것은 다른 행동이다.
+      */
+      const target = event.target;
+
+      if (
+        target instanceof Element &&
+        target.closest("[data-reader-selection-panel]")
+      ) {
+        return;
+      }
+
       // 브라우저가 선택을 확정할 틈을 준다.
       window.setTimeout(() => {
         const pageElement = pageRef.current;

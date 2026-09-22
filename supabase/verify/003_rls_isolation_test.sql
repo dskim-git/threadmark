@@ -2086,6 +2086,271 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 44. 번역을 만든 공급자·모델·시각은 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 9.4절: 번역 공급자, 모델, 언어, 생성 시각을 기록한다.
+--
+-- 바꿀 수 있으면 그 값은 기록이 아니라 주장이다. "이 번역은 무엇이 만들었나"를
+-- 나중에 고칠 수 있으면, 기계가 만든 글을 사람이 쓴 것처럼 꾸밀 수 있다.
+--
+-- RLS는 "이 행이 내 것인가"만 본다. 내 행 안에서 어떤 칸을 어떻게 바꿀 수
+-- 있는지는 가드 트리거가 맡는다. 여기서 확인하는 것이 그 트리거다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_capture uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.captures
+    (owner_id, source_id, capture_type, original_text, translated_text,
+     translation_language, translation_provider, translation_model,
+     translated_at, ai_generated, verification_status)
+  values
+    (v_owner, v_source, 'translation'::public.capture_type,
+     'The student error is', '학생의 오류는',
+     'ko', 'anthropic', 'claude-sonnet-5',
+     pg_catalog.now(), true,
+     'machine_generated'::public.capture_verification_status)
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.captures
+    set translation_model = '내가 직접 옮김'
+    where id = v_capture;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 44 실패: 번역을 만든 모델을 나중에 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 45. 기계 번역을 고치면 확인 상태가 저절로 옮겨간다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 설계 문서 9.4절: 번역 결과는 사용자가 수정할 수 있다.
+--                  수정본과 AI 원본을 구분할 수 있게 한다.
+--
+-- 앞의 검사들이 막는 쪽만 보고 있으므로 여기서 여는 쪽을 본다.
+-- 고칠 수 없게 잠가버리면 9.4절을 어긴다.
+--
+-- 그리고 고친 뒤에도 machine_generated로 남아 있으면 그 구분은 이름뿐이다.
+-- 화면이 상태를 같이 보내주기를 기대하지 않고 트리거가 옮긴다.
+-- 보내주기를 잊는 화면이 하나라도 생기면 그때부터 기록이 거짓말을 한다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_capture uuid;
+  v_status  public.capture_verification_status;
+  v_text    text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.captures
+    (owner_id, source_id, capture_type, original_text, translated_text,
+     translation_language, translation_provider, translation_model,
+     translated_at, ai_generated, verification_status)
+  values
+    (v_owner, v_source, 'translation'::public.capture_type,
+     'The student error is', '학생의 오류는',
+     'ko', 'anthropic', 'claude-sonnet-5',
+     pg_catalog.now(), true,
+     'machine_generated'::public.capture_verification_status)
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  update public.captures
+  set translated_text = '학생이 저지른 오류는'
+  where id = v_capture;
+
+  select verification_status, translated_text into v_status, v_text
+  from public.captures where id = v_capture;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+
+  if v_text is distinct from '학생이 저지른 오류는' then
+    raise exception
+      '검사 45 실패: 기계 번역문을 고치지 못했습니다. 9.4절은 고칠 수 있어야 한다고 합니다.';
+  end if;
+
+  if v_status is distinct from 'user_edited'::public.capture_verification_status then
+    raise exception
+      '검사 45 실패: 번역을 고쳤는데도 확인 상태가 %입니다. user_edited여야 합니다.',
+      v_status;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 46. 확인 상태를 '기계가 만든 그대로'로 되돌릴 수 없다
+-- -----------------------------------------------------------------------------
+-- 되돌릴 수 있으면 사람이 손본 글을 다시 기계가 만든 것처럼 보이게 할 수 있고,
+-- 그러면 이 값으로 아무것도 판단할 수 없다. 검사 45의 반대쪽이다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_capture uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.captures
+    (owner_id, source_id, capture_type, original_text, translated_text,
+     translation_language, translation_provider, translation_model,
+     translated_at, ai_generated, verification_status)
+  values
+    (v_owner, v_source, 'translation'::public.capture_type,
+     'The student error is', '학생이 저지른 오류는',
+     'ko', 'anthropic', 'claude-sonnet-5',
+     pg_catalog.now(), true,
+     'user_edited'::public.capture_verification_status)
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.captures
+    set verification_status =
+      'machine_generated'::public.capture_verification_status
+    where id = v_capture;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 46 실패: 사람이 손본 번역을 기계가 만든 그대로로 되돌릴 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 47. 기계에서 나온 글이라는 표시를 지울 수 없다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 9.4절: 기계 번역임을 표시한다.
+--
+-- 사람이 전부 고쳐 썼더라도 출발점이 기계였다는 것은 그대로다.
+-- 지울 수 있으면 "이 글이 어디서 왔는가"가 남지 않는다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_capture uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.captures
+    (owner_id, source_id, capture_type, original_text, translated_text,
+     translation_language, translation_provider, translation_model,
+     translated_at, ai_generated, verification_status)
+  values
+    (v_owner, v_source, 'translation'::public.capture_type,
+     'The student error is', '학생의 오류는',
+     'ko', 'anthropic', 'claude-sonnet-5',
+     pg_catalog.now(), true,
+     'machine_generated'::public.capture_verification_status)
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.captures
+    set ai_generated = false
+    where id = v_capture;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 47 실패: 기계가 만든 글이라는 표시를 지울 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -2105,6 +2370,8 @@ select
     where status = 'ready'::public.source_file_status)                  as 보관된_파일,
   (select count(*) from public.source_files
     where status = 'missing'::public.source_file_status)                as 사라진_파일,
+  (select count(*) from public.captures
+    where deleted_at is null and ai_generated)                          as 기계_번역,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'
