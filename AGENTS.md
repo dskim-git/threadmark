@@ -50,7 +50,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 171개
+npm test          # node --test, 200개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -73,8 +73,8 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 12-B. 파일 업로드와 Source 연결 | Phase 3 | 완료 |
 | 12-B-2. 자료 등록과 동시에 업로드 | Phase 3 | 완료 |
 | 12-C. Google Picker | Phase 3 | 완료 |
-| **13-A. PDF 뷰어와 Drive 스트리밍** | Phase 4 | **코드 완료, 동작 확인 중** |
-| 13-B. 텍스트 선택과 Capture | Phase 4 | 예정 |
+| 13-A. PDF 뷰어와 Drive 스트리밍 | Phase 4 | 완료 |
+| **13-B. 텍스트 선택·페이지 메모와 Capture** | Phase 4 | **코드 완료, 동작 확인 중** |
 | 13-C. 선택 부분 번역 | Phase 4 | 예정 |
 | 13-D. 파일 변경 감지 | Phase 4 | 예정 |
 | 14. 논문 연구 기능 | Phase 5 | 예정 |
@@ -83,7 +83,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-13-A는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
+13-B는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -224,7 +224,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (171개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (200개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (41검사) |

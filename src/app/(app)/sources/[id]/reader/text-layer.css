@@ -1,0 +1,164 @@
+/*
+ * PDF.js 글자 층 스타일.
+ *
+ * node_modules/pdfjs-dist/web/pdf_viewer.css 에서 .textLayer 규칙만 옮겨 왔다.
+ * 옮겨온 버전: pdfjs-dist 6.3.289
+ *
+ * 통째로 가져오지 않는 이유는 그 파일이 6000줄이 넘고, 대부분이 우리가 쓰지 않는
+ * 도구모음과 주석 편집기 스타일이기 때문이다.
+ *
+ * 대신 베껴 온 것이 원본과 어긋나지 않는지 단위 검사가 지킨다.
+ * (tests/pdf-text-layer-css.test.mjs) PDF.js를 올렸는데 이 규칙이 바뀌었다면
+ * 그 검사가 실패하면서 알려준다. 손으로 고치지 말고 다시 옮겨 온다.
+ *
+ * 이 스타일이 어긋나면 보이지 않는 글자가 그림 위에 겹치지 않아서,
+ * 드래그해도 엉뚱한 문장이 잡히거나 아예 선택되지 않는다.
+ */
+.textLayer{
+  color-scheme:only light;
+
+  position:absolute;
+  text-align:initial;
+  inset:0;
+  overflow:clip;
+  opacity:1;
+  line-height:1;
+  letter-spacing:normal;
+  word-spacing:normal;
+  -webkit-text-size-adjust:none;
+     -moz-text-size-adjust:none;
+          text-size-adjust:none;
+  forced-color-adjust:none;
+  transform-origin:0 0;
+  caret-color:CanvasText;
+  z-index:0;
+
+  &.highlighting{
+    touch-action:none;
+  }
+
+  :is(span, br){
+    color:transparent;
+    position:absolute;
+    white-space:pre;
+    cursor:text;
+    transform-origin:0% 0%;
+    -webkit-user-select:text;
+       -moz-user-select:text;
+            user-select:text;
+  }
+  --min-font-size:1;
+  --text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv:calc(1 / var(--min-font-size));
+
+  > :not(.markedContent),
+  .markedContent span:not(.markedContent){
+    z-index:1;
+
+    --font-height:0;
+    font-size:calc(var(--text-scale-factor) * var(--font-height));
+
+    --scale-x:1;
+    --rotate:0deg;
+    transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+
+  .markedContent{
+    display:contents;
+  }
+
+  span[role="img"]{
+    -webkit-user-select:none;
+       -moz-user-select:none;
+            user-select:none;
+    cursor:default;
+  }
+
+  .highlight{
+    --highlight-bg-color:rgb(180 0 170 / 0.25);
+    --highlight-selected-bg-color:rgb(0 100 0 / 0.25);
+    --highlight-backdrop-filter:none;
+    --highlight-selected-backdrop-filter:none;
+
+    @media screen and (forced-colors: active){
+      --highlight-bg-color:transparent;
+      --highlight-selected-bg-color:transparent;
+      --highlight-backdrop-filter:var(--hcm-highlight-filter);
+      --highlight-selected-backdrop-filter:var(
+        --hcm-highlight-selected-filter
+      );
+    }
+
+    margin:-1px;
+    padding:1px;
+    background-color:var(--highlight-bg-color);
+    backdrop-filter:var(--highlight-backdrop-filter);
+    border-radius:4px;
+
+    &.appended{
+      position:initial;
+    }
+
+    &.begin{
+      border-radius:4px 0 0 4px;
+    }
+
+    &.end{
+      border-radius:0 4px 4px 0;
+    }
+
+    &.middle{
+      border-radius:0;
+    }
+
+    &.selected{
+      background-color:var(--highlight-selected-bg-color);
+      backdrop-filter:var(--highlight-selected-backdrop-filter);
+      scroll-margin-top:50px;
+    }
+  }
+
+  ::-moz-selection{
+    background:rgba(0 0 255 / 0.25);
+    background:color-mix(in srgb, AccentColor, transparent 50%);
+    color:transparent;
+  }
+
+  ::selection{
+    background:rgba(0 0 255 / 0.25);
+    background:color-mix(in srgb, AccentColor, transparent 50%);
+    color:transparent;
+  }
+
+  &.selectionRendering{
+    ::-moz-selection{
+      background:transparent;
+      color:transparent;
+    }
+    ::selection{
+      background:transparent;
+      color:transparent;
+    }
+  }
+  br::-moz-selection{
+    background:transparent;
+  }
+  br::selection{
+    background:transparent;
+  }
+
+  .endOfContent{
+    display:block;
+    position:absolute;
+    inset:100% 0 0;
+    z-index:0;
+    cursor:default;
+    -webkit-user-select:none;
+       -moz-user-select:none;
+            user-select:none;
+  }
+
+  &.selecting .endOfContent{
+    top:0;
+  }
+}

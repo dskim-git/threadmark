@@ -48,6 +48,19 @@ export default async function ReaderPage({
   const selected =
     readable.find((file) => file.id === requested) ?? readable[0] ?? null;
 
+  /*
+    기록 목록에서 "17쪽으로"를 누르고 들어온 경우다. (설계 문서 9.3절)
+    그 쪽에서 시작한다. 없으면 마지막으로 보던 자리에서 시작한다. (9.1절)
+
+    주소로 들어온 값이라 범위를 확인한다. 문서 쪽수는 열어봐야 알 수 있어서
+    상한은 뷰어가 열린 뒤에 다시 맞춘다.
+  */
+  const requestedPage = Number.parseInt(firstValue(query.page) ?? "", 10);
+  const startPage =
+    Number.isInteger(requestedPage) && requestedPage >= 1
+      ? requestedPage
+      : (selected?.lastPage ?? 1);
+
   return (
     <div className="flex flex-col gap-6">
       <nav className="text-sm">
@@ -98,8 +111,10 @@ export default async function ReaderPage({
             // 다른 파일을 고르면 뷰어를 새로 만든다.
             // 같은 컴포넌트를 재사용하면 앞 파일의 페이지 번호가 남는다.
             key={selected.id}
+            sourceId={source.id}
             fileId={selected.id}
-            initialPage={selected.lastPage ?? 1}
+            fileChecksum={selected.checksum}
+            initialPage={startPage}
             initialZoom={selected.lastZoom}
           />
         </>

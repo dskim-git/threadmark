@@ -45,9 +45,26 @@ export function CaptureList({
           className="flex flex-col gap-4 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
-              {getCaptureTypeLabel(capture.captureType)}
-            </span>
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
+                {getCaptureTypeLabel(capture.captureType)}
+              </span>
+
+              {/*
+                PDF에서 고른 기록이면 어느 쪽인지 보여주고, 그 자리로 돌아갈
+                길을 준다. 설계 문서 9.3절의 "해당 페이지 재이동"이다.
+                인용만 있고 어디서 왔는지 모르면 나중에 확인할 수가 없다.
+              */}
+              {capture.pdfLocation && capture.sourceId ? (
+                <Link
+                  href={`/sources/${capture.sourceId}/reader?file=${capture.pdfLocation.sourceFileId}&page=${capture.pdfLocation.page}`}
+                  className="rounded-full border border-black/[.08] px-2.5 py-0.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                >
+                  {capture.pdfLocation.page}쪽으로
+                </Link>
+              ) : null}
+            </div>
+
             <span className="text-xs text-zinc-500">
               {formatDateTime(capture.createdAt)}
             </span>

@@ -1,6 +1,7 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
+import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
 import { isCaptureType, type CaptureType } from "./types";
 
 /**
@@ -11,7 +12,7 @@ import { isCaptureType, type CaptureType } from "./types";
  */
 
 const CAPTURE_COLUMNS =
-  "id, source_id, capture_type, content, original_text, translated_text, translation_language, ai_generated, created_at, updated_at";
+  "id, source_id, capture_type, content, original_text, translated_text, translation_language, ai_generated, locator, created_at, updated_at";
 
 export type Capture = {
   id: string;
@@ -22,6 +23,8 @@ export type Capture = {
   translatedText: string | null;
   translationLanguage: string | null;
   aiGenerated: boolean;
+  /** PDF에서 온 기록의 자리. 고른 문장이거나, 쪽만 가리키거나. 아니면 null. */
+  pdfLocation: PdfLocator | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -35,6 +38,7 @@ type CaptureRow = {
   translated_text: string | null;
   translation_language: string | null;
   ai_generated: boolean;
+  locator: unknown;
   created_at: string;
   updated_at: string;
 };
@@ -55,6 +59,8 @@ function toCapture(row: CaptureRow): Capture[] {
       translatedText: row.translated_text,
       translationLanguage: row.translation_language,
       aiGenerated: row.ai_generated,
+      // locator는 JSONB라 무엇이든 들어갈 수 있다. 읽는 쪽이 모양을 확인한다.
+      pdfLocation: parsePdfLocator(row.locator),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     },

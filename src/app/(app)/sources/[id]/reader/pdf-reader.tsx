@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import "./text-layer.css";
+
 /**
  * PDF를 화면에 그린다. (설계 문서 9.1절)
  *
@@ -32,17 +34,98 @@ type LoadState =
   | { phase: "failed"; message: string };
 
 /** PDF.js에서 우리가 쓰는 부분만 적어둔다. 타입 정의를 따로 설치하지 않는다. */
+type PdfViewport = { width: number; height: number };
+
 type PdfPage = {
-  getViewport: (options: { scale: number }) => {
-    width: number;
-    height: number;
-  };
+  getViewport: (options: { scale: number }) => PdfViewport;
   render: (options: {
     canvasContext: CanvasRenderingContext2D;
-    viewport: { width: number; height: number };
+    viewport: PdfViewport;
   }) => { promise: Promise<void>; cancel: () => void };
+  /** 글자 층을 만드는 데 쓴다. 글자가 없는 스캔 PDF면 items가 비어 있다. */
+  getTextContent: () => Promise<{ items: unknown[] }>;
   cleanup: () => void;
 };
+
+type PdfTextLayer = {
+  render: () => Promise<void>;
+  cancel: () => void;
+};
+
+/**
+ * 글을 골랐을 때 부르는 함수.
+ *
+ * 페이지 영역과 지금 쪽 번호만 넘긴다. 무엇을 읽어낼지는 부르는 쪽이 정한다.
+ * 이 컴포넌트는 그리는 일과 어디를 그렸는지까지만 안다.
+ */
+type SelectionHandler = (
+  selection: { pageElement: HTMLElement; page: number } | null,
+) => void;
+
+/**
+ * 그림 위에 보이지 않는 글자를 겹쳐 놓는다.
+ *
+ * 이것이 있어야 드래그로 글을 고를 수 있다. (설계 문서 9.3절)
+ * 글자는 투명하고, 자리만 정확히 맞춰 놓는다.
+ *
+ * `--total-scale-factor`를 확대율과 같게 두는 것이 핵심이다.
+ * PDF.js의 스타일이 이 값으로 글자 크기를 계산한다. 어긋나면 글자가 엉뚱한
+ * 자리에 놓여, 드래그했을 때 보이는 것과 다른 문장이 잡힌다. 눈으로는
+ * 알아채기 어렵고 기록에 남는 원문이 조용히 틀어진다.
+ *
+ * 컴포넌트 바깥에 두는 이유는 draw의 useCallback 때문이다. 안에 두면 렌더마다
+ * 새 함수가 되어 의존성에 넣어야 하고, 그러면 기억해 두는 뜻이 사라진다.
+ */
+async function drawTextLayer(options: {
+  pdfjs: typeof import("pdfjs-dist") | null;
+  layer: HTMLDivElement | null;
+  target: PdfPage;
+  viewport: PdfViewport;
+  scale: number;
+  cssWidth: number;
+  cssHeight: number;
+}): Promise<{ textLayer: PdfTextLayer | null; hasText: boolean }> {
+  const { pdfjs, layer } = options;
+
+  if (!pdfjs || !layer) {
+    return { textLayer: null, hasText: true };
+  }
+
+  layer.replaceChildren();
+  layer.style.width = `${options.cssWidth}px`;
+  layer.style.height = `${options.cssHeight}px`;
+  layer.style.setProperty("--total-scale-factor", String(options.scale));
+
+  let content: { items: unknown[] };
+
+  try {
+    content = await options.target.getTextContent();
+  } catch {
+    return { textLayer: null, hasText: false };
+  }
+
+  // 글자가 하나도 없으면 스캔 이미지 PDF다. (설계 문서 9.5절)
+  // OCR은 MVP 범위 밖이라, 안내만 보여주고 페이지 메모는 쓸 수 있게 둔다.
+  if (content.items.length === 0) {
+    return { textLayer: null, hasText: false };
+  }
+
+  const textLayer = new pdfjs.TextLayer({
+    textContentSource: content,
+    container: layer,
+    viewport: options.viewport,
+  } as unknown as ConstructorParameters<
+    typeof pdfjs.TextLayer
+  >[0]) as unknown as PdfTextLayer;
+
+  try {
+    await textLayer.render();
+  } catch {
+    // 쪽을 넘기며 멈춘 경우다. 오류가 아니다.
+  }
+
+  return { textLayer, hasText: true };
+}
 
 type PdfDocument = {
   numPages: number;
@@ -68,22 +151,47 @@ export function PdfReader({
   initialPage,
   initialZoom,
   onPositionChange,
+  onSelectionChange,
+  onPageChange,
 }: {
   fileId: string;
   initialPage: number;
   initialZoom: number | null;
   /** 보던 자리가 바뀌었을 때. 부르는 쪽이 저장을 맡는다. */
   onPositionChange?: (page: number, zoom: number | null) => void;
+  /** 글을 골랐을 때. 고른 것이 없어지면 null로 부른다. */
+  onSelectionChange?: SelectionHandler;
+  /**
+   * 보는 쪽이 바뀔 때마다 곧바로 알린다.
+   *
+   * onPositionChange와 다르다. 저쪽은 저장을 위해 잠시 기다렸다 부르고,
+   * 이쪽은 화면이 "지금 몇 쪽인지" 알아야 해서 바로 부른다.
+   * 페이지 메모 버튼이 이 값을 쓴다.
+   */
+  onPageChange?: (page: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** 그려진 페이지 영역. 캔버스와 글자 층을 함께 담고 좌표의 기준이 된다. */
+  const pageRef = useRef<HTMLDivElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<PdfDocument | null>(null);
   /** 진행 중인 그리기. 페이지를 빠르게 넘길 때 앞의 것을 멈추는 데 쓴다. */
   const renderRef = useRef<{ cancel: () => void } | null>(null);
+  const textRenderRef = useRef<PdfTextLayer | null>(null);
+  /** PDF.js 모듈. 글자 층을 만들 때 다시 쓴다. */
+  const pdfjsRef = useRef<typeof import("pdfjs-dist") | null>(null);
 
   const [state, setState] = useState<LoadState>({ phase: "loading" });
   const [page, setPage] = useState(initialPage);
   const [zoom, setZoom] = useState<number | null>(initialZoom);
+  /**
+   * 이 쪽에 고를 수 있는 글자가 있는가.
+   *
+   * 스캔 이미지 PDF에는 글자 층이 없다. 설계 문서 9.5절이 그 경우 안내를
+   * 보여주라고 했다. OCR은 MVP 범위 밖이다.
+   */
+  const [hasText, setHasText] = useState(true);
 
   // -------------------------------------------------------------------------
   // 파일 열기
@@ -96,6 +204,9 @@ export function PdfReader({
       try {
         // 화면이 뜬 뒤에 불러온다. 서버에서는 이 라이브러리를 부를 수 없다.
         const pdfjs = await import("pdfjs-dist");
+
+        // 글자 층을 만들 때 다시 쓴다.
+        pdfjsRef.current = pdfjs;
 
         // PDF를 실제로 해석하는 일은 별도의 worker에서 돈다.
         // 그래야 문서가 커도 화면이 멈추지 않는다.
@@ -178,6 +289,7 @@ export function PdfReader({
     // 앞서 그리던 것이 있으면 멈춘다.
     // 페이지를 빠르게 넘기면 그리기가 겹쳐서 엉뚱한 쪽이 남는다.
     renderRef.current?.cancel();
+    textRenderRef.current?.cancel();
 
     let target: PdfPage;
 
@@ -202,10 +314,20 @@ export function PdfReader({
       return;
     }
 
+    const cssWidth = Math.floor(viewport.width);
+    const cssHeight = Math.floor(viewport.height);
+
     canvas.width = Math.floor(viewport.width * ratio);
     canvas.height = Math.floor(viewport.height * ratio);
-    canvas.style.width = `${Math.floor(viewport.width)}px`;
-    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+
+    // 페이지 영역을 그림과 같은 크기로 맞춘다.
+    // 좌표를 0~1 비율로 바꿀 때 이 영역이 기준이 된다. (설계 문서 6.3절)
+    if (pageRef.current) {
+      pageRef.current.style.width = `${cssWidth}px`;
+      pageRef.current.style.height = `${cssHeight}px`;
+    }
 
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
 
@@ -217,9 +339,25 @@ export function PdfReader({
       await task.promise;
     } catch {
       // 다음 쪽으로 넘어가며 멈춘 경우다. 오류가 아니다.
-    } finally {
       target.cleanup();
+
+      return;
     }
+
+    const rendered = await drawTextLayer({
+      pdfjs: pdfjsRef.current,
+      layer: textLayerRef.current,
+      target,
+      viewport,
+      scale,
+      cssWidth,
+      cssHeight,
+    });
+
+    textRenderRef.current = rendered.textLayer;
+    setHasText(rendered.hasText);
+
+    target.cleanup();
   }, [page, zoom]);
 
   useEffect(() => {
@@ -229,6 +367,79 @@ export function PdfReader({
 
     void draw();
   }, [draw, state.phase]);
+
+  // -------------------------------------------------------------------------
+  // 글 고르기
+  // -------------------------------------------------------------------------
+  /**
+   * 부르는 쪽의 함수를 ref에 담아둔다.
+   *
+   * draw 안에서도 불러야 하는데, 의존성에 넣으면 부모가 다시 그려질 때마다
+   * 페이지를 새로 그리게 된다.
+   */
+  // 처음부터 prop을 담지 않는다. 훅에 넘긴 값을 나중에 바꾸는 모양이 되면
+  // lint가 막는다. 비워 두고 effect에서 채운다.
+  const onSelectionChangeRef = useRef<SelectionHandler | undefined>(undefined);
+
+  useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onSelectionChange]);
+
+  // 쪽이나 배율이 바뀌면 앞서 고른 글은 의미가 없다.
+  // 그림이 다시 그려지면서 좌표도 달라지므로 창을 닫는다.
+  useEffect(() => {
+    onSelectionChangeRef.current?.(null);
+  }, [page, zoom]);
+
+  // 지금 몇 쪽인지 바로 알린다. 페이지 메모가 이 값을 쓴다.
+  const onPageChangeRef = useRef<((page: number) => void) | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    onPageChangeRef.current = onPageChange;
+  }, [onPageChange]);
+
+  useEffect(() => {
+    onPageChangeRef.current?.(page);
+  }, [page]);
+
+  useEffect(() => {
+    if (state.phase !== "ready") {
+      return;
+    }
+
+    /**
+     * 드래그가 끝난 뒤에 확인한다.
+     *
+     * selectionchange는 드래그하는 내내 계속 불린다. 그때마다 창을 띄우면
+     * 글을 고르는 동안 창이 따라다니며 깜빡인다.
+     */
+    const onPointerUp = () => {
+      // 브라우저가 선택을 확정할 틈을 준다.
+      window.setTimeout(() => {
+        const pageElement = pageRef.current;
+
+        if (!pageElement) {
+          return;
+        }
+
+        const selection = window.getSelection();
+
+        if (!selection || selection.isCollapsed) {
+          onSelectionChangeRef.current?.(null);
+
+          return;
+        }
+
+        onSelectionChangeRef.current?.({ pageElement, page });
+      }, 0);
+    };
+
+    document.addEventListener("pointerup", onPointerUp);
+
+    return () => document.removeEventListener("pointerup", onPointerUp);
+  }, [page, state.phase]);
 
   // 창 크기가 바뀌면 너비 맞춤을 다시 계산한다.
   // 확대율을 직접 고른 경우에는 건드리지 않는다.
@@ -477,19 +688,41 @@ export function PdfReader({
         ) : null}
 
         {/*
-          hidden으로 감추고 자리를 잡아둔다. 여는 동안 canvas를 아예 두지 않으면
-          그리려는 순간에 캔버스가 없어서 첫 쪽이 비어 보인다.
+          hidden으로 감추고 자리를 잡아둔다. 여는 동안 요소를 아예 두지 않으면
+          그리려는 순간에 대상이 없어서 첫 쪽이 비어 보인다.
+
+          이 영역이 좌표의 기준이다. 캔버스와 글자 층을 같은 크기로 겹쳐 둔다.
+          (설계 문서 6.3절: 좌표는 0~1 비율)
         */}
-        <canvas
-          ref={canvasRef}
+        <div
+          ref={pageRef}
           hidden={state.phase !== "ready"}
-          className="max-w-full shadow-sm"
-        />
+          className="relative shadow-sm"
+        >
+          <canvas ref={canvasRef} className="block" />
+          {/*
+            보이지 않는 글자가 여기에 놓인다. 스타일은 text-layer.css에 있고
+            PDF.js 원본에서 옮겨 온 것이다. 단위 검사가 원본과 맞는지 지킨다.
+          */}
+          <div ref={textLayerRef} className="textLayer" />
+        </div>
       </div>
 
+      {/*
+        설계 문서 9.5절. 텍스트 레이어가 없는 파일을 만나면 알린다.
+        OCR은 MVP 범위에서 제외되어 있다.
+      */}
+      {state.phase === "ready" && !hasText ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          이 PDF에서는 선택 가능한 텍스트를 찾지 못했습니다. 페이지 메모는
+          사용할 수 있으며 OCR 기능은 추후 지원됩니다.
+        </p>
+      ) : null}
+
       <p className="text-xs leading-5 text-zinc-500">
-        좌우 방향키로도 페이지를 넘길 수 있습니다. 파일은 선생님의 Google
-        Drive에 있고, 이 화면은 볼 때만 잠깐 받아옵니다.
+        좌우 방향키로도 페이지를 넘길 수 있습니다. 문장을 드래그하면 인용으로
+        남길 수 있습니다. 파일은 선생님의 Google Drive에 있고, 이 화면은 볼 때만
+        잠깐 받아옵니다.
       </p>
     </div>
   );

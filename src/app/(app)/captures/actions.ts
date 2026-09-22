@@ -6,6 +6,11 @@ import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import {
+  pdfPageLocatorSchema,
+  pdfSelectionLocatorSchema,
+} from "@/lib/captures/pdf-locator";
+import {
+  MAX_TEXT_LENGTH,
   captureInputSchema,
   firstIssueMessage,
   formValue,
@@ -63,6 +68,138 @@ function readInput(formData: FormData) {
 /** 기록을 남긴 뒤 돌아갈 곳. 자료에 붙였으면 그 자료로, 아니면 Inbox로. */
 function originFor(sourceId: string | null): string {
   return sourceId ? `/sources/${sourceId}` : "/inbox";
+}
+
+export type PdfCaptureResult = { ok: true } | { ok: false; message: string };
+
+/**
+ * PDF에서 고른 문장을 기록으로 남긴다. (설계 문서 9.3절, 9.4절)
+ *
+ * 다른 기록 동작과 달리 redirect를 하지 않고 값을 돌려준다.
+ * 읽던 자리를 잃지 않으려는 것이다. 한 문장 남길 때마다 화면이 넘어가면
+ * 다시 그 쪽을 찾아가야 한다.
+ *
+ * 설계 문서 2.4절대로 나눠 담는다.
+ *
+ *   PDF에서 고른 문장  ->  original_text  (자료가 한 말)
+ *   사용자가 쓴 메모    ->  content        (내가 한 말)
+ *
+ * 유형은 인용이다. 메모를 쓰지 않아도 인용으로 남는다. 인용은 원문이 있어야
+ * 하므로 데이터베이스 제약조건도 이 형태를 요구한다.
+ *
+ * 자료 확인은 따로 하지 않는다. 트리거 assert_source_owned가 남의 자료에
+ * 붙이려는 시도를 막는다. 그 확인을 여기서 흉내 내면 두 벌이 되고,
+ * 한쪽만 고쳐졌을 때 어느 쪽이 맞는지 알 수 없게 된다.
+ */
+const pdfCaptureSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  // 사용자가 적은 메모. 비어 있으면 인용만 남는다.
+  memo: z
+    .string()
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`)
+    .transform((value) => value.trim())
+    .transform((value) => (value.length > 0 ? value : null)),
+  locator: pdfSelectionLocatorSchema,
+});
+
+export async function createPdfSelectionCapture(
+  input: unknown,
+): Promise<PdfCaptureResult> {
+  await requireActiveAccount();
+
+  const parsed = pdfCaptureSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: firstIssueMessage(parsed.error) };
+  }
+
+  const { sourceId, memo, locator } = parsed.data;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
+    source_id: sourceId,
+    capture_type: "quote",
+    original_text: locator.selectedText,
+    content: memo,
+    // 어디서 가져온 말인지. 설계 문서 6.3절의 모양이다.
+    locator,
+  });
+
+  if (error) {
+    console.error("[ThreadMark] PDF 기록 생성 실패:", error.message);
+
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  // 자료 상세의 기록 목록이 바로 반영되게 한다.
+  revalidatePath(`/sources/${sourceId}`);
+
+  return { ok: true };
+}
+
+/**
+ * 지금 보는 쪽에 메모를 남긴다. (설계 문서 22절의 `페이지 메모`)
+ *
+ * 문장을 고르지 않고 쪽만 가리킨다. 스캔 이미지 PDF에는 고를 글자가 없어서
+ * 이 길이 유일하다. 9.5절의 안내문이 약속하는 것이 이것이다.
+ *
+ * 유형은 일반 메모다. 인용이 아니므로 원문 칸은 비운다.
+ * 설계 문서 2.4절의 구분을 지키려면, 자료가 한 말이 없을 때 그 칸을
+ * 비워두는 것이 맞다. 내가 쓴 글을 원문 칸에 넣으면 그 구분이 무너진다.
+ *
+ * 메모는 반드시 있어야 한다. 빈 메모는 남길 이유가 없고, captures 표도
+ * 내용이 하나는 있어야 한다는 제약을 걸고 있다.
+ */
+const pdfPageMemoSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  memo: z
+    .string()
+    .trim()
+    .min(1, "메모를 입력해 주세요.")
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`),
+  locator: pdfPageLocatorSchema,
+});
+
+export async function createPdfPageCapture(
+  input: unknown,
+): Promise<PdfCaptureResult> {
+  await requireActiveAccount();
+
+  const parsed = pdfPageMemoSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: firstIssueMessage(parsed.error) };
+  }
+
+  const { sourceId, memo, locator } = parsed.data;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
+    source_id: sourceId,
+    capture_type: "note",
+    content: memo,
+    locator,
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 페이지 메모 생성 실패:", error.message);
+
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  revalidatePath(`/sources/${sourceId}`);
+
+  return { ok: true };
 }
 
 export async function createCapture(formData: FormData): Promise<void> {
