@@ -8,11 +8,15 @@ import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projects/actions";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listCapturesForSource } from "@/lib/captures/queries";
+import { getDriveConnectionSummary } from "@/lib/drive/connection";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
+import { listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
 import { deleteSource } from "../actions";
+import { FileList } from "../file-list";
+import { FileUpload } from "../file-upload";
 
 export const metadata: Metadata = {
   title: "자료 · ThreadMark",
@@ -22,7 +26,7 @@ export default async function SourceDetailPage({
   params,
   searchParams,
 }: PageProps<"/sources/[id]">) {
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const { id } = await params;
   const source = await getSourceById(id);
@@ -33,12 +37,15 @@ export default async function SourceDetailPage({
     notFound();
   }
 
-  const [captures, linkedProjects, allProjects, query] = await Promise.all([
-    listCapturesForSource(source.id),
-    listProjectsForSource(source.id),
-    listProjectChips(),
-    searchParams,
-  ]);
+  const [captures, linkedProjects, allProjects, files, driveConnection, query] =
+    await Promise.all([
+      listCapturesForSource(source.id),
+      listProjectsForSource(source.id),
+      listProjectChips(),
+      listSourceFiles(source.id),
+      getDriveConnectionSummary(account.userId),
+      searchParams,
+    ]);
 
   const error = firstValue(query.error);
   const notice = firstValue(query.notice);
@@ -208,6 +215,36 @@ export default async function SourceDetailPage({
             </button>
           </form>
         ) : null}
+      </section>
+
+      {/*
+        파일 영역. 설계 문서 10.3절.
+
+        Drive에 연결되지 않아도 이 자료의 나머지 기능은 그대로 쓸 수 있다.
+        그래서 화면을 막지 않고 안내만 보여준다. (설계 문서 10.4절 마지막 줄)
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+          파일
+        </h2>
+
+        <FileList sourceId={source.id} files={files} />
+
+        {driveConnection?.status === "connected" ? (
+          <FileUpload sourceId={source.id} />
+        ) : (
+          <p className="rounded-lg border border-black/[.08] bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700 dark:border-white/[.145] dark:bg-white/[.04] dark:text-zinc-300">
+            {driveConnection
+              ? "Google Drive 연결을 다시 확인해야 파일을 올릴 수 있습니다. "
+              : "파일을 보관하려면 먼저 Google Drive를 연결해 주세요. "}
+            <Link
+              href="/settings/integrations"
+              className="underline underline-offset-2"
+            >
+              연결 설정으로 가기
+            </Link>
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">

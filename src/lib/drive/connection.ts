@@ -80,6 +80,49 @@ export async function getDriveConnectionSummary(
   };
 }
 
+/**
+ * 파일을 넣을 폴더를 찾는다.
+ *
+ * 업로드가 시작될 때 "이 파일을 Drive 어디에 둘 것인가"를 정하는 데 쓴다.
+ * 이름으로 찾지 못하면 루트 폴더를 돌려주고, 그것도 없으면 null이다.
+ * null이면 폴더를 지정하지 않고 올리며, 파일은 My Drive 최상위에 놓인다.
+ * 폴더가 없다는 이유로 업로드를 막지는 않는다.
+ *
+ * 폴더 식별자를 화면에 내보내지 않는 이유는 쓸 데가 없기 때문이다.
+ * 이 값은 서버가 Drive에 요청을 보낼 때만 필요하다.
+ */
+export async function getDriveFolderId(options: {
+  userId: string;
+  folderName: string | null;
+}): Promise<string | null> {
+  const supabase = createServiceClient();
+
+  const { data, error } = await supabase
+    .from("google_drive_connections")
+    .select("root_folder_id, folder_ids")
+    .eq("user_id", options.userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  const folderIds =
+    data.folder_ids && typeof data.folder_ids === "object"
+      ? (data.folder_ids as Record<string, unknown>)
+      : {};
+
+  if (options.folderName) {
+    const matched = folderIds[options.folderName];
+
+    if (typeof matched === "string" && matched.length > 0) {
+      return matched;
+    }
+  }
+
+  return data.root_folder_id;
+}
+
 /** 연결을 저장한다. 같은 사용자가 다시 연결하면 기존 행을 덮어쓴다. */
 export async function saveDriveConnection(options: {
   userId: string;

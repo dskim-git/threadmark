@@ -98,10 +98,19 @@ with checks(순번, 항목, 기대, 실제) as (
          'audit_profile_status_change', 'audit_user_role_change',
          'audit_app_setting_update',
          'rls_auto_enable',
-         -- 자료 삭제 표시 전용. sources 정책이 조회에서 삭제된 행을 제외하므로
-         -- PostgREST 갱신으로는 처리할 수 없어 함수로 분리했다.
-         'soft_delete_source'
+         -- 삭제 표시 전용 함수들.
+         -- 세 표의 조회 정책이 삭제된 행을 제외하는데, PostgREST는 갱신을 항상
+         -- RETURNING으로 감싸고 PostgreSQL은 그 갱신 결과에도 조회 정책을 적용한다.
+         -- 그래서 삭제 표시는 PostgREST 갱신으로 할 수 없다. 정책을 느슨하게 하는
+         -- 대신, 소유자와 승인 상태를 직접 확인하는 함수로 분리했다.
+         'soft_delete_source',
+         'soft_delete_capture',
+         'soft_delete_project'
        ))
+
+  -- source_files에는 이런 함수가 없다는 점을 적어둔다.
+  -- 그 표는 삭제 표시를 쓰지 않아 조회 정책에 deleted_at 조건이 없다.
+  -- 그래서 갱신 결과가 정책을 벗어날 일이 없고, 전용 함수도 필요 없다.
 
   union all
   select 10, 'search_path 고정 안 된 DEFINER 함수 없음', '0',

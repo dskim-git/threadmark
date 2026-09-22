@@ -47,7 +47,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 129개
+npm test          # node --test, 156개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -66,15 +66,15 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 9. Source | 완료 |
 | 10. Capture | 완료 |
 | 11. Project와 다대다 연결 | 완료 |
-| **12-A. Drive 연결·해제·폴더** | **코드 완료, 동작 확인 중** |
-| 12-B. 파일 업로드 | 예정 |
+| 12-A. Drive 연결·해제·폴더 | 완료 |
+| **12-B. 파일 업로드와 Source 연결** | **코드 완료, 동작 확인 중** |
 | 12-C. Google Picker | 예정 |
 | 13. YouTube·TMDB·Kakao 메타데이터 | 예정 |
 | 14. Claude 기반 AI | 예정 |
 | 15. 개인정보·계정 삭제 | 예정 |
 | 16. 최종 보안 점검과 배포 | 예정 |
 
-12-A까지 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
+12-B는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
 
 ## 5. 보안 원칙
 
@@ -134,6 +134,11 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 - **Google 동의 화면은 브랜드 인증 전까지 앱 이름 대신 리디렉션 URI의 도메인을 보여준다.**
   `supabase.co`는 소유 증명이 불가능하므로 자체 도메인 없이는 해결되지 않는다.
   블루프린트 4.3절에 기록했다.
+- **resumable 업로드 자리를 서버에서 잡을 때 `Origin` 헤더를 함께 보낸다.**
+  Google은 그 출처를 기억해 두었다가 그 주소에서 오는 브라우저 요청만 받아준다.
+  서버끼리 주고받을 때는 필요 없는 헤더라 정리하다 없애기 쉬운데, 없으면 자리는
+  만들어지고 브라우저 업로드만 CORS에서 막혀 진행률이 0%에서 멈춘다.
+  `createResumableUploadSession()`에 있다. 2026-09-22에 3001번에서 통과를 확인했다.
 
 ### 도구
 
@@ -150,10 +155,10 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (129개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (156개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (34검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (40검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
 격리 검사를 추가한다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,

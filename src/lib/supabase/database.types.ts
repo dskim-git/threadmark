@@ -325,6 +325,65 @@ export type Database = {
         }
         Relationships: []
       }
+      source_files: {
+        Row: {
+          byte_size: number
+          checksum: string | null
+          created_at: string
+          drive_file_id: string | null
+          drive_modified_at: string | null
+          file_name: string
+          id: string
+          last_verified_at: string | null
+          mime_type: string
+          origin: Database["public"]["Enums"]["source_file_origin"]
+          owner_id: string
+          source_id: string
+          status: Database["public"]["Enums"]["source_file_status"]
+          updated_at: string
+        }
+        Insert: {
+          byte_size: number
+          checksum?: string | null
+          created_at?: string
+          drive_file_id?: string | null
+          drive_modified_at?: string | null
+          file_name: string
+          id?: string
+          last_verified_at?: string | null
+          mime_type: string
+          origin?: Database["public"]["Enums"]["source_file_origin"]
+          owner_id?: string
+          source_id: string
+          status?: Database["public"]["Enums"]["source_file_status"]
+          updated_at?: string
+        }
+        Update: {
+          byte_size?: number
+          checksum?: string | null
+          created_at?: string
+          drive_file_id?: string | null
+          drive_modified_at?: string | null
+          file_name?: string
+          id?: string
+          last_verified_at?: string | null
+          mime_type?: string
+          origin?: Database["public"]["Enums"]["source_file_origin"]
+          owner_id?: string
+          source_id?: string
+          status?: Database["public"]["Enums"]["source_file_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_files_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       source_projects: {
         Row: {
           created_at: string
@@ -479,6 +538,8 @@ export type Database = {
       drive_connection_status: "connected" | "revoked" | "error"
       project_status: "active"
       project_visibility: "private"
+      source_file_origin: "upload"
+      source_file_status: "pending" | "ready"
       source_status: "active"
       source_type:
         | "paper"
@@ -640,6 +701,8 @@ export const Constants = {
       drive_connection_status: ["connected", "revoked", "error"],
       project_status: ["active"],
       project_visibility: ["private"],
+      source_file_origin: ["upload"],
+      source_file_status: ["pending", "ready"],
       source_status: ["active"],
       source_type: [
         "paper",

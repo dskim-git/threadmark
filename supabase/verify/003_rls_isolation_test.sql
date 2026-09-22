@@ -1565,6 +1565,334 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 35. 다른 사용자의 파일을 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- source_files는 파일 이름과 Drive 식별자를 담는다. 이 표가 새면 남이
+-- 어떤 자료를 보관하고 있는지 드러나고, Drive 식별자까지 함께 알려주게 된다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  if v_other is null then
+    raise exception '검사 35 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  -- 삽입 전에 클레임을 비운다. 비우지 않으면 소유자 고정 트리거가
+  -- owner_id를 앞선 검사에서 설정한 사용자로 덮어쓴다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.source_files
+    (owner_id, source_id, file_name, mime_type, byte_size)
+  values
+    (v_owner, v_source, '검사용.pdf', 'application/pdf', 1024);
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.source_files where source_id = v_source;
+
+  reset role;
+
+  delete from public.source_files where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception '검사 35 실패: 다른 사용자의 파일이 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 36. 다른 사용자의 자료에 파일을 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키 제약은 RLS를 보지 않는다. 자료 id만 알면 남의 자료에 자기 파일을
+-- 붙일 수 있게 되므로, set_source_file_owner 트리거가 참조 대상을 확인한다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_files
+      (source_id, file_name, mime_type, byte_size)
+    values
+      (v_source, '남의자료에.pdf', 'application/pdf', 1024);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_files where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 36 실패: 다른 사용자의 자료에 파일을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 37. 소유자는 자기 자료에 파일을 붙이고 읽을 수 있다
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- owner_id를 보내지 않는다. 트리거가 채우는지도 함께 본다.
+  insert into public.source_files
+    (source_id, file_name, mime_type, byte_size)
+  values
+    (v_source, '내자료.pdf', 'application/pdf', 2048);
+
+  select count(*) into v_seen
+  from public.source_files
+  where source_id = v_source and owner_id = v_owner;
+
+  reset role;
+
+  delete from public.source_files where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 37 실패: 소유자가 자기 자료에 파일을 붙이지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 38. 확인되지 않은 파일은 ready가 될 수 없다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 10.3절: 업로드 성공 후에만 ready로 바꾼다.
+-- 코드가 실수하더라도 가리킬 Drive 파일이 없는 ready는 저장되지 않아야 한다.
+-- 이것이 무너지면 화면에는 파일이 있다고 나오는데 열 수 없는 상태가 된다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_files
+      (source_id, status, file_name, mime_type, byte_size)
+    values
+      (v_source, 'ready'::public.source_file_status,
+       '확인안된.pdf', 'application/pdf', 1024);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_files where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 38 실패: Drive 파일 없이 ready 상태가 저장되었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 39. 파일이 붙은 자료를 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- source_id를 고칠 수 있으면, 확인을 마친 파일을 다른 자료로 옮길 수 있다.
+-- 자기 자료끼리라도 허용하지 않는다. 옮기려면 새로 붙이는 것이 맞다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_other   uuid;
+  v_file    uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료 A')
+  returning id into v_source;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료 B')
+  returning id into v_other;
+
+  insert into public.source_files
+    (owner_id, source_id, file_name, mime_type, byte_size)
+  values
+    (v_owner, v_source, '옮겨볼.pdf', 'application/pdf', 1024)
+  returning id into v_file;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.source_files set source_id = v_other where id = v_file;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_files where id = v_file;
+  delete from public.sources where id in (v_source, v_other);
+
+  if not v_blocked then
+    raise exception
+      '검사 39 실패: 파일이 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 40. 확인을 마친 파일을 다시 업로드 중으로 되돌릴 수 없다
+-- -----------------------------------------------------------------------------
+-- ready에서 pending으로 돌아갈 수 있으면 "확인했다"는 기록이 흔들린다.
+-- 파일을 바꾸려면 새 행을 만든다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_file    uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.source_files
+    (owner_id, source_id, status, drive_file_id, file_name, mime_type, byte_size)
+  values
+    (v_owner, v_source, 'ready'::public.source_file_status,
+     'verify-only-not-a-real-drive-id', '확인된.pdf', 'application/pdf', 1024)
+  returning id into v_file;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.source_files
+    set status = 'pending'::public.source_file_status
+    where id = v_file;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_files where id = v_file;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 40 실패: 확인을 마친 파일을 업로드 중으로 되돌릴 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -1580,6 +1908,8 @@ select
   (select count(*) from public.captures where deleted_at is null)       as 저장된_기록,
   (select count(*) from public.projects where deleted_at is null)       as 프로젝트,
   (select count(*) from public.source_projects)                         as 자료_연결,
+  (select count(*) from public.source_files
+    where status = 'ready'::public.source_file_status)                  as 보관된_파일,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'
