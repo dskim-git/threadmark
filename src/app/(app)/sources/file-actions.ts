@@ -456,6 +456,47 @@ export async function attachPickedFile(
 }
 
 /**
+ * 마지막으로 보던 자리를 기록한다. (설계 문서 9.1절)
+ *
+ * 편의를 위한 값이라, 실패해도 사용자에게 알리지 않는다.
+ * 읽는 중에 "저장하지 못했습니다"가 뜨면 방해만 된다.
+ * 다음에 열 때 1쪽에서 시작하는 것이 최악이고, 그건 견딜 만하다.
+ *
+ * RLS가 내 행만 갱신하게 한다. 남의 행은 0행이 갱신되고 조용히 끝난다.
+ * 가드 트리거도 이 두 칸은 막지 않는다. 바뀌어도 되는 값이기 때문이다.
+ */
+const readingPositionSchema = z.object({
+  fileId: z.uuid(),
+  page: z.number().int().min(1).max(100000),
+  // null은 "화면 너비에 맞춤"이다. 확대율을 고르지 않은 상태를 뜻한다.
+  zoom: z.number().min(0.25).max(8).nullable(),
+});
+
+export async function saveReadingPosition(input: unknown): Promise<void> {
+  await requireActiveAccount();
+
+  const parsed = readingPositionSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return;
+  }
+
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("source_files")
+    .update({
+      last_page: parsed.data.page,
+      last_zoom: parsed.data.zoom,
+    })
+    .eq("id", parsed.data.fileId);
+
+  if (error) {
+    console.error("[ThreadMark] 읽던 자리 저장 실패:", error.message);
+  }
+}
+
+/**
  * 첨부를 해제한다.
  *
  * 설계 문서 10.4절: Drive 파일이 사라져도 Source와 Capture는 유지한다.

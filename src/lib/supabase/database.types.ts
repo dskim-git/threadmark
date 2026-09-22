@@ -334,7 +334,9 @@ export type Database = {
           drive_modified_at: string | null
           file_name: string
           id: string
+          last_page: number | null
           last_verified_at: string | null
+          last_zoom: number | null
           mime_type: string
           origin: Database["public"]["Enums"]["source_file_origin"]
           owner_id: string
@@ -350,7 +352,9 @@ export type Database = {
           drive_modified_at?: string | null
           file_name: string
           id?: string
+          last_page?: number | null
           last_verified_at?: string | null
+          last_zoom?: number | null
           mime_type: string
           origin?: Database["public"]["Enums"]["source_file_origin"]
           owner_id?: string
@@ -366,7 +370,9 @@ export type Database = {
           drive_modified_at?: string | null
           file_name?: string
           id?: string
+          last_page?: number | null
           last_verified_at?: string | null
+          last_zoom?: number | null
           mime_type?: string
           origin?: Database["public"]["Enums"]["source_file_origin"]
           owner_id?: string

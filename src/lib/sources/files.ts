@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 const FILE_COLUMNS =
-  "id, source_id, status, origin, file_name, mime_type, byte_size, drive_file_id, checksum, drive_modified_at, created_at";
+  "id, source_id, status, origin, file_name, mime_type, byte_size, drive_file_id, checksum, drive_modified_at, created_at, last_page, last_zoom";
 
 export type SourceFileItem = {
   id: string;
@@ -27,7 +27,16 @@ export type SourceFileItem = {
   createdAt: string;
   /** 업로드가 끝나지 않은 채 오래 남아 있는가. 정리 안내를 띄우는 데 쓴다. */
   stale: boolean;
+  /** 마지막으로 보던 페이지. 없으면 1쪽에서 시작한다. (설계 문서 9.1절) */
+  lastPage: number | null;
+  /** 마지막 확대율. 없으면 화면 너비에 맞춘다. */
+  lastZoom: number | null;
 };
+
+/** 화면에서 열어볼 수 있는가. 지금은 PDF만 뷰어가 있다. */
+export function isReadable(file: SourceFileItem): boolean {
+  return file.status === "ready" && file.mimeType === "application/pdf";
+}
 
 /**
  * 한 자료에 붙은 파일을 오래된 순으로 돌려준다.
@@ -67,5 +76,53 @@ export async function listSourceFiles(
     driveModifiedAt: row.drive_modified_at,
     createdAt: row.created_at,
     stale: row.status === "pending" && isStalePending(row.created_at, now),
+    lastPage: row.last_page,
+    lastZoom: row.last_zoom,
   }));
+}
+
+/**
+ * 파일 하나를 가져온다. 없거나 내 것이 아니면 null이다.
+ *
+ * 뷰어 화면이 쓴다. 남의 파일을 요청했을 때 "없음"과 "권한 없음"을
+ * 구분하지 않는다. 구분하면 어떤 id가 존재하는지 알려주는 셈이 된다.
+ */
+export async function getSourceFileById(
+  id: string,
+): Promise<SourceFileItem | null> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("source_files")
+    .select(FILE_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[ThreadMark] 파일 조회 실패:", error.message);
+
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    status: data.status,
+    fileName: data.file_name,
+    mimeType: data.mime_type,
+    byteSize: data.byte_size,
+    driveFileId: data.drive_file_id,
+    checksum: data.checksum,
+    driveModifiedAt: data.drive_modified_at,
+    createdAt: data.created_at,
+    stale:
+      data.status === "pending" && isStalePending(data.created_at, new Date()),
+    lastPage: data.last_page,
+    lastZoom: data.last_zoom,
+  };
 }

@@ -1,5 +1,7 @@
+import Link from "next/link";
+
 import { driveViewUrl, formatByteSize } from "@/lib/drive/upload";
-import type { SourceFileItem } from "@/lib/sources/files";
+import { isReadable, type SourceFileItem } from "@/lib/sources/files";
 
 import { cleanupStaleUploads, detachSourceFile } from "./file-actions";
 
@@ -60,6 +62,20 @@ export function FileList({
             </div>
 
             <div className="flex shrink-0 items-center gap-3">
+              {/*
+                앱 안에서 읽는 길. (설계 문서 9.1절)
+                Drive에서 여는 것보다 앞에 둔다. 이쪽이 기본 동작이고,
+                페이지를 기억하고 앞으로 기록도 남길 수 있는 곳이다.
+              */}
+              {isReadable(file) ? (
+                <Link
+                  href={`/sources/${sourceId}/reader?file=${file.id}`}
+                  className="text-sm font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100"
+                >
+                  열기
+                </Link>
+              ) : null}
+
               {file.status === "ready" && file.driveFileId ? (
                 /*
                   Drive에서 열어보는 링크다. 파일을 공개하지 않는다.
