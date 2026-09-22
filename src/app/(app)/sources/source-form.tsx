@@ -1,28 +1,19 @@
 import Link from "next/link";
 
-import {
-  MAX_DESCRIPTION_LENGTH,
-  MAX_SUBTITLE_LENGTH,
-  MAX_TITLE_LENGTH,
-  MAX_URL_LENGTH,
-} from "@/lib/sources/schema";
-import { SOURCE_TYPES, getSourceTypeLabel } from "@/lib/sources/types";
-import type { SourceType } from "@/lib/sources/types";
+import { SourceFields, type SourceFieldValues } from "./source-fields";
 
-export type SourceFormValues = {
+export type SourceFormValues = SourceFieldValues & {
   id?: string;
-  type: SourceType;
-  title: string;
-  subtitle: string;
-  description: string;
-  originalUrl: string;
 };
 
 /**
- * 자료 등록과 수정이 같은 폼을 쓴다.
+ * 자료 수정 폼.
  *
- * 입력 한계는 검증 스키마의 상수를 그대로 가져온다. 화면과 서버가 다른 숫자를
- * 쓰면 사용자는 입력이 되는데 저장이 안 되는 상황을 겪는다.
+ * 입력 칸은 source-fields.tsx가 만든다. 여기서는 form과 버튼만 둔다.
+ *
+ * 자료 등록은 이 폼을 쓰지 않는다. 파일을 함께 올릴 수 있어야 하는데,
+ * 그러려면 "자료를 만든 다음 그 자료에 파일을 붙이는" 순서를 브라우저가
+ * 직접 다뤄야 한다. 그쪽은 new-source-form.tsx에 있다.
  */
 export function SourceForm({
   action,
@@ -50,71 +41,7 @@ export function SourceForm({
         </p>
       ) : null}
 
-      <Field label="자료 유형" htmlFor="type">
-        <select
-          id="type"
-          name="type"
-          defaultValue={values.type}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-        >
-          {SOURCE_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {getSourceTypeLabel(type)}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      <Field label="제목" htmlFor="title" required>
-        <input
-          id="title"
-          name="title"
-          type="text"
-          required
-          maxLength={MAX_TITLE_LENGTH}
-          defaultValue={values.title}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-        />
-      </Field>
-
-      <Field label="부제" htmlFor="subtitle">
-        <input
-          id="subtitle"
-          name="subtitle"
-          type="text"
-          maxLength={MAX_SUBTITLE_LENGTH}
-          defaultValue={values.subtitle}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-        />
-      </Field>
-
-      <Field
-        label="원본 주소"
-        htmlFor="originalUrl"
-        hint="http 또는 https로 시작하는 주소만 저장됩니다."
-      >
-        <input
-          id="originalUrl"
-          name="originalUrl"
-          type="url"
-          inputMode="url"
-          maxLength={MAX_URL_LENGTH}
-          placeholder="https://"
-          defaultValue={values.originalUrl}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-        />
-      </Field>
-
-      <Field label="설명" htmlFor="description">
-        <textarea
-          id="description"
-          name="description"
-          rows={6}
-          maxLength={MAX_DESCRIPTION_LENGTH}
-          defaultValue={values.description}
-          className="rounded-lg border border-black/[.08] bg-white px-3 py-2 text-sm leading-6 text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-        />
-      </Field>
+      <SourceFields values={values} />
 
       <div className="flex items-center gap-3">
         <button
@@ -131,35 +58,5 @@ export function SourceForm({
         </Link>
       </div>
     </form>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  hint,
-  required,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <label
-        htmlFor={htmlFor}
-        className="text-sm font-medium text-black dark:text-zinc-50"
-      >
-        {label}
-        {required ? (
-          <span className="ml-1 text-red-600 dark:text-red-400">*</span>
-        ) : null}
-      </label>
-      {children}
-      {hint ? <p className="text-xs text-zinc-500">{hint}</p> : null}
-    </div>
   );
 }

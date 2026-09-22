@@ -11,11 +11,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { MAX_TITLE_LENGTH } from "../src/lib/sources/schema.ts";
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
+  MAX_FILE_NAME_LENGTH,
   MAX_UPLOAD_BYTES,
   STALE_PENDING_MINUTES,
+  describeUnacceptableFile,
   driveViewUrl,
+  fileNameToTitle,
   folderNameForUpload,
   formatByteSize,
   isAllowedUploadMimeType,
@@ -146,6 +150,124 @@ test("이름이 지나치게 길면 잘라낸다", () => {
   const long = `${"가".repeat(400)}.pdf`;
 
   assert.equal(sanitizeFileName(long)?.length, 300);
+});
+
+// -----------------------------------------------------------------------------
+// 고르자마자 막는 것
+// -----------------------------------------------------------------------------
+// 자료를 만들면서 파일을 함께 올릴 때, 이 판단이 자료를 만들기 전에 일어난다.
+// 여기서 통과시키면 "자료만 덩그러니 생기고 파일은 못 올리는" 상태가 된다.
+
+function pickedFile(overrides = {}) {
+  return {
+    name: "논문.pdf",
+    size: 1024,
+    type: "application/pdf",
+    ...overrides,
+  };
+}
+
+test("올릴 수 있는 파일에는 거부 이유가 없다", () => {
+  assert.equal(describeUnacceptableFile(pickedFile()), null);
+  assert.equal(
+    describeUnacceptableFile(pickedFile({ name: "그림.png", type: "image/png" })),
+    null,
+  );
+});
+
+test("고른 파일이 조건에 맞지 않으면 이유를 돌려준다", () => {
+  assert.match(
+    describeUnacceptableFile(pickedFile({ size: 0 })) ?? "",
+    /빈 파일/,
+  );
+  assert.match(
+    describeUnacceptableFile(pickedFile({ size: MAX_UPLOAD_BYTES + 1 })) ?? "",
+    /100MB/,
+  );
+  assert.match(
+    describeUnacceptableFile(pickedFile({ type: "application/zip" })) ?? "",
+    /PDF와 이미지/,
+  );
+  assert.match(
+    describeUnacceptableFile(pickedFile({ name: "   " })) ?? "",
+    /파일 이름/,
+  );
+});
+
+test("고를 때와 보낼 때의 판단이 어긋나지 않는다", () => {
+  // 화면이 통과시킨 파일을 서버가 거부하면, 사용자는 "왜 되다 말지" 하게 된다.
+  // 두 판단의 기준이 같은지 확인한다.
+  const candidates = [
+    pickedFile(),
+    pickedFile({ size: 0 }),
+    pickedFile({ size: MAX_UPLOAD_BYTES }),
+    pickedFile({ size: MAX_UPLOAD_BYTES + 1 }),
+    pickedFile({ type: "image/svg+xml" }),
+    pickedFile({ type: "" }),
+    pickedFile({ name: "   " }),
+  ];
+
+  for (const candidate of candidates) {
+    const screenAccepts = describeUnacceptableFile(candidate) === null;
+    const serverAccepts = uploadStartSchema.safeParse({
+      sourceId: SOURCE_ID,
+      fileName: candidate.name,
+      mimeType: candidate.type,
+      byteSize: candidate.size,
+    }).success;
+
+    assert.equal(
+      screenAccepts,
+      serverAccepts,
+      `화면과 서버의 판단이 다르다: ${JSON.stringify(candidate)}`,
+    );
+  }
+});
+
+// -----------------------------------------------------------------------------
+// 파일 이름으로 제목 만들기
+// -----------------------------------------------------------------------------
+
+test("파일 이름에서 확장자를 떼고 밑줄을 공백으로 바꾼다", () => {
+  assert.equal(fileNameToTitle("벡터공간의_기저.pdf"), "벡터공간의 기저");
+  assert.equal(fileNameToTitle("논문.PDF"), "논문");
+});
+
+test("붙임표는 그대로 둔다", () => {
+  // 2026-03처럼 붙임표 자체가 뜻을 가지는 경우가 많다.
+  assert.equal(fileNameToTitle("2026-03-보고서.pdf"), "2026-03-보고서");
+});
+
+test("확장자가 없어도 제목을 만든다", () => {
+  assert.equal(fileNameToTitle("제목만있는파일"), "제목만있는파일");
+});
+
+test("쓸 만한 제목이 없으면 null을 돌려준다", () => {
+  // 어설프게 채우면 사용자가 지우고 다시 쓰는 수고만 는다.
+  assert.equal(fileNameToTitle(".pdf"), null);
+  assert.equal(fileNameToTitle("   "), null);
+  assert.equal(fileNameToTitle(""), null);
+});
+
+test("제목 한계를 넘는 제목을 만들지 않는다", () => {
+  // upload.ts는 sources 쪽 모듈을 가져오지 않는다. 브라우저 번들에 딸려
+  // 들어가는 것을 줄이려는 것이다. 대신 두 숫자의 관계를 여기서 지킨다.
+  // 이것이 깨지면 파일 이름으로 채운 제목이 저장에서 거부된다.
+  assert.ok(
+    MAX_FILE_NAME_LENGTH <= MAX_TITLE_LENGTH,
+    `파일 이름 한계(${MAX_FILE_NAME_LENGTH})가 제목 한계(${MAX_TITLE_LENGTH})보다 크다`,
+  );
+
+  const long = `${"가".repeat(400)}.pdf`;
+
+  assert.ok((fileNameToTitle(long) ?? "").length <= MAX_TITLE_LENGTH);
+});
+
+test("제목에도 숨은 제어 문자를 남기지 않는다", () => {
+  assert.equal(
+    fileNameToTitle(`보고서${String.fromCodePoint(0x202e)}fdp.exe`),
+    "보고서fdp",
+  );
 });
 
 // -----------------------------------------------------------------------------

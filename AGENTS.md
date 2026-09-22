@@ -31,6 +31,9 @@
 - `.env.local`을 읽어 화면에 출력하거나 수정하지 않는다.
 - 파괴적 명령(`db reset`, 데이터 삭제, 스키마 초기화)은 실행하지 않는다.
 - 각 단계가 끝나면 `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`를 모두 실행한다.
+  단, **`npm run build`는 개발 서버가 꺼져 있을 때만 돌린다.** 둘이 같은 `.next`를 쓴다.
+  켜져 있으면 꺼달라고 먼저 확인한다. (6절)
+- **개발 서버는 사용자가 직접 켜고 끈다.** 대신 켜거나 끄지 않는다.
 - 보고 형식: 구현 내용 / 파일 / 보안 결정 / 검사 결과 / 확인할 사항 / 다음 단계 /
   승인 필요한 명령 / 커밋 메시지 제안.
 
@@ -47,7 +50,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 156개
+npm test          # node --test, 164개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -67,14 +70,15 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 10. Capture | 완료 |
 | 11. Project와 다대다 연결 | 완료 |
 | 12-A. Drive 연결·해제·폴더 | 완료 |
-| **12-B. 파일 업로드와 Source 연결** | **코드 완료, 동작 확인 중** |
+| 12-B. 파일 업로드와 Source 연결 | 완료 |
+| 12-B-2. 자료 등록과 동시에 업로드 | 완료 |
 | 12-C. Google Picker | 예정 |
 | 13. YouTube·TMDB·Kakao 메타데이터 | 예정 |
 | 14. Claude 기반 AI | 예정 |
 | 15. 개인정보·계정 삭제 | 예정 |
 | 16. 최종 보안 점검과 배포 | 예정 |
 
-12-B는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
+12-B-2는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
 
 ## 5. 보안 원칙
 
@@ -149,13 +153,51 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
   항상 `active`로 시도하면 이미 `active`인 계정에서는 값이 바뀌지 않아 트리거가
   개입하지 않는다. 지금 값을 읽어 **다른 값**으로 시도해야 한다.
 
+### 개발 서버와 `.next`
+
+2026-09-22에 한나절을 여기서 잃었다. 둘 다 코드와 무관한 문제였는데 코드를 의심했다.
+
+- **개발 서버를 켜둔 채 `npm run build`를 돌리지 않는다.**
+  `next dev`와 `next build`가 같은 `.next` 폴더를 서로 다른 용도로 쓴다. 겹쳐 쓰면
+  서버가 들고 있는 모듈 목록과 디스크가 어긋난다. 증상은 엉뚱하다. 파일에 분명히
+  있는 함수를 두고 `... is not a function`이 난다.
+
+  2절이 단계마다 `npm run build`를 요구하므로 계속 마주친다.
+  **빌드 전에 개발 서버를 꺼달라고 먼저 확인한다.** 서버는 사용자가 직접 켜고 끈다.
+
+- **개발 서버를 강제 종료하지 않는다.** Windows에서 Node는 `Stop-Process -Force`
+  말고는 끄는 방법이 없는데, Turbopack이 `.next/dev`에 쓰던 중에 끊기면 캐시가
+  반쯤 쓰다 만 상태로 남는다. 그 상태를 물려받은 다음 서버는 **라우트를 하나도
+  못 찾아 모든 경로가 404가 된다.** `/login`처럼 건드린 적 없는 페이지까지 404면
+  이것을 의심한다.
+
+  어쩔 수 없이 강제 종료했다면 **`rm -rf .next`를 함께 한다.** 다음 실행이 10초쯤
+  느려지는 대신 깨진 캐시를 물려받지 않는다.
+
+- **증상으로 원인을 가린다.** `npm run lint`, `tsc`, `npm test`, `npm run build`가
+  모두 통과하는데 브라우저에서만 깨지면 코드가 아니라 **돌고 있는 서버**를 본다.
+
+- **`.next`를 지웠으면 `tsc`보다 `npm run build`를 먼저 돌린다.**
+  `PageProps`와 `LayoutProps`는 Next.js가 `.next/types/`에 만들어주는 전역 타입이다.
+  `.next`가 없으면 그 타입들이 없어서 `Cannot find name 'PageProps'`가 쏟아진다.
+  코드 문제가 아니라 순서 문제다. 빌드나 개발 서버를 한 번 돌리면 사라진다.
+
+### Next.js 16
+
+- **버전에 맞는 문서가 `node_modules/next/dist/docs/`에 있다.** 이 버전은 API와
+  규약이 예전과 다르다. 기억에 의존하지 말고 그 문서를 먼저 읽는다.
+  `middleware.ts`가 `proxy.ts`로 바뀐 것이 그런 예다.
+- **`agentRules`를 꺼 두었다.** (`next.config.ts`) 켜 두면 개발 서버가 뜰 때마다
+  `AGENTS.md`와 `CLAUDE.md`에 Next.js 안내문을 끼워 넣는다. 지침을 한 곳에 두고
+  사람이 관리한다는 약속과 어긋나서 껐다. 위의 문서 경로가 그 안내문의 핵심이었다.
+
 ## 7. 검증 자산
 
 `docs/VERIFICATION.md`에 전체 절차가 있다. 요약하면,
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (156개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (164개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (40검사) |

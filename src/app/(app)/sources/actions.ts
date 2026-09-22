@@ -54,15 +54,27 @@ function readInput(formData: FormData) {
   });
 }
 
-export async function createSource(formData: FormData): Promise<void> {
+export type CreateSourceResult =
+  | { ok: true; id: string }
+  | { ok: false; message: string };
+
+/**
+ * 자료를 만들고 그 id를 돌려준다.
+ *
+ * 다른 동작처럼 redirect로 끝내지 않는 이유가 있다.
+ * 자료 등록 화면은 파일을 함께 올릴 수 있는데, 파일을 붙이려면 방금 만든
+ * 자료의 id가 필요하다. 화면을 먼저 옮겨버리면 브라우저가 들고 있던 파일이
+ * 사라져서 붙일 수 없다. 그래서 id를 돌려주고, 화면 이동은 부르는 쪽이 정한다.
+ */
+export async function createSourceReturningId(
+  formData: FormData,
+): Promise<CreateSourceResult> {
   await requireActiveAccount("/sources/new");
 
   const parsed = readInput(formData);
 
   if (!parsed.success) {
-    redirectWithQuery("/sources/new", {
-      error: firstIssueMessage(parsed.error),
-    });
+    return { ok: false, message: firstIssueMessage(parsed.error) };
   }
 
   const input = parsed.data;
@@ -83,13 +95,16 @@ export async function createSource(formData: FormData): Promise<void> {
 
   if (error || !data) {
     console.error("[ThreadMark] 자료 생성 실패:", error?.message);
-    redirectWithQuery("/sources/new", {
-      error: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-    });
+
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
   }
 
   revalidatePath("/library");
-  redirect(`/sources/${data.id}`);
+
+  return { ok: true, id: data.id };
 }
 
 export async function updateSource(formData: FormData): Promise<void> {

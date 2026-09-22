@@ -11,6 +11,7 @@
 import { z } from "zod";
 
 // Node의 테스트 러너가 이 모듈을 직접 읽을 수 있도록 확장자를 명시한다.
+// 타입만 가져온다. 값을 가져오면 이 모듈이 sources 쪽 모듈을 함께 끌고 들어간다.
 import type { SourceType } from "../sources/types.ts";
 
 /**
@@ -142,6 +143,75 @@ export const uploadStartSchema = z.object({
 });
 
 export type UploadStartInput = z.infer<typeof uploadStartSchema>;
+
+/**
+ * 고른 파일을 올릴 수 없는 이유를 찾는다. 올릴 수 있으면 null이다.
+ *
+ * 서버도 uploadStartSchema로 같은 것을 확인한다. 여기서 한 번 더 보는 이유는
+ * 두 가지다. 올릴 수 없는 파일을 고른 사람이 왕복을 기다리지 않아도 되고,
+ * 자료를 만들면서 파일을 함께 올릴 때는 **자료를 만들기 전에** 걸러야
+ * "자료만 덩그러니 생기는" 일이 없다.
+ *
+ * File 자체가 아니라 필요한 속성만 받는다. 그래야 브라우저 없이 검사할 수 있다.
+ */
+export function describeUnacceptableFile(file: {
+  name: string;
+  size: number;
+  type: string;
+}): string | null {
+  if (file.size <= 0) {
+    return "빈 파일은 올릴 수 없습니다.";
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `파일이 ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB를 넘습니다. 지금 고른 파일은 ${formatByteSize(file.size)}입니다.`;
+  }
+
+  if (!isAllowedUploadMimeType(file.type)) {
+    return "PDF와 이미지(PNG, JPEG, WebP) 파일만 올릴 수 있습니다.";
+  }
+
+  if (sanitizeFileName(file.name) === null) {
+    return "파일 이름을 확인할 수 없습니다.";
+  }
+
+  return null;
+}
+
+/**
+ * 파일 이름에서 자료 제목을 만든다.
+ *
+ * 자료를 만들면서 파일을 고르면 제목 칸을 이것으로 채운다.
+ * 이미 적어둔 제목은 건드리지 않는다. 사용자가 쓴 것이 파일 이름보다 낫다.
+ *
+ * 확장자를 떼고 밑줄을 공백으로 바꾼다. 붙임표는 그대로 둔다.
+ * `2026-03-보고서`처럼 붙임표 자체가 뜻을 가지는 경우가 많기 때문이다.
+ *
+ * 쓸 만한 제목이 나오지 않으면 null을 돌려주고, 그때는 칸을 비워둔다.
+ * 어설프게 채우면 사용자가 지우고 다시 쓰는 수고만 는다.
+ */
+export function fileNameToTitle(fileName: string): string | null {
+  const cleaned = sanitizeFileName(fileName);
+
+  if (cleaned === null) {
+    return null;
+  }
+
+  const title = cleaned
+    .replace(/\.[A-Za-z0-9]{1,8}$/, "")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // sanitizeFileName이 이미 MAX_FILE_NAME_LENGTH로 잘라두었고, 확장자를 떼면
+  // 더 짧아지므로 여기서 다시 자를 필요는 없다.
+  //
+  // 다만 그 한계가 제목 한계(MAX_TITLE_LENGTH)를 넘지 않아야 저장이 된다.
+  // 두 숫자를 여기서 import로 묶지 않는 이유는, 그러면 이 모듈이 sources 쪽
+  // 모듈을 함께 끌고 들어가기 때문이다. 대신 단위 검사가 관계를 지킨다.
+  // (tests/drive-upload.test.mjs의 "제목 한계를 넘는 제목을 만들지 않는다")
+  return title.length > 0 ? title : null;
+}
 
 /**
  * 어느 폴더에 넣을지 정한다.
