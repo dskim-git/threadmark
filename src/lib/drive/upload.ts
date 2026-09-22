@@ -342,6 +342,44 @@ export function parseDriveFile(value: unknown): DriveFileFacts | null {
   };
 }
 
+/**
+ * Picker 화면에 보여줄 파일 종류.
+ *
+ * 올릴 수 없는 종류가 목록에 뜨면, 골랐다가 거부당하는 일이 생긴다.
+ * 고를 수 있는 것만 보여주는 편이 낫다.
+ */
+export const PICKER_MIME_TYPES = ALLOWED_UPLOAD_MIME_TYPES.join(",");
+
+/**
+ * 사용자가 Picker로 고른 Drive 파일을 붙일 수 있는지 본다.
+ *
+ * 업로드와 다른 점이 하나 있다. **크기 상한을 걸지 않는다.**
+ *
+ * 상한(100MB)은 "우리 앱을 거쳐 Drive로 보내는 것"에 대한 제한이었다.
+ * 고른 파일은 이미 사용자의 Drive에 있고, 우리는 그것을 가리키는 표지만 만든다.
+ * 이미 가지고 있는 파일을 크다는 이유로 못 쓰게 하는 것은 근거가 없다.
+ *
+ * 종류는 그대로 제한한다. 나중에 화면에서 열어 보여줄 수 없는 파일을
+ * 붙여두면, 목록에는 있는데 아무것도 할 수 없는 항목이 남는다.
+ */
+export function describePickedFileProblem(file: DriveFileFacts): string | null {
+  if (!isAllowedUploadMimeType(file.mimeType)) {
+    return "PDF와 이미지(PNG, JPEG, WebP)만 붙일 수 있습니다.";
+  }
+
+  // Google 문서나 스프레드시트에는 크기가 없다. 표에서 byte_size가 필수이기도 하고,
+  // 나중에 파일이 바뀌었는지 판단할 근거도 없어진다. (설계 문서 9.2절)
+  if (file.byteSize === null) {
+    return "크기를 알 수 없는 파일입니다. Google 문서와 스프레드시트는 아직 다루지 못합니다.";
+  }
+
+  if (sanitizeFileName(file.name) === null) {
+    return "파일 이름을 확인할 수 없습니다.";
+  }
+
+  return null;
+}
+
 /** 업로드를 완료로 인정하지 않은 이유. 화면 문구를 고르는 데 쓴다. */
 export type UploadRejection =
   | "name_mismatch"

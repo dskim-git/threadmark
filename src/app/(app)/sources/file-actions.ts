@@ -11,9 +11,11 @@ import { getDriveAccessToken, getDriveFolderId } from "@/lib/drive/connection";
 import { createResumableUploadSession, fetchDriveFile } from "@/lib/drive/files";
 import {
   STALE_PENDING_MINUTES,
+  describePickedFileProblem,
   describeUploadRejection,
   folderNameForUpload,
   isTrustedUploadSessionUrl,
+  sanitizeFileName,
   uploadStartSchema,
   verifyUploadedFile,
 } from "@/lib/drive/upload";
@@ -290,6 +292,167 @@ export async function finishFileUpload(
   revalidatePath(`/sources/${row.source_id}`);
 
   return { ok: true };
+}
+
+export type PickerSessionResult =
+  | { ok: true; accessToken: string; apiKey: string; appId: string }
+  | { ok: false; message: string };
+
+/**
+ * Google Picker를 열기 위한 값들을 내어준다. (설계 문서 10.2절)
+ *
+ * 여기서 12-B의 원칙 하나가 깨진다. 솔직하게 적어둔다.
+ *
+ *   업로드에서는 브라우저에 토큰을 주지 않았다. 자리 주소만 주면 됐기 때문이다.
+ *   Picker는 그렇게 할 수 없다. Google이 만든 화면이 브라우저 안에서 직접
+ *   Drive에 묻는 방식이라, 서버가 대신 물어줄 수 없다.
+ *
+ * 그래서 내어주되, 내어주는 것을 최소로 한다.
+ *
+ *   - refresh token은 절대 나가지 않는다. access token만 나간다.
+ *   - access token은 1시간짜리다. 저장하지 않으므로 화면을 닫으면 사라진다.
+ *   - 권한 범위는 drive.file 하나다. 이 앱이 만든 파일과 사용자가 직접 고른
+ *     파일 바깥은 이 토큰으로도 볼 수 없다. (설계 문서 10.6절)
+ *   - 사용자가 Picker를 열 때만 부른다. 화면을 열 때가 아니다.
+ *
+ * 설계 문서 2.3절이 최소 권한을 고집한 값이 여기서 드러난다.
+ * 토큰이 새어나가도 닿는 범위가 사용자의 Drive 전체가 아니라
+ * ThreadMark가 다루는 파일로 한정된다.
+ *
+ * API 키와 App ID는 NEXT_PUBLIC이라 어차피 공개되는 값이다. 그래도 여기서
+ * 함께 돌려주는 이유는, 설정이 빠졌을 때 한 자리에서 같은 문구로 알리기 위해서다.
+ * 브라우저가 각자 확인하면 "왜 아무 일도 안 일어나지"가 되기 쉽다.
+ */
+export async function createPickerSession(): Promise<PickerSessionResult> {
+  const account = await requireActiveAccount();
+
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY?.trim();
+  const appId = process.env.NEXT_PUBLIC_GOOGLE_PICKER_APP_ID?.trim();
+
+  if (!apiKey || !appId) {
+    console.error(
+      "[ThreadMark] NEXT_PUBLIC_GOOGLE_PICKER_API_KEY 또는 NEXT_PUBLIC_GOOGLE_PICKER_APP_ID가 없습니다.",
+    );
+
+    return {
+      ok: false,
+      message: "Drive에서 고르기 설정이 완료되지 않았습니다.",
+    };
+  }
+
+  const accessToken = await getDriveAccessToken(account.userId);
+
+  if (!accessToken) {
+    return { ok: false, message: SOURCE_FILES_UNAVAILABLE };
+  }
+
+  return { ok: true, accessToken, apiKey, appId };
+}
+
+const attachPickedSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  driveFileId: driveFileIdSchema,
+});
+
+export type AttachPickedResult =
+  | { ok: true; fileName: string }
+  | { ok: false; message: string };
+
+/**
+ * Picker로 고른 파일을 자료에 붙인다.
+ *
+ * 브라우저는 "이 식별자를 골랐다"고만 알려준다. 그 말을 그대로 적지 않는다.
+ * 업로드 때와 같이 **서버가 Drive에 직접 물어서** 이름·크기·종류를 받아 적는다.
+ * 브라우저가 보낸 이름과 크기는 아예 받지도 않는다. 받으면 믿고 싶어지기 때문이다.
+ *
+ * drive.file 권한이라 Picker에서 고르지 않은 파일은 서버도 읽지 못한다.
+ * 그래서 남의 파일 식별자를 넣어 봐야 "찾을 수 없다"로 끝난다.
+ *
+ * origin은 'picked'다. 사용자가 원래 가지고 있던 파일이라는 뜻이며,
+ * 나중에 정리 기능을 만들 때 우리가 손대면 안 되는 쪽이다.
+ */
+export async function attachPickedFile(
+  input: unknown,
+): Promise<AttachPickedResult> {
+  const account = await requireActiveAccount();
+
+  const parsed = attachPickedSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: firstIssueMessage(parsed.error) };
+  }
+
+  // 자료 확인을 Drive 호출보다 먼저 한다. 남의 자료에 붙이려는 요청이면
+  // Google에 아무것도 묻지 않고 끝난다.
+  const source = await getSourceById(parsed.data.sourceId);
+
+  if (!source) {
+    return { ok: false, message: "자료를 찾을 수 없습니다." };
+  }
+
+  const accessToken = await getDriveAccessToken(account.userId);
+
+  if (!accessToken) {
+    return { ok: false, message: SOURCE_FILES_UNAVAILABLE };
+  }
+
+  const lookup = await fetchDriveFile({
+    accessToken,
+    fileId: parsed.data.driveFileId,
+  });
+
+  if (lookup.outcome === "missing") {
+    return {
+      ok: false,
+      message: "Drive에서 그 파일을 찾지 못했습니다. 다시 골라 주세요.",
+    };
+  }
+
+  if (lookup.outcome === "failed") {
+    return { ok: false, message: GENERIC_FAILURE };
+  }
+
+  const problem = describePickedFileProblem(lookup.file);
+
+  if (problem) {
+    return { ok: false, message: problem };
+  }
+
+  // describePickedFileProblem이 통과시켰으므로 둘 다 값이 있다.
+  const fileName = sanitizeFileName(lookup.file.name) ?? lookup.file.name;
+  const byteSize = lookup.file.byteSize ?? 0;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("source_files").insert({
+    source_id: parsed.data.sourceId,
+    // 고른 파일은 Drive에 이미 있다. 확인도 방금 마쳤으므로 바로 ready다.
+    status: "ready",
+    origin: "picked",
+    drive_file_id: lookup.file.id,
+    file_name: fileName,
+    mime_type: lookup.file.mimeType,
+    byte_size: byteSize,
+    checksum: lookup.file.checksum,
+    drive_modified_at: lookup.file.modifiedAt,
+    last_verified_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    // 같은 파일을 같은 자료에 두 번 붙이는 경우다.
+    // (source_files_source_drive_file_key 부분 고유 인덱스)
+    if (error.code === "23505") {
+      return { ok: false, message: "이미 이 자료에 붙어 있는 파일입니다." };
+    }
+
+    console.error("[ThreadMark] 고른 파일 붙이기 실패:", error.message);
+
+    return { ok: false, message: GENERIC_FAILURE };
+  }
+
+  revalidatePath(`/sources/${parsed.data.sourceId}`);
+
+  return { ok: true, fileName };
 }
 
 /**

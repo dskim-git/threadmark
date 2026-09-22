@@ -1893,6 +1893,70 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 41. 파일이 어디에서 왔는지(origin)를 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- origin은 "우리가 지워도 되는 파일"과 "손대면 안 되는 파일"을 가른다.
+--
+--   upload  ThreadMark가 Drive에 만들었다.
+--   picked  사용자가 원래 가지고 있던 것을 Picker로 고른 것이다.
+--
+-- 이 값을 바꿀 수 있으면, 앞으로 만들 정리 기능이 사용자의 원래 파일을
+-- "우리가 만든 것"으로 보고 지워도 된다고 판단하게 된다.
+-- 자기 행이라도 막는다. 되돌리기 어려운 쪽이 자기 자료이기 때문이다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_file    uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.source_files
+    (owner_id, source_id, origin, status, drive_file_id,
+     file_name, mime_type, byte_size)
+  values
+    (v_owner, v_source, 'picked'::public.source_file_origin,
+     'ready'::public.source_file_status, 'verify-only-not-a-real-drive-id',
+     '원래가지고있던.pdf', 'application/pdf', 1024)
+  returning id into v_file;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.source_files
+    set origin = 'upload'::public.source_file_origin
+    where id = v_file;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_files where id = v_file;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 41 실패: 사용자가 원래 가지고 있던 파일을 우리가 만든 것으로 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================

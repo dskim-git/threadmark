@@ -630,12 +630,21 @@ ThreadMark/
 
 - OAuth client 이름: `ThreadMark Local Web`
 - 애플리케이션 유형: 웹 애플리케이션
-- 승인된 JavaScript 원본: `http://localhost:3000`, `https://thread-mark.vercel.app`
-- 승인된 리디렉션 URI: `http://localhost:3000/api/google-drive/callback`, `https://thread-mark.vercel.app/api/google-drive/callback`
+- 승인된 JavaScript 원본: `http://localhost:3000`, `http://localhost:3001`, `https://thread-mark.vercel.app`
+- 승인된 리디렉션 URI: `http://localhost:3000/api/google-drive/callback`, `http://localhost:3001/api/google-drive/callback`, `https://thread-mark.vercel.app/api/google-drive/callback`
 - callback 구현 위치: `src/app/api/google-drive/callback/route.ts`
 - Picker API key 이름: `ThreadMark Picker Local`
-- 웹사이트 제한: `http://localhost:3000/*`, `https://thread-mark.vercel.app/*`, `https://docs.google.com/*`
+- 웹사이트 제한: `http://localhost:3000/*`, `http://localhost:3001`, `http://localhost:3001/*`, `https://thread-mark.vercel.app/*`, `https://docs.google.com/*`
 - API 제한: Google Picker API, Google Drive API
+
+> **개발 서버는 3001번에서 뜬다.** 3000번은 다른 앱이 쓰고 있다.
+> 처음에는 3000번만 등록해 두었는데, Google은 주소를 글자 단위로 비교하며
+> 와일드카드를 받지 않는다. 그래서 포트가 다르면 완전히 다른 곳으로 본다.
+>
+> 이 때문에 두 번 막혔다. 12-A에서는 OAuth 리디렉션이, 12-C에서는 Picker의
+> API key가 걸렸다. Picker는 `The API developer key is invalid.`라는 문구를
+> 보여주는데, 키 값이 틀렸다는 뜻이 아니라 **그 주소에서는 못 쓴다**는 뜻이다.
+> 2026-09-22에 3001번을 모두 추가해 해결했다.
 - OAuth scope: `https://www.googleapis.com/auth/drive.file`
 - Google Picker App ID로 사용할 Google Cloud 숫자형 프로젝트 번호를 비공개로 확인·기록했다.
 - OAuth client secret, API key, 프로젝트 번호 등 환경별 값은 저장소에 커밋하지 않는다.

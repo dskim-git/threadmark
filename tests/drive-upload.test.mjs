@@ -16,7 +16,9 @@ import {
   ALLOWED_UPLOAD_MIME_TYPES,
   MAX_FILE_NAME_LENGTH,
   MAX_UPLOAD_BYTES,
+  PICKER_MIME_TYPES,
   STALE_PENDING_MINUTES,
+  describePickedFileProblem,
   describeUnacceptableFile,
   driveViewUrl,
   fileNameToTitle,
@@ -468,6 +470,67 @@ test("폴더를 지정하지 않았으면 위치를 따지지 않는다", () => 
       folderId: null,
     }),
     null,
+  );
+});
+
+// -----------------------------------------------------------------------------
+// Drive에서 고른 파일
+// -----------------------------------------------------------------------------
+
+test("Picker에는 붙일 수 있는 종류만 보여준다", () => {
+  // 목록에 뜬 파일을 골랐는데 거부당하면, 사용자는 왜 안 되는지 알 수 없다.
+  for (const mimeType of ALLOWED_UPLOAD_MIME_TYPES) {
+    assert.ok(
+      PICKER_MIME_TYPES.split(",").includes(mimeType),
+      `${mimeType}이 Picker 목록에서 빠졌다`,
+    );
+  }
+
+  assert.equal(PICKER_MIME_TYPES.split(",").length, ALLOWED_UPLOAD_MIME_TYPES.length);
+});
+
+test("고른 파일이 조건에 맞으면 붙일 수 있다", () => {
+  assert.equal(describePickedFileProblem(uploadedFile()), null);
+});
+
+test("다룰 수 없는 종류는 골라도 거부한다", () => {
+  assert.match(
+    describePickedFileProblem(uploadedFile({ mimeType: "application/zip" })) ?? "",
+    /PDF와 이미지/,
+  );
+});
+
+test("크기를 알 수 없는 파일은 거부한다", () => {
+  // Google 문서와 스프레드시트가 그렇다. 크기가 없으면 파일이 바뀌었는지
+  // 판단할 근거도 없다. (설계 문서 9.2절)
+  assert.match(
+    describePickedFileProblem(uploadedFile({ byteSize: null })) ?? "",
+    /크기를 알 수 없는/,
+  );
+});
+
+test("고른 파일에는 크기 상한을 걸지 않는다", () => {
+  // 상한은 "우리를 거쳐 Drive로 보내는 것"에 대한 제한이었다.
+  // 이미 사용자의 Drive에 있는 파일을 크다는 이유로 막을 근거가 없다.
+  const huge = uploadedFile({ byteSize: MAX_UPLOAD_BYTES * 10 });
+
+  assert.equal(describePickedFileProblem(huge), null);
+
+  // 반대로 올리는 쪽에는 그대로 상한이 걸린다.
+  assert.notEqual(
+    describeUnacceptableFile({
+      name: "큰파일.pdf",
+      size: MAX_UPLOAD_BYTES * 10,
+      type: "application/pdf",
+    }),
+    null,
+  );
+});
+
+test("이름을 확인할 수 없는 파일은 거부한다", () => {
+  assert.match(
+    describePickedFileProblem(uploadedFile({ name: "   " })) ?? "",
+    /파일 이름/,
   );
 });
 

@@ -50,7 +50,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 164개
+npm test          # node --test, 171개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -72,13 +72,13 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 12-A. Drive 연결·해제·폴더 | 완료 |
 | 12-B. 파일 업로드와 Source 연결 | 완료 |
 | 12-B-2. 자료 등록과 동시에 업로드 | 완료 |
-| 12-C. Google Picker | 예정 |
+| 12-C. Google Picker | 완료 |
 | 13. YouTube·TMDB·Kakao 메타데이터 | 예정 |
 | 14. Claude 기반 AI | 예정 |
 | 15. 개인정보·계정 삭제 | 예정 |
 | 16. 최종 보안 점검과 배포 | 예정 |
 
-12-B-2는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
+12-C는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
 
 ## 5. 보안 원칙
 
@@ -132,9 +132,21 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 - **Supabase는 `redirectTo`가 Redirect URL 허용 목록에 없으면 오류 없이 Site URL로
   돌려보낸다.** 로그인이 조용히 실패한다. 그래서 공급자에게 넘기는 주소는 고정하고
   돌아갈 경로는 쿠키로 전달한다.
-- **Google OAuth의 리디렉션 URI는 글자 단위로 비교하며 와일드카드가 없다.**
-  개발 포트가 바뀌면 그 주소를 Google Cloud에 등록해야 한다.
-  개발 환경에서는 등록해야 할 주소를 서버 로그에 출력한다.
+- **Google은 주소를 글자 단위로 비교하며 와일드카드를 받지 않는다.**
+  3000과 3001은 완전히 다른 곳이다. 이 하나 때문에 두 번 막혔다.
+
+  | 언제 | 어디 | 증상 |
+  | --- | --- | --- |
+  | 12-A | OAuth 리디렉션 URI | 로그인 후 돌아오지 못함 |
+  | 12-C | Picker API key의 웹사이트 제한 | `The API developer key is invalid.` |
+
+  **Picker의 그 문구는 키 값이 틀렸다는 뜻이 아니다.** 그 주소에서는 못 쓴다는
+  뜻이다. 키를 다시 발급하지 말고 Google Cloud의 웹사이트 제한을 먼저 본다.
+  `http://localhost:3001`과 `http://localhost:3001/*`를 **둘 다** 넣는다.
+  저장 후 퍼지는 데 1~5분 걸린다.
+
+  개발 환경에서는 등록해야 할 OAuth 주소를 서버 로그에 출력한다.
+  지금 등록된 값은 블루프린트 10.6절에 적어두었다.
 - **Google 동의 화면은 브랜드 인증 전까지 앱 이름 대신 리디렉션 URI의 도메인을 보여준다.**
   `supabase.co`는 소유 증명이 불가능하므로 자체 도메인 없이는 해결되지 않는다.
   블루프린트 4.3절에 기록했다.
@@ -197,10 +209,10 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (164개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (171개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (40검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (41검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
 격리 검사를 추가한다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,

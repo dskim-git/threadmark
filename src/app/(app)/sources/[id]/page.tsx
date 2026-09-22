@@ -15,6 +15,7 @@ import { getSourceById } from "@/lib/sources/queries";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
 import { deleteSource } from "../actions";
+import { DrivePickerButton } from "../drive-picker-button";
 import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
 
@@ -231,7 +232,15 @@ export default async function SourceDetailPage({
         <FileList sourceId={source.id} files={files} />
 
         {driveConnection?.status === "connected" ? (
-          <FileUpload sourceId={source.id} />
+          <>
+            <FileUpload sourceId={source.id} />
+            {/*
+              이미 Drive에 있는 파일을 붙이는 길. (설계 문서 10.2절)
+              올리기와 나란히 둔다. 사용자에게는 "파일을 붙인다"는 한 가지 일이고,
+              그 파일이 내 컴퓨터에 있느냐 Drive에 있느냐가 다를 뿐이다.
+            */}
+            <DrivePickerButton sourceId={source.id} />
+          </>
         ) : (
           <p className="rounded-lg border border-black/[.08] bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700 dark:border-white/[.145] dark:bg-white/[.04] dark:text-zinc-300">
             {driveConnection

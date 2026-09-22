@@ -538,7 +538,7 @@ export type Database = {
       drive_connection_status: "connected" | "revoked" | "error"
       project_status: "active"
       project_visibility: "private"
-      source_file_origin: "upload"
+      source_file_origin: "upload" | "picked"
       source_file_status: "pending" | "ready"
       source_status: "active"
       source_type:
@@ -701,7 +701,7 @@ export const Constants = {
       drive_connection_status: ["connected", "revoked", "error"],
       project_status: ["active"],
       project_visibility: ["private"],
-      source_file_origin: ["upload"],
+      source_file_origin: ["upload", "picked"],
       source_file_status: ["pending", "ready"],
       source_status: ["active"],
       source_type: [
