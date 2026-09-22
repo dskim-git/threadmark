@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { driveViewUrl, formatByteSize } from "@/lib/drive/upload";
-import { isReadable, type SourceFileItem } from "@/lib/sources/files";
+import { isOpenable, isReadable, type SourceFileItem } from "@/lib/sources/files";
 
 import { cleanupStaleUploads, detachSourceFile } from "./file-actions";
 
@@ -76,7 +76,7 @@ export function FileList({
                 </Link>
               ) : null}
 
-              {file.status === "ready" && file.driveFileId ? (
+              {isOpenable(file) && file.driveFileId ? (
                 /*
                   Drive에서 열어보는 링크다. 파일을 공개하지 않는다.
                   권한이 있는 사람에게만 열리며, 설계 문서 2.3절이 금지한
@@ -132,6 +132,12 @@ export function FileList({
 function statusText(file: SourceFileItem): string {
   if (file.status === "ready") {
     return "보관됨";
+  }
+
+  // 설계 문서 10.4절: 파일 이동·삭제를 구분해 표시한다.
+  // 연결이 끊긴 것과 파일이 없어진 것은 다른 일이고, 할 일도 다르다.
+  if (file.status === "missing") {
+    return "Drive에 없음 — 열어서 다시 확인할 수 있습니다";
   }
 
   return file.stale ? "중단됨 — 정리하거나 다시 올려 주세요" : "올리는 중…";

@@ -3,10 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
 import { isReadable, listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
 
+import { FileStatusNotice } from "./file-status-notice";
 import { ReaderView } from "./reader-view";
 
 export const metadata: Metadata = {
@@ -107,16 +109,37 @@ export default async function ReaderPage({
             </nav>
           ) : null}
 
-          <ReaderView
-            // 다른 파일을 고르면 뷰어를 새로 만든다.
-            // 같은 컴포넌트를 재사용하면 앞 파일의 페이지 번호가 남는다.
-            key={selected.id}
-            sourceId={source.id}
+          {/*
+            파일이 그대로인지 확인하고 아니면 알린다. (설계 문서 9.2절, 10.4절)
+            멀쩡할 때는 아무것도 보여주지 않는다.
+          */}
+          <FileStatusNotice
+            key={`notice-${selected.id}`}
             fileId={selected.id}
-            fileChecksum={selected.checksum}
-            initialPage={startPage}
-            initialZoom={selected.lastZoom}
+            shouldVerify={shouldVerify(selected.lastVerifiedAt, new Date())}
+            initialOutcome={
+              selected.status === "missing" ? "missing" : "unchanged"
+            }
+            lastVerifiedAt={selected.lastVerifiedAt}
           />
+
+          {selected.status === "missing" ? (
+            <p className="rounded-2xl bg-zinc-50 px-6 py-10 text-center text-sm text-zinc-500 dark:bg-white/[.04]">
+              Drive에 파일이 없어 열 수 없습니다. 이 자료에 남긴 기록은 그대로
+              있습니다.
+            </p>
+          ) : (
+            <ReaderView
+              // 다른 파일을 고르면 뷰어를 새로 만든다.
+              // 같은 컴포넌트를 재사용하면 앞 파일의 페이지 번호가 남는다.
+              key={selected.id}
+              sourceId={source.id}
+              fileId={selected.id}
+              fileChecksum={selected.checksum}
+              initialPage={startPage}
+              initialZoom={selected.lastZoom}
+            />
+          )}
         </>
       ) : (
         <div className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">

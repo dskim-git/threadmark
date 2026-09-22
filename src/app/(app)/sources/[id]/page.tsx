@@ -264,6 +264,13 @@ export default async function SourceDetailPage({
           captures={captures}
           returnTo={returnTo}
           projects={allProjects}
+          /*
+            기록에 적힌 checksum과 지금 파일의 checksum을 견주어
+            "위치가 달라졌을 수 있음"을 표시한다. (설계 문서 9.2절)
+          */
+          fileChecksums={Object.fromEntries(
+            files.map((file) => [file.id, file.checksum]),
+          )}
           emptyText="아직 이 자료에 남긴 기록이 없습니다."
         />
       </section>

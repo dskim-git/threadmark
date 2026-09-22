@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { linkCaptureToProject } from "@/app/(app)/projects/actions";
 import type { Capture } from "@/lib/captures/queries";
+import { locatorIsStale } from "@/lib/drive/file-check";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
 import type { ProjectChip } from "@/lib/projects/queries";
 
@@ -22,10 +23,18 @@ export function CaptureList({
   returnTo,
   emptyText,
   projects = [],
+  fileChecksums,
 }: {
   captures: Capture[];
   returnTo: string;
   emptyText: string;
+  /**
+   * 이 자료에 붙은 파일의 지금 checksum. 파일 id로 찾는다.
+   *
+   * 기록에 적힌 checksum과 견주어 "이 기록의 위치가 달라졌을 수 있다"를
+   * 가린다. (설계 문서 9.2절) 넘기지 않으면 그 표시를 하지 않는다.
+   */
+  fileChecksums?: Record<string, string | null>;
   /** 비어 있지 않으면 기록마다 프로젝트 연결 선택을 보여준다. */
   projects?: ProjectChip[];
 }) {
@@ -62,6 +71,29 @@ export function CaptureList({
                 >
                   {capture.pdfLocation.page}쪽으로
                 </Link>
+              ) : null}
+
+              {/*
+                설계 문서 9.2절: 파일이 교체된 경우 checksum을 비교하여
+                기존 annotation 위치가 달라질 수 있음을 표시한다.
+
+                기록은 그대로 둔다. 원문과 앞뒤 문맥이 함께 저장되어 있어서
+                (6.3절) 쪽 번호가 틀려도 그 문장을 다시 찾을 수 있다.
+                지우거나 고치는 것은 우리가 정할 일이 아니다.
+              */}
+              {capture.pdfLocation &&
+              fileChecksums &&
+              locatorIsStale({
+                locatorChecksum: capture.pdfLocation.fileChecksum,
+                fileChecksum:
+                  fileChecksums[capture.pdfLocation.sourceFileId] ?? null,
+              }) ? (
+                <span
+                  title="기록을 남긴 뒤 파일이 바뀌었습니다. 쪽 번호와 위치가 달라졌을 수 있습니다."
+                  className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                >
+                  위치가 달라졌을 수 있음
+                </span>
               ) : null}
             </div>
 

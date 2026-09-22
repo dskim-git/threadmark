@@ -286,6 +286,14 @@ export type DriveFileFacts = {
   checksum: string | null;
   modifiedAt: string | null;
   parents: string[];
+  /**
+   * 휴지통에 있는가.
+   *
+   * Drive는 휴지통에 있는 파일도 정상으로 돌려준다. 지워진 것이 아니라
+   * 표시만 붙기 때문이다. 이 값을 보지 않으면 사용자가 파일을 지웠는데도
+   * 우리는 멀쩡하다고 판단한다.
+   */
+  trashed: boolean;
 };
 
 /**
@@ -339,6 +347,9 @@ export function parseDriveFile(value: unknown): DriveFileFacts | null {
     checksum,
     modifiedAt,
     parents,
+    // 값이 없으면 휴지통에 없는 것으로 본다. fields에서 빠졌을 때
+    // 조용히 모든 파일을 휴지통으로 보는 일이 없게 한다.
+    trashed: body.trashed === true,
   };
 }
 

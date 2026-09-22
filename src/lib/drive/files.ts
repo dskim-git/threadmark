@@ -15,7 +15,15 @@ const DRIVE_UPLOAD_ENDPOINT =
   "https://www.googleapis.com/upload/drive/v3/files";
 
 /** 파일을 확인할 때 받아올 값. 설계 문서 9.2절이 저장하라고 한 것들이다. */
-const FILE_FIELDS = "id,name,mimeType,size,md5Checksum,modifiedTime,parents";
+/**
+ * 파일을 확인할 때 받아올 값. 설계 문서 9.2절이 저장하라고 한 것들이다.
+ *
+ * `trashed`를 빠뜨리면 안 된다. Drive는 휴지통에 있는 파일도 **정상으로**
+ * 돌려준다. 지워진 것이 아니라 표시만 붙기 때문이다. 이 값을 받지 않으면
+ * 사용자가 파일을 지웠는데도 우리는 멀쩡하다고 판단한다.
+ */
+const FILE_FIELDS =
+  "id,name,mimeType,size,md5Checksum,modifiedTime,parents,trashed";
 
 /**
  * 업로드 자리를 잡는다.

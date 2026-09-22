@@ -50,7 +50,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 200개
+npm test          # node --test, 213개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -74,16 +74,16 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 12-B-2. 자료 등록과 동시에 업로드 | Phase 3 | 완료 |
 | 12-C. Google Picker | Phase 3 | 완료 |
 | 13-A. PDF 뷰어와 Drive 스트리밍 | Phase 4 | 완료 |
-| **13-B. 텍스트 선택·페이지 메모와 Capture** | Phase 4 | **코드 완료, 동작 확인 중** |
+| 13-B. 텍스트 선택·페이지 메모와 Capture | Phase 4 | 완료 |
 | 13-C. 선택 부분 번역 | Phase 4 | 예정 |
-| 13-D. 파일 변경 감지 | Phase 4 | 예정 |
+| **13-D. 파일 변경·삭제 감지** | Phase 4 | **코드 완료, 동작 확인 중** |
 | 14. 논문 연구 기능 | Phase 5 | 예정 |
 | 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-13-B는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
+13-D는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -110,6 +110,8 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 5. **레이아웃의 확인만 믿지 않는다.** Next.js 레이아웃은 형제 경로 이동 시 다시
    실행되지 않을 수 있다. 각 페이지와 Server Action이 직접 확인한다.
 6. **막는 것과 여는 것을 모두 검사한다.** 막는 것만 보면 과잉 차단을 놓친다.
+   같은 이유로 **확인하는 수단을 결과에 묶지 않는다.** 문제가 있을 때만
+   `다시 확인` 버튼을 보여줬더니, 문제를 발견할 방법 자체가 없었다. (13-D)
 7. **모르면 거부한다.** 조회 실패, 값 없음, 예상 밖 값은 전부 접근 거부.
 8. `proxy.ts`에는 인가 판단을 두지 않는다. 세션 갱신만 한다.
 9. 없는 자료와 남의 자료를 구분하지 않는다. 둘 다 404.
@@ -165,6 +167,13 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 - **Google 동의 화면은 브랜드 인증 전까지 앱 이름 대신 리디렉션 URI의 도메인을 보여준다.**
   `supabase.co`는 소유 증명이 불가능하므로 자체 도메인 없이는 해결되지 않는다.
   블루프린트 4.3절에 기록했다.
+- **Drive는 휴지통에 있는 파일도 정상으로 돌려준다.** 지워진 것이 아니라
+  `trashed` 표시만 붙는다. `files.get`의 `fields`에 `trashed`를 넣지 않으면,
+  사용자가 파일을 지웠는데도 우리는 멀쩡하다고 판단한다. 내용도 그대로 받아진다.
+  404가 나는 것은 **영구 삭제**된 뒤다.
+
+  2026-09-22에 13-D를 만들고 나서야 발견했다. 파일을 휴지통에 넣고 확인했는데
+  아무 일도 없었다. `FILE_FIELDS`에 `trashed`가 있는지 먼저 본다.
 - **resumable 업로드 자리를 서버에서 잡을 때 `Origin` 헤더를 함께 보낸다.**
   Google은 그 출처를 기억해 두었다가 그 주소에서 오는 브라우저 요청만 받아준다.
   서버끼리 주고받을 때는 필요 없는 헤더라 정리하다 없애기 쉬운데, 없으면 자리는
@@ -224,10 +233,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (200개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (213개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (41검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (43검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
 격리 검사를 추가한다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,

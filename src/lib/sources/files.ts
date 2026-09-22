@@ -13,17 +13,19 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 const FILE_COLUMNS =
-  "id, source_id, status, origin, file_name, mime_type, byte_size, drive_file_id, checksum, drive_modified_at, created_at, last_page, last_zoom";
+  "id, source_id, status, origin, file_name, mime_type, byte_size, drive_file_id, checksum, drive_modified_at, last_verified_at, created_at, last_page, last_zoom";
 
 export type SourceFileItem = {
   id: string;
-  status: "pending" | "ready";
+  status: "pending" | "ready" | "missing";
   fileName: string;
   mimeType: string;
   byteSize: number;
   driveFileId: string | null;
   checksum: string | null;
   driveModifiedAt: string | null;
+  /** 마지막으로 Drive에 물어본 시각. 없으면 아직 확인한 적이 없다. */
+  lastVerifiedAt: string | null;
   createdAt: string;
   /** 업로드가 끝나지 않은 채 오래 남아 있는가. 정리 안내를 띄우는 데 쓴다. */
   stale: boolean;
@@ -33,9 +35,26 @@ export type SourceFileItem = {
   lastZoom: number | null;
 };
 
-/** 화면에서 열어볼 수 있는가. 지금은 PDF만 뷰어가 있다. */
+/**
+ * 뷰어가 다룰 수 있는 파일인가. 지금은 PDF만이다.
+ *
+ * 사라진 파일도 포함한다. 열어보면 "Drive에서 찾지 못했습니다"와 함께
+ * `다시 확인`을 보여줘야 하기 때문이다. 목록에서 아예 빼버리면 되살린 뒤에도
+ * 들어갈 길이 없다. (설계 문서 10.4절: 복구 가능한 오류 상태)
+ *
+ * 아직 올라가는 중인 파일은 뺀다. 그것은 열 수 있는 상태가 아니다.
+ */
 export function isReadable(file: SourceFileItem): boolean {
-  return file.status === "ready" && file.mimeType === "application/pdf";
+  if (file.mimeType !== "application/pdf") {
+    return false;
+  }
+
+  return file.status === "ready" || file.status === "missing";
+}
+
+/** 지금 실제로 열리는가. 사라진 파일은 목록에 있어도 열리지 않는다. */
+export function isOpenable(file: SourceFileItem): boolean {
+  return isReadable(file) && file.status === "ready";
 }
 
 /**
@@ -74,6 +93,7 @@ export async function listSourceFiles(
     driveFileId: row.drive_file_id,
     checksum: row.checksum,
     driveModifiedAt: row.drive_modified_at,
+    lastVerifiedAt: row.last_verified_at,
     createdAt: row.created_at,
     stale: row.status === "pending" && isStalePending(row.created_at, now),
     lastPage: row.last_page,
@@ -119,6 +139,7 @@ export async function getSourceFileById(
     driveFileId: data.drive_file_id,
     checksum: data.checksum,
     driveModifiedAt: data.drive_modified_at,
+    lastVerifiedAt: data.last_verified_at,
     createdAt: data.created_at,
     stale:
       data.status === "pending" && isStalePending(data.created_at, new Date()),

@@ -8,6 +8,10 @@ import { z } from "zod";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { originFromHeaders } from "@/lib/auth/request-url";
 import { getDriveAccessToken, getDriveFolderId } from "@/lib/drive/connection";
+import {
+  compareDriveFile,
+  type FileCheck,
+} from "@/lib/drive/file-check";
 import { createResumableUploadSession, fetchDriveFile } from "@/lib/drive/files";
 import {
   STALE_PENDING_MINUTES,
@@ -412,6 +416,15 @@ export async function attachPickedFile(
     return { ok: false, message: GENERIC_FAILURE };
   }
 
+  // 휴지통에 있는 파일을 붙이면 목록에 있는데 열리지 않는 항목이 남는다.
+  // Picker는 휴지통 파일을 보여주지 않지만, 보여준다고 가정하지 않는다.
+  if (lookup.file.trashed) {
+    return {
+      ok: false,
+      message: "휴지통에 있는 파일은 붙일 수 없습니다. 먼저 복원해 주세요.",
+    };
+  }
+
   const problem = describePickedFileProblem(lookup.file);
 
   if (problem) {
@@ -494,6 +507,134 @@ export async function saveReadingPosition(input: unknown): Promise<void> {
   if (error) {
     console.error("[ThreadMark] 읽던 자리 저장 실패:", error.message);
   }
+}
+
+export type FileCheckResult =
+  | { ok: true; outcome: FileCheck["outcome"] }
+  | { ok: false; message: string };
+
+/**
+ * Drive의 파일이 그대로인지 확인하고 결과를 기록한다. (설계 문서 9.2절, 10.4절)
+ *
+ * 하는 일이 셋이다.
+ *   1. Drive에 지금 상태를 묻는다
+ *   2. checksum을 견주어 바뀌었는지 본다
+ *   3. 본 것을 표에 적는다
+ *
+ * 3번이 중요하다. 파일이 바뀌면 checksum을 최신으로 바꾸는데, 기록에 남아 있는
+ * 예전 checksum은 그대로 둔다. 둘이 달라지는 것이 곧 "이 기록의 위치가 달라졌을
+ * 수 있다"는 표시가 된다. (설계 문서 6.3절, 9.2절)
+ *
+ * 파일이 사라져도 행을 지우지 않는다. 설계 문서 10.4절이 자료와 기록은
+ * 유지하라고 했고, 기록이 이 행을 가리키고 있다. 상태만 missing으로 적는다.
+ *
+ * 다시 찾아지면 ready로 되돌린다. 휴지통에서 되살렸거나 일시적인 오류였을 수
+ * 있다. 사라졌다는 표시가 영구 판결이 되어서는 안 된다.
+ */
+export async function verifySourceFile(input: unknown): Promise<FileCheckResult> {
+  const account = await requireActiveAccount();
+
+  const fileId = z.uuid().safeParse(input);
+
+  if (!fileId.success) {
+    return { ok: false, message: "잘못된 요청입니다." };
+  }
+
+  const supabase = await createClient();
+
+  // RLS가 내 행만 보여준다.
+  const { data: row, error } = await supabase
+    .from("source_files")
+    .select("id, source_id, status, drive_file_id, checksum")
+    .eq("id", fileId.data)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[ThreadMark] 파일 확인 조회 실패:", error.message);
+
+    return { ok: false, message: GENERIC_FAILURE };
+  }
+
+  // 아직 올라가는 중이거나 가리킬 파일이 없으면 확인할 것이 없다.
+  if (!row || !row.drive_file_id) {
+    return { ok: false, message: "확인할 파일을 찾지 못했습니다." };
+  }
+
+  const accessToken = await getDriveAccessToken(account.userId);
+
+  if (!accessToken) {
+    // 연결이 끊긴 것이지 파일이 사라진 것이 아니다. 둘을 구분한다. (10.4절)
+    return { ok: true, outcome: "unknown" };
+  }
+
+  const lookup = await fetchDriveFile({
+    accessToken,
+    fileId: row.drive_file_id,
+  });
+
+  const now = new Date().toISOString();
+
+  if (lookup.outcome === "failed") {
+    // 물어보지 못했다. 사라졌다고 단정하지 않는다. 모르면 건드리지 않는다.
+    return { ok: true, outcome: "unknown" };
+  }
+
+  if (lookup.outcome === "missing") {
+    await supabase
+      .from("source_files")
+      .update({ status: "missing", last_verified_at: now })
+      .eq("id", row.id);
+
+    revalidatePath(`/sources/${row.source_id}`);
+
+    return { ok: true, outcome: "missing" };
+  }
+
+  /*
+    휴지통에 있는 파일도 Drive는 정상으로 돌려준다. 지워진 것이 아니라
+    표시만 붙기 때문이다. 이것을 보지 않으면 사용자가 파일을 지웠는데도
+    우리는 멀쩡하다고 판단한다.
+
+    상태는 missing으로 적는다. 지금 쓸 수 없다는 점은 같다.
+    다만 사용자에게는 휴지통이라고 알린다. 복원하면 되는 일과 다시 올려야
+    하는 일은 다르기 때문이다. (설계 문서 10.4절)
+  */
+  if (lookup.file.trashed) {
+    await supabase
+      .from("source_files")
+      .update({ status: "missing", last_verified_at: now })
+      .eq("id", row.id);
+
+    revalidatePath(`/sources/${row.source_id}`);
+
+    return { ok: true, outcome: "trashed" };
+  }
+
+  const check = compareDriveFile({
+    storedChecksum: row.checksum,
+    current: lookup.file,
+  });
+
+  // 다시 찾았으면 ready로 돌려놓는다.
+  // 바뀐 파일이면 지금 값으로 갱신한다. 기록에 남은 예전 checksum은 그대로 둔다.
+  const { error: updateError } = await supabase
+    .from("source_files")
+    .update({
+      status: "ready",
+      checksum: lookup.file.checksum,
+      byte_size: lookup.file.byteSize ?? undefined,
+      drive_modified_at: lookup.file.modifiedAt,
+      last_verified_at: now,
+    })
+    .eq("id", row.id);
+
+  if (updateError) {
+    console.error("[ThreadMark] 파일 확인 기록 실패:", updateError.message);
+  }
+
+  revalidatePath(`/sources/${row.source_id}`);
+
+  return { ok: true, outcome: check.outcome };
 }
 
 /**

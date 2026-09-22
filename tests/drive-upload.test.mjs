@@ -364,6 +364,7 @@ test("Drive 응답에서 필요한 값만 꺼낸다", () => {
     md5Checksum: "d41d8cd98f00b204e9800998ecf8427e",
     modifiedTime: "2026-09-22T01:02:03.000Z",
     parents: ["folder-1", 7, null],
+    trashed: false,
     webViewLink: "https://drive.google.com/file/d/file-1/view",
   });
 
@@ -395,6 +396,9 @@ test("크기와 checksum이 없어도 응답 자체는 읽는다", () => {
   assert.equal(file.byteSize, null);
   assert.equal(file.checksum, null);
   assert.deepEqual(file.parents, []);
+  // trashed가 응답에 없으면 휴지통에 없는 것으로 본다.
+  // 빠졌다고 모든 파일을 휴지통으로 보면 멀쩡한 파일이 잠긴다.
+  assert.equal(file.trashed, false);
 });
 
 // -----------------------------------------------------------------------------
@@ -416,6 +420,7 @@ function uploadedFile(overrides = {}) {
     checksum: "abc",
     modifiedAt: "2026-09-22T01:02:03.000Z",
     parents: ["folder-1"],
+    trashed: false,
     ...overrides,
   };
 }

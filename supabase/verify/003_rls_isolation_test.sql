@@ -1842,6 +1842,10 @@ $$;
 -- -----------------------------------------------------------------------------
 -- ready에서 pending으로 돌아갈 수 있으면 "확인했다"는 기록이 흔들린다.
 -- 파일을 바꾸려면 새 행을 만든다.
+--
+-- 사라진 것으로 표시하는 것(ready -> missing)은 막지 않는다.
+-- 그것은 되돌아가는 것이 아니라 지금 Drive에 없다는 사실을 적는 것이다.
+-- 그 길이 열려 있는지는 검사 42가 확인한다.
 do $$
 declare
   v_owner   uuid;
@@ -1957,6 +1961,131 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 42. 사라진 파일로 표시하고 되돌릴 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 설계 문서 10.4절: 파일 이동·삭제를 구분해 표시한다.
+-- 설계 문서 25절 통합 테스트 8번: 복구 가능한 오류 상태가 표시된다.
+--
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다. 실제로 12-C의 가드가
+-- "ready가 아닌 모든 상태"를 막는 바람에 missing 표시까지 함께 막혔었다.
+-- 이 검사는 그 길이 열려 있는지 본다.
+--
+-- 되돌리는 쪽도 확인한다. 휴지통에서 되살렸거나 일시적인 오류였을 수 있어서,
+-- 사라졌다는 표시가 영구 판결이 되어서는 안 된다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_file   uuid;
+  v_status public.source_file_status;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.source_files
+    (owner_id, source_id, status, drive_file_id, file_name, mime_type, byte_size)
+  values
+    (v_owner, v_source, 'ready'::public.source_file_status,
+     'verify-only-not-a-real-drive-id', '사라질.pdf', 'application/pdf', 1024)
+  returning id into v_file;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 사라진 것으로 표시한다.
+  update public.source_files
+  set status = 'missing'::public.source_file_status
+  where id = v_file;
+
+  -- 다시 찾아서 되돌린다.
+  update public.source_files
+  set status = 'ready'::public.source_file_status
+  where id = v_file;
+
+  select status into v_status
+  from public.source_files where id = v_file;
+
+  reset role;
+
+  delete from public.source_files where id = v_file;
+  delete from public.sources where id = v_source;
+
+  if v_status is distinct from 'ready'::public.source_file_status then
+    raise exception
+      '검사 42 실패: 사라진 파일을 다시 확인된 상태로 되돌리지 못했습니다. (지금 %)',
+      v_status;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 43. 사라진 파일도 업로드 중으로는 되돌릴 수 없다
+-- -----------------------------------------------------------------------------
+-- missing에서 pending으로 가는 길은 막는다. 다시 올린다면 새 행을 만든다.
+-- 이 길이 열려 있으면 "확인을 마친 적이 있다"는 사실이 지워진다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_file    uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'pdf'::public.source_type, 'RLS 격리 검사용 임시 자료')
+  returning id into v_source;
+
+  insert into public.source_files
+    (owner_id, source_id, status, drive_file_id, file_name, mime_type, byte_size)
+  values
+    (v_owner, v_source, 'missing'::public.source_file_status,
+     'verify-only-not-a-real-drive-id', '사라진.pdf', 'application/pdf', 1024)
+  returning id into v_file;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.source_files
+    set status = 'pending'::public.source_file_status
+    where id = v_file;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_files where id = v_file;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 43 실패: 사라진 파일을 업로드 중으로 되돌릴 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -1974,6 +2103,8 @@ select
   (select count(*) from public.source_projects)                         as 자료_연결,
   (select count(*) from public.source_files
     where status = 'ready'::public.source_file_status)                  as 보관된_파일,
+  (select count(*) from public.source_files
+    where status = 'missing'::public.source_file_status)                as 사라진_파일,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

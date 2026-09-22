@@ -545,7 +545,7 @@ export type Database = {
       project_status: "active"
       project_visibility: "private"
       source_file_origin: "upload" | "picked"
-      source_file_status: "pending" | "ready"
+      source_file_status: "pending" | "ready" | "missing"
       source_status: "active"
       source_type:
         | "paper"
@@ -708,7 +708,7 @@ export const Constants = {
       project_status: ["active"],
       project_visibility: ["private"],
       source_file_origin: ["upload", "picked"],
-      source_file_status: ["pending", "ready"],
+      source_file_status: ["pending", "ready", "missing"],
       source_status: ["active"],
       source_type: [
         "paper",
