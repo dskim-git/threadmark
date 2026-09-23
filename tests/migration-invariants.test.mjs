@@ -27,13 +27,41 @@ const sql = migrationFiles
 /** 공백을 한 칸으로 줄여 줄바꿈에 영향받지 않게 만든 비교용 텍스트. */
 const flat = sql.replace(/\s+/g, " ").toLowerCase();
 
-/** RLS와 정책이 반드시 적용되어야 하는 테이블. */
+/**
+ * RLS가 반드시 켜져 있어야 하는 테이블.
+ *
+ * 이 목록은 앱이 만드는 표 **전부**다. 처음에는 인증 관련 네 개만 있었는데,
+ * 그 뒤로 표가 늘어나는 동안 목록이 따라오지 않아 실제로는 새 표가 검사 밖에
+ * 있었다. 표를 하나 만들 때 RLS를 켜는 것을 잊으면 아무도 말해주지 않는 상태였다.
+ *
+ * 표를 새로 만들면 여기에 이름을 더한다. (docs/VERIFICATION.md 6절)
+ */
 const PROTECTED_TABLES = [
   "profiles",
   "user_roles",
   "app_settings",
   "admin_audit_logs",
+  "sources",
+  "captures",
+  "projects",
+  "source_projects",
+  "capture_projects",
+  "source_files",
+  "paper_profiles",
+  "google_drive_connections",
 ];
+
+/**
+ * 조회 정책을 일부러 두지 않는 테이블.
+ *
+ * google_drive_connections가 그렇다. refresh token이 들어 있어 본인조차
+ * 읽을 이유가 없다. authenticated에게 권한 자체를 주지 않고, 실수로 누가
+ * grant를 더하더라도 열리지 않도록 RLS만 켜 둔 채 정책을 비워 두었다.
+ *
+ * "정책이 없다"와 "정책을 빠뜨렸다"는 화면에서 똑같아 보인다.
+ * 어느 쪽인지를 여기에 적어 구분한다.
+ */
+const TABLES_WITHOUT_SELECT_POLICY = ["google_drive_connections"];
 
 /** 세미콜론 기준으로 나눈 문장 목록. 주석 줄은 제외한다. */
 const statements = sql
@@ -59,10 +87,34 @@ test("모든 앱 테이블에 RLS가 활성화되어 있다", () => {
 
 test("모든 앱 테이블에 조회 정책이 있다", () => {
   for (const table of PROTECTED_TABLES) {
+    if (TABLES_WITHOUT_SELECT_POLICY.includes(table)) {
+      continue;
+    }
+
     assert.ok(
       flat.includes(`on public.${table} for select`),
       `${table}에 select 정책이 없다`,
     );
+  }
+});
+
+test("정책을 두지 않은 테이블은 권한도 주지 않는다", () => {
+  // 정책이 없는 표에 권한만 남아 있으면 아무도 읽지 못하는 것이 아니라
+  // 아무 행도 보이지 않을 뿐이다. 둘은 다르다. 권한 자체를 거둬야 한다.
+  for (const table of TABLES_WITHOUT_SELECT_POLICY) {
+    assert.ok(
+      flat.includes(`revoke all on table public.${table} from anon, authenticated`),
+      `${table}에서 authenticated 권한을 거두지 않았다`,
+    );
+
+    const granted = statements.filter(
+      (statement) =>
+        statement.startsWith("grant") &&
+        statement.includes(`table public.${table}`) &&
+        statement.includes("authenticated"),
+    );
+
+    assert.deepEqual(granted, [], `${table}에 authenticated 권한이 부여되어 있다`);
   }
 });
 

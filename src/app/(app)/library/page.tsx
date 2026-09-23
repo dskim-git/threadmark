@@ -40,12 +40,25 @@ export default async function LibraryPage({
           </p>
         </div>
 
-        <Link
-          href="/sources/new"
-          className="h-11 rounded-full bg-zinc-900 px-6 text-sm font-medium leading-[2.75rem] text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
-        >
-          자료 등록
-        </Link>
+        <div className="flex items-center gap-3">
+          {/*
+            논문만 모아 보는 화면으로 가는 길. (설계 문서 21절)
+            여기는 제목으로 찾는 목록이고, 그쪽은 참고문헌으로 찾는 목록이다.
+          */}
+          <Link
+            href="/library/papers"
+            className="h-11 rounded-full border border-solid border-black/[.08] px-5 text-sm font-medium leading-[2.75rem] text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+          >
+            논문 모아 보기
+          </Link>
+
+          <Link
+            href="/sources/new"
+            className="h-11 rounded-full bg-zinc-900 px-6 text-sm font-medium leading-[2.75rem] text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+          >
+            자료 등록
+          </Link>
+        </div>
       </header>
 
       {error ? (

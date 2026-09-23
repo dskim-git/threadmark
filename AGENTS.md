@@ -51,7 +51,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 235개
+npm test          # node --test, 310개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -62,7 +62,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 
 ## 4. 현재 상태
 
-전체 개발 순서 18단계 중 **13단계까지 완료**, 다음은 14단계다.
+전체 개발 순서 18단계 중 **13단계까지 완료**, 14단계 진행 중이다.
 
 | 단계 | 블루프린트 23절 | 상태 |
 | --- | --- | --- |
@@ -78,13 +78,16 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 13-B. 텍스트 선택·페이지 메모와 Capture | Phase 4 | 완료 |
 | 13-C. 선택 부분 번역 | Phase 4 | 완료 |
 | 13-D. 파일 변경·삭제 감지 | Phase 4 | 완료 |
-| 14. 논문 연구 기능 | Phase 5 | 예정 |
+| 14-A. 논문 정보와 APA 참고문헌 | Phase 5 | 완료 |
+| 14-B. 논문 분석 서식 | Phase 5 | 예정 |
+| 14-C. 검색 허브와 가져오기 | Phase 5 | 예정 |
+| 14-D. 프로젝트별 활용 계획, 논문 관계 | Phase 5 | 예정 |
 | 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-13-C는 아직 커밋되지 않았다. `git push`는 한 번도 하지 않았다.
+14-A는 아직 커밋되지 않았다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -147,6 +150,15 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 - **Supabase SQL Editor는 스크립트 전체를 한 트랜잭션으로 실행한다.**
   `set_config(..., true)`로 설정한 `request.jwt.claims`가 다음 DO 블록까지 살아남는다.
   자료를 만드는 검사는 삽입 전에 클레임을 비운다.
+- **새 표의 `owner_id`에 `default auth.uid()`를 함께 건다.** 트리거가 채우니
+  기본값은 없어도 동작한다. 그런데 **타입 생성기는 트리거의 존재를 모른다.**
+  기본값이 없으면 생성된 타입이 `owner_id`를 필수로 보고, 코드가 보내지 않아야
+  할 값을 보내야 한다. 보안 원칙 2와 타입이 서로 어긋난다.
+
+  기본값은 타입을, 트리거는 실제 보장을 맡는다. 둘 다 있어야 한다.
+  `sources`가 2026-09-21에 겪고(`20260921093000`), `paper_profiles`가
+  2026-09-23에 똑같이 겪었다(`20260923093000`). 표를 만들 때마다 되풀이된다.
+
 - **`ALTER TYPE ... ADD VALUE`로 더한 값은 같은 트랜잭션에서 쓸 수 없다.**
   더하는 것은 되는데 쓰는 것이 안 된다. 제약조건, 기본값, `::타입` 변환이 모두
   걸린다. Supabase CLI는 마이그레이션 파일마다 트랜잭션을 따로 잡으므로,
@@ -271,13 +283,15 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (235개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (310개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (47검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (52검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
-격리 검사를 추가한다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,
+격리 검사를 추가하고, `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`에도
+이름을 더한다. 그 목록이 인증 관련 네 표에만 머물러 있어서, 한동안 새 표는
+RLS 검사 밖에 있었다. 2026-09-23에 12개 전부로 넓혔다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,
 결과 표 마지막 열에 실행 여부가 표시된다.
 
 `SECURITY DEFINER` 함수를 추가하면 001의 허용 목록에 넣고 왜 필요한지 적는다.

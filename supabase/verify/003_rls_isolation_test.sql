@@ -2351,6 +2351,288 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 48. 다른 사용자의 논문 정보를 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 서지 정보는 그 사람이 무엇을 읽고 있는지를 그대로 드러낸다.
+-- 연구 주제가 공개되기 전에 새면 곤란한 일이 생길 수 있다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  if v_other is null then
+    raise exception '검사 48 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  -- 삽입 전에 클레임을 비운다. 비우지 않으면 소유자 고정 트리거가
+  -- owner_id를 앞선 검사에서 설정한 사용자로 덮어쓴다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.paper_profiles
+    (owner_id, source_id, authors, publication_year, journal_name)
+  values
+    (v_owner, v_source,
+     '[{"family": "Kim", "given": "Daesoo"}]'::jsonb,
+     2024, '검사용 학술지');
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.paper_profiles where source_id = v_source;
+
+  reset role;
+
+  delete from public.paper_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception '검사 48 실패: 다른 사용자의 논문 정보가 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 49. 다른 사용자의 자료에 논문 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키 제약은 RLS를 보지 않는다. 자료 id만 알면 남의 자료에 서지 정보를
+-- 붙일 수 있으므로, set_paper_profile_owner 트리거가 참조 대상을 확인한다.
+-- captures와 source_files에서 이미 겪은 위험이 표마다 되풀이된다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.paper_profiles (source_id, journal_name)
+    values (v_source, '남의 자료에 붙인 서지 정보');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 49 실패: 다른 사용자의 자료에 논문 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 50. 소유자는 자기 자료에 논문 정보를 붙이고 읽을 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다.
+-- owner_id를 보내지 않고 넣어, 트리거가 채우는지도 함께 본다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.paper_profiles
+    (source_id, authors, publication_year, journal_name, doi, keywords)
+  values
+    (v_source,
+     '[{"family": "김대수"}, {"family": "Lee", "given": "Seoyeon"}]'::jsonb,
+     2024, '수학교육연구', '10.1234/abcd', array['오류 분석', '형성평가']);
+
+  select count(*) into v_seen
+  from public.paper_profiles
+  where source_id = v_source and owner_id = v_owner;
+
+  reset role;
+
+  delete from public.paper_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 50 실패: 소유자가 자기 자료에 논문 정보를 붙이지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 51. 논문 정보가 붙은 자료를 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- source_id를 고칠 수 있으면 A 논문의 서지 정보가 B 자료에 붙는다.
+-- 자기 자료끼리라도 허용하지 않는다. 붙일 자료를 잘못 골랐다면 지우고 다시 만든다.
+-- source_files의 검사 39와 같은 이유다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_other   uuid;
+  v_profile uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 A')
+  returning id into v_source;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 B')
+  returning id into v_other;
+
+  insert into public.paper_profiles (owner_id, source_id, journal_name)
+  values (v_owner, v_source, '옮겨볼 학술지')
+  returning id into v_profile;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.paper_profiles set source_id = v_other where id = v_profile;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_profiles where id = v_profile;
+  delete from public.sources where id in (v_source, v_other);
+
+  if not v_blocked then
+    raise exception
+      '검사 51 실패: 논문 정보가 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 52. 모양이 깨진 저자 목록은 저장되지 않는다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 8.1절: 구조화된 메타데이터로 APA를 생성한다.
+--
+-- 저자가 [{family, given?}] 모양이어야 참고문헌을 만들 수 있다.
+-- 이 모양이 무너지면 참고문헌 생성이 통째로 멈추거나, 더 나쁘게는
+-- 엉뚱한 이름이 실린다. 화면과 zod가 막지만 마지막 보장은 제약조건이다.
+--
+-- 네 가지를 시도한다. 배열이 아닌 것, 항목이 객체가 아닌 것,
+-- family가 없는 것, 우리가 읽지 않는 열쇠가 섞인 것.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_bad     jsonb;
+  v_blocked boolean;
+  v_label   text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  foreach v_bad in array array[
+    '"Kim, Daesoo"'::jsonb,
+    '["Kim, Daesoo"]'::jsonb,
+    '[{"given": "Daesoo"}]'::jsonb,
+    '[{"family": "  "}]'::jsonb,
+    '[{"family": "Kim", "role": "corresponding"}]'::jsonb
+  ]
+  loop
+    v_blocked := false;
+    v_label := v_bad::text;
+
+    begin
+      insert into public.paper_profiles (owner_id, source_id, authors)
+      values (v_owner, v_source, v_bad);
+    exception when others then
+      v_blocked := true;
+    end;
+
+    if not v_blocked then
+      delete from public.paper_profiles where source_id = v_source;
+      delete from public.sources where id = v_source;
+
+      raise exception
+        '검사 52 실패: 모양이 깨진 저자 목록이 저장되었습니다. (%)', v_label;
+    end if;
+  end loop;
+
+  delete from public.paper_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -2372,6 +2654,7 @@ select
     where status = 'missing'::public.source_file_status)                as 사라진_파일,
   (select count(*) from public.captures
     where deleted_at is null and ai_generated)                          as 기계_번역,
+  (select count(*) from public.paper_profiles)                          as 논문_정보,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

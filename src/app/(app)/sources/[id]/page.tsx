@@ -9,6 +9,7 @@ import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projec
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listCapturesForSource } from "@/lib/captures/queries";
 import { getDriveConnectionSummary } from "@/lib/drive/connection";
+import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
@@ -18,6 +19,7 @@ import { deleteSource } from "../actions";
 import { DrivePickerButton } from "../drive-picker-button";
 import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
+import { PaperSummary } from "../paper-summary";
 
 export const metadata: Metadata = {
   title: "자료 · ThreadMark",
@@ -38,15 +40,32 @@ export default async function SourceDetailPage({
     notFound();
   }
 
-  const [captures, linkedProjects, allProjects, files, driveConnection, query] =
-    await Promise.all([
-      listCapturesForSource(source.id),
-      listProjectsForSource(source.id),
-      listProjectChips(),
-      listSourceFiles(source.id),
-      getDriveConnectionSummary(account.userId),
-      searchParams,
-    ]);
+  const [
+    captures,
+    linkedProjects,
+    allProjects,
+    files,
+    driveConnection,
+    paperProfile,
+    query,
+  ] = await Promise.all([
+    listCapturesForSource(source.id),
+    listProjectsForSource(source.id),
+    listProjectChips(),
+    listSourceFiles(source.id),
+    getDriveConnectionSummary(account.userId),
+    // 논문이 아닌 자료에는 조회하지 않는다. 있을 수 없는 행을 찾는 왕복이 된다.
+    source.type === "paper" ? getPaperProfile(source.id) : null,
+    searchParams,
+  ]);
+
+  const citation =
+    paperProfile !== null
+      ? buildCitation(paperProfile, {
+          title: source.title,
+          originalUrl: source.originalUrl,
+        })
+      : null;
 
   const error = firstValue(query.error);
   const notice = firstValue(query.notice);
@@ -141,6 +160,19 @@ export default async function SourceDetailPage({
             {source.description}
           </p>
         </section>
+      ) : null}
+
+      {/*
+        논문 정보. 논문 유형일 때만 보여준다. (설계 문서 8.1절)
+        다른 유형에서는 자리조차 만들지 않는다. 적을 수 없는 칸을 보여주면
+        "여기는 왜 안 되지"를 묻게 된다.
+      */}
+      {source.type === "paper" ? (
+        <PaperSummary
+          sourceId={source.id}
+          profile={paperProfile}
+          citation={citation}
+        />
       ) : null}
 
       <section className="flex flex-col gap-3">

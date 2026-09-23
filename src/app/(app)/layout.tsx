@@ -43,6 +43,17 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               내 자료
             </Link>
 
+            {/*
+              논문은 내 자료 안에도 있지만 따로 둔다. (설계 문서 21절)
+              그 화면은 제목이 아니라 참고문헌을 보여준다. 찾는 방법이 다르다.
+            */}
+            <Link
+              href="/library/papers"
+              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+            >
+              논문
+            </Link>
+
             <Link
               href="/projects"
               className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"

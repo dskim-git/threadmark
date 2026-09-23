@@ -220,6 +220,74 @@ export type Database = {
         }
         Relationships: []
       }
+      paper_profiles: {
+        Row: {
+          abstract: string | null
+          authors: Json
+          citation_override: string | null
+          created_at: string
+          doi: string | null
+          id: string
+          issn: string | null
+          issue: string | null
+          journal_name: string | null
+          keywords: string[]
+          original_language: string | null
+          owner_id: string
+          page_range: string | null
+          publication_year: number | null
+          source_id: string
+          updated_at: string
+          volume: string | null
+        }
+        Insert: {
+          abstract?: string | null
+          authors?: Json
+          citation_override?: string | null
+          created_at?: string
+          doi?: string | null
+          id?: string
+          issn?: string | null
+          issue?: string | null
+          journal_name?: string | null
+          keywords?: string[]
+          original_language?: string | null
+          owner_id?: string
+          page_range?: string | null
+          publication_year?: number | null
+          source_id: string
+          updated_at?: string
+          volume?: string | null
+        }
+        Update: {
+          abstract?: string | null
+          authors?: Json
+          citation_override?: string | null
+          created_at?: string
+          doi?: string | null
+          id?: string
+          issn?: string | null
+          issue?: string | null
+          journal_name?: string | null
+          keywords?: string[]
+          original_language?: string | null
+          owner_id?: string
+          page_range?: string | null
+          publication_year?: number | null
+          source_id?: string
+          updated_at?: string
+          volume?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "paper_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           approved_at: string | null
@@ -527,6 +595,7 @@ export type Database = {
       count_admins: { Args: never; Returns: number }
       is_active_user: { Args: { check_user_id?: string }; Returns: boolean }
       is_admin: { Args: { check_user_id?: string }; Returns: boolean }
+      paper_authors_valid: { Args: { value: Json }; Returns: boolean }
       soft_delete_capture: { Args: { capture_id: string }; Returns: boolean }
       soft_delete_project: { Args: { project_id: string }; Returns: boolean }
       soft_delete_source: { Args: { source_id: string }; Returns: boolean }
