@@ -39,9 +39,11 @@ export default async function EditSourcePage({
       </nav>
 
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          자료 수정
-        </h1>
+        <h1 className="text-3xl text-black dark:text-zinc-50">자료 고치기</h1>
+        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          제목과 설명, 유형과 원본 주소를 고칩니다. 담아둔 기록과 파일은
+          그대로 남습니다.
+        </p>
       </header>
 
       <SourceForm

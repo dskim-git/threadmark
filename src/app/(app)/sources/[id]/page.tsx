@@ -193,9 +193,32 @@ export default async function SourceDetailPage({
           ) : null}
         </div>
 
-        <h1 className="text-2xl font-semibold leading-9 tracking-tight text-black dark:text-zinc-50">
-          {source.title}
-        </h1>
+        {/*
+          제목 옆에 고치는 길을 둔다.
+
+          수정 화면은 처음부터 있었지만 이 화면 맨 아래, 기록 목록과 새 기록
+          폼을 다 지난 자리에 있었다. 논문이면 그 위로 논문 정보·활용 계획·
+          관련 자료·파일까지 있어서 아무도 거기까지 내려가지 않는다.
+          사용자가 "제목은 한번 정하면 못 바꾸는 것 같다"고 했다.
+
+          있어도 찾을 수 없으면 없는 것과 같다. 고칠 것이 바로 여기 보이는
+          제목이므로 길도 여기 있어야 한다.
+
+          삭제는 아래에 그대로 둔다. 되돌리기 어려운 일은 자주 쓰는 것 옆에
+          두지 않는다.
+        */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h1 className="text-3xl leading-tight text-black dark:text-zinc-50">
+            {source.title}
+          </h1>
+
+          <Link
+            href={`/sources/${source.id}/edit`}
+            className="shrink-0 text-sm text-zinc-500 underline underline-offset-4 transition-colors hover:text-black dark:hover:text-zinc-50"
+          >
+            제목·설명 고치기
+          </Link>
+        </div>
 
         {source.subtitle ? (
           <p className="text-base leading-7 text-zinc-600 dark:text-zinc-400">
@@ -710,14 +733,10 @@ export default async function SourceDetailPage({
       </section>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-black/[.08] pt-6 dark:border-white/[.145]">
-        <Link
-          href={`/sources/${source.id}/edit`}
-          className="h-11 rounded-full border border-solid border-black/[.08] px-6 text-sm font-medium leading-[2.75rem] text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-        >
-          수정
-        </Link>
-
-        {/* 삭제는 표시만 남긴다. 되살릴 수 있어야 하기 때문이다. */}
+        {/*
+          고치는 길은 제목 옆에 있다. 같은 길을 두 곳에 두지 않는다.
+          삭제는 표시만 남긴다. 되살릴 수 있어야 하기 때문이다.
+        */}
         <form action={deleteSource}>
           <input type="hidden" name="id" value={source.id} />
           <button
