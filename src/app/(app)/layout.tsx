@@ -36,7 +36,39 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
             <AppNav />
 
-            <div className="ml-auto shrink-0">
+            {/*
+              찾기는 메뉴 항목이 아니라 창으로 둔다. 매일 여러 번 쓰는 일이라,
+              화면을 한 번 거쳐 가게 하면 그만큼 덜 쓰게 된다.
+
+              좁은 화면에서는 창을 접고 글자 하나로 바꾼다. 로고와 메뉴 넷과
+              설정이 이미 한 줄을 채우고 있어서, 창까지 넣으면 어느 것도
+              제대로 눌리지 않는다. 자바스크립트 없이 폼 하나로 움직인다.
+            */}
+            <form
+              action="/search"
+              className="ml-auto hidden shrink-0 sm:block"
+            >
+              <label htmlFor="header-search" className="sr-only">
+                찾기
+              </label>
+              <input
+                id="header-search"
+                name="q"
+                type="search"
+                placeholder="찾기"
+                className="h-9 w-32 rounded-full border border-black/[.08] bg-zinc-50 px-4 text-sm text-black transition-colors focus:w-48 focus:bg-white focus:outline-none md:w-40 dark:border-white/[.145] dark:bg-black dark:text-zinc-50 dark:focus:bg-zinc-950"
+              />
+            </form>
+
+            {/* 창을 접은 좁은 화면에서 찾기로 가는 길. */}
+            <Link
+              href="/search"
+              className="ml-auto shrink-0 py-3 text-sm text-zinc-500 transition-colors hover:text-black sm:hidden dark:hover:text-zinc-50"
+            >
+              찾기
+            </Link>
+
+            <div className="shrink-0">
               <SettingsLink />
             </div>
           </div>

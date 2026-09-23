@@ -60,7 +60,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 483개
+npm test          # node --test, 498개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -71,7 +71,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 
 ## 4. 현재 상태
 
-전체 개발 순서 18단계 중 **14단계까지 완료**, 15단계가 다음이다.
+전체 개발 순서 중 **14단계와 15-A까지 완료**, 15-B(태그)가 다음이다.
 
 | 단계 | 블루프린트 23절 | 상태 |
 | --- | --- | --- |
@@ -96,12 +96,35 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 14-D-1. 프로젝트별 활용 계획 (8.3절) | Phase 5 | 완료 |
 | 14-D-2a. 자료끼리의 관계 (8.4절 `source_relations`) | Phase 5 | 완료 |
 | 14-D-2b. 아직 등록하지 않은 논문 (8.4절 `reading_candidate`) | Phase 5 | 완료 |
-| 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
+| 15-A. 기본 키워드 검색 | MVP | 완료 |
+| 15-B. 태그 | MVP | 예정 |
+| 15-C. 웹사이트 자료 (11절) | MVP | 예정 |
+| 15-D. 음악 수동 등록 (13절) | MVP | 예정 |
+| 15-E. 다른 매체 (YouTube·TMDB·Kakao 자동 메타데이터) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-14단계가 끝났다. 다음은 15단계(다른 매체)다.
+### 15단계가 A~E로 나뉜 이유 (2026-09-24)
+
+14단계를 마쳤을 때 이 표는 15단계를 "다른 매체(YouTube·TMDB·Kakao·음악)"로만
+적어두고 있었다. 그런데 블루프린트 22절의 MVP 목록과 맞춰보니 **MVP에 있는데
+표에 없는 것이 넷**이었다.
+
+| MVP 항목 | 그때 상태 |
+| --- | --- |
+| 기본 키워드 검색 | 없음. 앱 안에서 글자로 찾을 방법이 아예 없었다 |
+| 태그 | 없음. 표도 화면도 없다 |
+| 웹사이트 URL + 메모 | 유형만 있고 전용 기능이 없다 |
+| 음악 수동 등록 | 없음 |
+
+반대로 15단계로 적혀 있던 것 대부분(YouTube 상세, Kakao 책 검색, TMDB,
+MusicBrainz 자동 메타데이터)은 22절에서 **MVP 이후**다. 그대로 갔으면 MVP 넷을
+건너뛰고 MVP 이후 기능부터 만들 뻔했다. 12단계 때와 같은 어긋남이다.
+
+검색을 맨 앞에 둔 이유는, **담는 기능만 늘리고 찾는 기능이 없으면 쌓을수록
+못 쓰게 되기 때문이다.** 자료가 열 개일 때는 눈으로 훑으면 되지만 백 개가
+되면 담아둔 것을 다시 찾지 못한다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -418,7 +441,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (483개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (498개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (68검사) |
