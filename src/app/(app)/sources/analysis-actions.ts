@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -9,7 +8,6 @@ import {
   ANALYSIS_FIELDS,
   MAX_ANALYSIS_FIELD_LENGTH,
 } from "@/lib/papers/analysis-fields";
-import { formValue } from "@/lib/sources/schema";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -24,48 +22,46 @@ import { createClient } from "@/lib/supabase/server";
  * 서른 번 같은 줄을 적으면 그중 하나를 빠뜨려도 아무도 못 본다.
  * 화면에는 칸이 보이는데 저장만 되지 않고, 사용자는 길게 적은 글이
  * 사라진 것을 나중에야 안다.
- */
-
-const idSchema = z.uuid();
-
-/**
- * 조회 문자열을 붙여 이동한다.
  *
- * Server Action의 리디렉션 주소는 HTTP 헤더로 전달되고, 헤더 값에는 ASCII만
- * 들어갈 수 있다. 한글 메시지를 주소에 그대로 넣으면 응답 자체가 깨진다.
+ * 리디렉션하지 않고 결과를 돌려준다. 읽기 작업대(14-E)에서 PDF를 옆에 두고
+ * 적기 때문이다. 저장할 때마다 화면이 넘어가면 보던 쪽을 잃고 PDF를 다시
+ * 그린다. 인용 저장(13-B)이 같은 이유로 리디렉션하지 않는다.
  */
-function redirectWithQuery(
-  path: string,
-  params: Record<string, string>,
-): never {
-  const query = Object.entries(params)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join("&");
 
-  redirect(query.length > 0 ? `${path}?${query}` : path);
-}
+export type SaveAnalysisResult = { ok: true } | { ok: false; message: string };
 
-export async function savePaperAnalysis(formData: FormData): Promise<void> {
+const inputSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  /** 항목 이름 -> 적은 글. 화면이 보낸 것만 담는다. */
+  values: z.record(z.string(), z.string()),
+});
+
+export async function saveAnalysis(
+  input: unknown,
+): Promise<SaveAnalysisResult> {
   await requireActiveAccount();
 
-  const sourceId = idSchema.safeParse(formValue(formData.get("sourceId")));
+  const parsed = inputSchema.safeParse(input);
 
-  if (!sourceId.success) {
-    redirectWithQuery("/library", { error: "잘못된 요청입니다." });
+  if (!parsed.success) {
+    return { ok: false, message: "잘못된 요청입니다." };
   }
 
-  const destination = `/sources/${sourceId.data}`;
+  const { sourceId, values: sent } = parsed.data;
 
   /*
     항목마다 다듬어 담는다. 규칙은 하나뿐이라 따로 스키마를 두지 않는다.
     비면 null, 길면 거부. 길이는 데이터베이스 제약과 같은 숫자를 쓴다.
     화면과 서버가 다른 숫자를 쓰면 입력은 되는데 저장이 안 되는 칸이 생긴다.
+
+    아는 항목만 담는다. 화면이 보낸 이름을 그대로 쓰면, 오타 난 이름이나
+    우리가 모르는 열이 질의에 섞여 들어간다.
   */
   const values: Record<string, string | null> = {};
   const tooLong: string[] = [];
 
   for (const field of ANALYSIS_FIELDS) {
-    const raw = formValue(formData.get(field.column)).trim();
+    const raw = (sent[field.column] ?? "").trim();
 
     if (raw.length > MAX_ANALYSIS_FIELD_LENGTH) {
       tooLong.push(field.label);
@@ -81,9 +77,10 @@ export async function savePaperAnalysis(formData: FormData): Promise<void> {
       넘친 칸만 빼고 저장하면, 사용자는 저장됐다는 말을 보고 돌아왔다가
       그 칸만 비어 있는 것을 나중에 발견한다.
     */
-    redirectWithQuery(`${destination}/analysis`, {
-      error: `${tooLong.join(", ")}이(가) ${MAX_ANALYSIS_FIELD_LENGTH}자를 넘습니다. 줄여 주세요.`,
-    });
+    return {
+      ok: false,
+      message: `${tooLong.join(", ")}이(가) ${MAX_ANALYSIS_FIELD_LENGTH}자를 넘습니다. 줄여 주세요.`,
+    };
   }
 
   const supabase = await createClient();
@@ -97,25 +94,19 @@ export async function savePaperAnalysis(formData: FormData): Promise<void> {
   */
   const { error } = await supabase
     .from("paper_analyses")
-    .upsert({ source_id: sourceId.data, ...values }, { onConflict: "source_id" });
+    .upsert({ source_id: sourceId, ...values }, { onConflict: "source_id" });
 
   if (error) {
     console.error("[ThreadMark] 논문 분석 저장 실패:", error.message);
 
-    redirectWithQuery(`${destination}/analysis`, {
-      error: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-    });
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
   }
 
-  revalidatePath(destination);
-  revalidatePath(`${destination}/analysis`);
+  // 자료 상세의 `논문 분석 n/30`이 바로 반영되게 한다.
+  revalidatePath(`/sources/${sourceId}`);
 
-  /*
-    분석 화면으로 되돌아간다. 자료 상세로 보내지 않는 이유는, 서른 칸을
-    한 번에 채우는 사람이 없기 때문이다. 저장하고 이어서 적는 것이 보통이라
-    그 자리에 그대로 남는 편이 낫다.
-  */
-  redirectWithQuery(`${destination}/analysis`, {
-    notice: "분석을 저장했습니다.",
-  });
+  return { ok: true };
 }

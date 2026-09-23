@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { requireActiveAccount } from "@/lib/auth/account";
+import { listCapturesForSource } from "@/lib/captures/queries";
+import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
+import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
 import { isReadable, listSourceFiles } from "@/lib/sources/files";
@@ -10,7 +14,7 @@ import { getSourceById } from "@/lib/sources/queries";
 import { isTranslationConfigured } from "@/lib/translation/anthropic";
 
 import { FileStatusNotice } from "./file-status-notice";
-import { ReaderView } from "./reader-view";
+import { ReaderView, type PanelTab } from "./reader-view";
 
 export const metadata: Metadata = {
   title: "읽기 · ThreadMark",
@@ -38,10 +42,18 @@ export default async function ReaderPage({
     notFound();
   }
 
-  const [files, query] = await Promise.all([
-    listSourceFiles(source.id),
-    searchParams,
-  ]);
+  const isPaper = source.type === "paper";
+
+  const [files, captures, analysis, projects, projectChips, query] =
+    await Promise.all([
+      listSourceFiles(source.id),
+      listCapturesForSource(source.id),
+      // 논문이 아닌 자료에는 분석 탭이 없다. 있을 수 없는 행을 찾지 않는다.
+      isPaper ? getPaperAnalysis(source.id) : null,
+      isPaper ? listProjectsForSource(source.id) : [],
+      listProjectChips(),
+      searchParams,
+    ]);
 
   const readable = files.filter(isReadable);
   const requested = firstValue(query.file);
@@ -65,20 +77,27 @@ export default async function ReaderPage({
       : (selected?.lastPage ?? 1);
 
   return (
-    <div className="flex flex-col gap-6">
-      <nav className="text-sm">
-        <Link
-          href={`/sources/${source.id}`}
-          className="text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-        >
-          ← {source.title}
-        </Link>
-      </nav>
+    /*
+      data-wide가 본문의 너비 제한을 푼다. (globals.css)
+      앱의 기본 너비(896px)를 좌우로 나누면 PDF에 350px쯤밖에 남지 않는다.
 
+      머리말도 한 줄로 줄인다. 작업대는 창 높이를 기준으로 크기를 잡는데,
+      위에 줄이 늘수록 PDF가 그만큼 작아진다.
+    */
+    <div data-wide className="flex flex-col gap-3">
       {selected ? (
         <>
-          <header className="flex flex-wrap items-baseline justify-between gap-2">
-            <h1 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
+          <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+            <Link
+              href={`/sources/${source.id}`}
+              className="text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+            >
+              ← {source.title}
+            </Link>
+            <span aria-hidden="true" className="text-zinc-300">
+              /
+            </span>
+            <h1 className="font-medium text-black dark:text-zinc-50">
               {selected.fileName}
             </h1>
             <span className="text-xs text-zinc-500">
@@ -144,11 +163,37 @@ export default async function ReaderPage({
                 브라우저에 내려보내지 않고, "쓸 수 있는가"만 내려보낸다.
               */
               translationEnabled={isTranslationConfigured()}
+              /* 분석 화면에서 `논문을 옆에 두고 적기`로 건너올 때 쓴다. */
+              initialTab={readPanelTab(firstValue(query.panel))}
+              showAnalysis={isPaper}
+              analysisInitial={analysis?.values ?? {}}
+              analysisProjects={projects}
+              /*
+                기록 목록은 서버에서 그려 넘긴다. 삭제와 프로젝트 연결 같은
+                Server Action을 품고 있어 브라우저 쪽에서 만들 수 없다.
+              */
+              capturesSlot={
+                <CaptureList
+                  captures={captures}
+                  returnTo={`/sources/${source.id}/reader?file=${selected.id}`}
+                  emptyText="아직 이 자료에 남긴 기록이 없습니다."
+                  projects={projectChips}
+                  fileChecksums={Object.fromEntries(
+                    files.map((file) => [file.id, file.checksum]),
+                  )}
+                />
+              }
             />
           )}
         </>
       ) : (
         <div className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">
+          <Link
+            href={`/sources/${source.id}`}
+            className="w-fit text-sm text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+          >
+            ← {source.title}
+          </Link>
           <h1 className="text-base font-medium text-black dark:text-zinc-50">
             읽을 수 있는 파일이 없습니다
           </h1>
@@ -171,4 +216,14 @@ export default async function ReaderPage({
 
 function firstValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * 어느 탭으로 열지. 모르는 값은 `메모`로 본다.
+ *
+ * 주소로 들어오는 값이라 확인한다. 기본이 `메모`인 이유는, 문장을 드래그해
+ * 인용을 남기는 것이 이 화면에서 가장 잦은 일이기 때문이다.
+ */
+function readPanelTab(value: string | undefined): PanelTab {
+  return value === "analysis" || value === "captures" ? value : "notes";
 }

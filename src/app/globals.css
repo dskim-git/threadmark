@@ -24,3 +24,35 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+  넓게 쓰는 화면.
+
+  앱의 기본 본문은 `max-w-4xl`(896px)로 묶여 있다. 글을 읽는 화면에는 그
+  너비가 맞지만, 읽기 작업대(14-E)에는 좁다. 왼쪽 PDF와 오른쪽 패널이
+  그 안을 나눠 쓰면 PDF에 350px쯤밖에 남지 않는다.
+
+  그 화면의 뿌리에 `data-wide`를 달면 본문이 창 너비를 다 쓴다.
+  레이아웃이 어느 경로인지 알 필요가 없고, 다른 화면은 그대로다.
+*/
+main:has([data-wide]) {
+  max-width: none;
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+/*
+  작업대가 열린 동안에는 바깥이 스크롤되지 않는다.
+
+  안쪽 두 칸이 각자 스크롤하는데 바깥까지 움직이면, 휠을 굴릴 때 무엇이
+  움직일지 알 수 없다. 작업대 자체의 높이는 fill-viewport.tsx가 재서 맞춘다.
+  CSS로 빼거나 flex로 물려받게 해봤는데 둘 다 어긋났다. 그 파일에 적어두었다.
+
+  좁은 화면에는 걸지 않는다. 거기서는 나누지 않고 하나씩 보여주므로
+  페이지가 평소처럼 스크롤되는 편이 자연스럽다. (설계 문서 21절)
+*/
+@media (min-width: 1024px) {
+  body:has([data-wide]) {
+    overflow: hidden;
+  }
+}

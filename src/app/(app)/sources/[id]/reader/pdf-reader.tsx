@@ -461,25 +461,41 @@ export function PdfReader({
     return () => document.removeEventListener("pointerup", onPointerUp);
   }, [page, state.phase]);
 
-  // 창 크기가 바뀌면 너비 맞춤을 다시 계산한다.
-  // 확대율을 직접 고른 경우에는 건드리지 않는다.
+  /*
+    칸 크기가 바뀌면 너비 맞춤을 다시 계산한다.
+    확대율을 직접 고른 경우에는 건드리지 않는다.
+
+    창이 아니라 **이 칸**을 지켜본다. 14-E에서 좌우 너비를 끌어 바꿀 수 있게
+    되면서, 창 크기는 그대로인데 칸만 넓어지는 일이 생겼다. 창만 보면
+    끌어서 넓혀도 PDF가 그대로 작게 남는다.
+  */
   useEffect(() => {
-    if (zoom !== null || state.phase !== "ready") {
+    const container = containerRef.current;
+
+    if (zoom !== null || state.phase !== "ready" || !container) {
       return;
     }
 
     let timer: ReturnType<typeof setTimeout>;
+    let lastWidth = container.clientWidth;
 
-    const onResize = () => {
+    const observer = new ResizeObserver(() => {
+      // 세로만 바뀐 것은 너비 맞춤과 상관없다. 다시 그릴 이유가 없다.
+      if (container.clientWidth === lastWidth) {
+        return;
+      }
+
+      lastWidth = container.clientWidth;
+
       clearTimeout(timer);
       timer = setTimeout(() => void draw(), 150);
-    };
+    });
 
-    window.addEventListener("resize", onResize);
+    observer.observe(container);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener("resize", onResize);
+      observer.disconnect();
     };
   }, [draw, zoom, state.phase]);
 
@@ -616,8 +632,13 @@ export function PdfReader({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-black/[.08] px-3 py-2 dark:border-white/[.145]">
+    /*
+      작업대 안에서는 높이가 정해진 칸에 들어간다. (14-E)
+      h-full로 그 높이를 받고, 아래의 그림 영역이 남는 자리를 모두 차지한다.
+      높이가 정해지지 않은 곳에 놓이면 h-full이 자동이 되어 예전처럼 동작한다.
+    */
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-black/[.08] px-3 py-2 dark:border-white/[.145]">
         <button
           type="button"
           onClick={() => goToPage(page - 1)}
@@ -699,9 +720,17 @@ export function PdfReader({
         </button>
       </div>
 
+      {/*
+        남는 높이를 모두 차지하고 그 안에서만 스크롤한다.
+        min-h-0이 없으면 이 칸이 내용만큼 늘어나 바깥이 스크롤된다.
+
+        좁은 화면에서만 최소 높이를 준다. 거기서는 작업대가 높이를 재지 않아
+        (fill-viewport.tsx) 이 칸이 기댈 높이가 없다. 넓은 화면에서 이 값을
+        주면 반대로 칸보다 커져서 안쪽 스크롤이 사라진다.
+      */}
       <div
         ref={containerRef}
-        className="flex justify-center overflow-auto rounded-xl bg-zinc-100 p-4 dark:bg-white/[.04]"
+        className="flex min-h-0 flex-1 justify-center overflow-auto rounded-xl bg-zinc-100 p-4 max-lg:min-h-[60vh] dark:bg-white/[.04]"
       >
         {state.phase === "loading" ? (
           <p className="py-24 text-sm text-zinc-500">PDF를 여는 중…</p>
@@ -733,7 +762,7 @@ export function PdfReader({
         OCR은 MVP 범위에서 제외되어 있다.
       */}
       {state.phase === "ready" && !hasText ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+        <p className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           이 PDF에서는 선택 가능한 텍스트를 찾지 못했습니다. 페이지 메모는
           사용할 수 있으며 OCR 기능은 추후 지원됩니다.
         </p>

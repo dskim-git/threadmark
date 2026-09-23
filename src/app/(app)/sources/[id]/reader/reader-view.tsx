@@ -9,38 +9,52 @@ import {
   createPdfTranslationCapture,
 } from "../../../captures/actions";
 import { translateSelection } from "../../../captures/translate-actions";
+import { PDF_PAGE_KIND } from "@/lib/captures/pdf-locator";
 import {
   getTranslationLanguageLabel,
   type TranslationLanguageCode,
 } from "@/lib/translation/types";
-import { PDF_PAGE_KIND } from "@/lib/captures/pdf-locator";
 
+import { AnalysisForm } from "../../analysis-form";
 import { saveReadingPosition } from "../../file-actions";
 import { PageMemoPanel } from "./page-memo-panel";
 import { PdfReader } from "./pdf-reader";
 import { readPdfSelection, type ReadSelection } from "./read-selection";
-import {
-  SelectionPanel,
-  type TranslationSaveInput,
-} from "./selection-panel";
+import { SelectionPanel, type TranslationSaveInput } from "./selection-panel";
+import { FillViewport } from "./fill-viewport";
+import { SplitPane } from "./split-pane";
 
 /**
- * 뷰어와 나머지를 잇는 껍데기.
+ * 읽기 작업대. (설계 문서 9.1절, 21절)
  *
- * PdfReader는 PDF를 그리는 일만 한다. 무엇을 저장할지는 모른다.
- * 그 둘을 여기서 잇는다. 뷰어를 다른 곳에서 쓰거나 저장 방식이 바뀌어도
- * 그리는 쪽은 손대지 않아도 된다.
+ * 9.1절: "데스크톱에서는 좌측 PDF, 우측 Capture 패널의 분할 화면을 사용한다.
+ * 모바일에서는 `PDF`와 `메모` 탭을 전환한다."
  *
- * 여기가 맡는 일은 넷이다.
- *   - 보던 자리 저장 (설계 문서 9.1절)
- *   - 고른 문장을 인용으로 남기기 (9.3절, 9.4절)
- *   - 고른 문장을 옮겨 번역과 함께 남기기 (9.4절)
- *   - 지금 쪽에 메모 남기기 (22절의 `페이지 메모`)
+ * 13-A는 이렇게 만들지 않았다. PDF를 넓게 펴놓고 고른 문장을 떠 있는 창으로
+ * 받았다. 그 탓에 창이 화면 밖으로 넘치거나, 창 안을 누르면 브라우저가
+ * 선택을 풀어 창이 사라지는 일을 따로 막아야 했다. 제자리에 놓으니 그런 일이
+ * 없다. 14-E에서 9.1절대로 고쳤다.
  *
- * 마지막 것이 스캔 이미지 PDF에서는 유일한 길이다. 고를 글자가 없기 때문이다.
+ * 오른쪽에 셋이 온다. 9.1절이 "Capture 패널"이라고만 한 것은 분석 서식이
+ * 생기기 전이라서다.
+ *
+ *   분석  30칸짜리 서식 (8.2절)
+ *   기록  이 자료에 남긴 인용과 메모
+ *   메모  고른 문장 저장, 지금 쪽에 메모
+ *
+ * 문장을 드래그하면 `메모` 탭으로 저절로 넘어간다. 드래그는 "이 문장으로
+ * 무언가 하겠다"는 뜻이라, 그때마다 탭을 손으로 고르게 하면 손이 두 번 간다.
  */
 
 type SaveState = { phase: "idle" } | { phase: "saving" };
+
+export type PanelTab = "analysis" | "captures" | "notes";
+
+const TABS: readonly { id: PanelTab; label: string }[] = [
+  { id: "analysis", label: "분석" },
+  { id: "captures", label: "기록" },
+  { id: "notes", label: "메모" },
+];
 
 export function ReaderView({
   sourceId,
@@ -49,6 +63,11 @@ export function ReaderView({
   initialPage,
   initialZoom,
   translationEnabled,
+  initialTab,
+  analysisInitial,
+  analysisProjects,
+  showAnalysis,
+  capturesSlot,
 }: {
   sourceId: string;
   fileId: string;
@@ -62,15 +81,34 @@ export function ReaderView({
    * 여기에 오는 것은 "쓸 수 있는가" 하나뿐이다.
    */
   translationEnabled: boolean;
+  /** `?panel=`로 들어온 탭. 분석 화면에서 건너올 때 쓴다. */
+  initialTab: PanelTab;
+  analysisInitial: Record<string, string | null>;
+  analysisProjects: readonly { id: string; name: string }[];
+  /** 논문 유형일 때만 분석 탭을 보여준다. */
+  showAnalysis: boolean;
+  /**
+   * 이 자료의 기록 목록.
+   *
+   * 서버에서 그려 넘겨받는다. 기록 목록은 삭제와 프로젝트 연결 같은
+   * Server Action을 품고 있어서 브라우저 쪽에서 다시 만들 수 없다.
+   */
+  capturesSlot: React.ReactNode;
 }) {
   const router = useRouter();
 
   const [selection, setSelection] = useState<ReadSelection | null>(null);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [memoOpen, setMemoOpen] = useState(false);
   const [save, setSave] = useState<SaveState>({ phase: "idle" });
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [tab, setTab] = useState<PanelTab>(() =>
+    initialTab === "analysis" && !showAnalysis ? "notes" : initialTab,
+  );
+
+  /** 좁은 화면에서 PDF와 패널 중 무엇을 보여줄지. (9.1절) */
+  const [mobileView, setMobileView] = useState<"pdf" | "panel">("pdf");
 
   // useCallback으로 감싸지 않으면 매번 새 함수가 되어, 뷰어 쪽의
   // "잠시 기다렸다 저장하기"가 계속 초기화된다.
@@ -107,8 +145,13 @@ export function ReaderView({
       if (read) {
         setError(null);
         setNotice(null);
-        // 인용 창과 메모 창이 함께 떠 있으면 무엇을 저장하는지 헷갈린다.
-        setMemoOpen(false);
+
+        /*
+          드래그했다는 것은 이 문장으로 무언가 하겠다는 뜻이다.
+          탭을 손으로 고르게 하면 손이 두 번 간다.
+        */
+        setTab("notes");
+        setMobileView("panel");
       }
     },
     [fileId, fileChecksum],
@@ -122,7 +165,7 @@ export function ReaderView({
     // 브라우저가 고른 표시를 지운다. 남겨두면 같은 문장을 또 저장하기 쉽다.
     window.getSelection()?.removeAllRanges();
 
-    // 자료 상세의 기록 목록이 바로 반영되게 한다.
+    // 기록 탭과 자료 상세의 목록이 바로 반영되게 한다.
     router.refresh();
   }
 
@@ -231,9 +274,10 @@ export function ReaderView({
       return;
     }
 
-    setMemoOpen(false);
     afterSaved(`${currentPage}쪽에 메모를 남겼습니다.`);
   }
+
+  const tabs = TABS.filter((entry) => entry.id !== "analysis" || showAnalysis);
 
   return (
     <div className="flex flex-col gap-3">
@@ -255,63 +299,140 @@ export function ReaderView({
         </p>
       ) : null}
 
-      <PdfReader
-        fileId={fileId}
-        initialPage={initialPage}
-        initialZoom={initialZoom}
-        onPositionChange={handlePositionChange}
-        onSelectionChange={handleSelectionChange}
-        onPageChange={handlePageChange}
-      />
+      {/*
+        좁은 화면에서는 PDF와 패널을 오간다. (9.1절, 21절)
+        나란히 놓는 것을 억지로 줄이지 않는다.
+      */}
+      <div className="flex gap-2 lg:hidden">
+        {(["pdf", "panel"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setMobileView(view)}
+            aria-pressed={mobileView === view}
+            className={`h-10 flex-1 rounded-full border px-4 text-sm transition-colors ${
+              mobileView === view
+                ? "border-transparent bg-zinc-900 font-medium text-white dark:bg-zinc-100 dark:text-black"
+                : "border-black/[.08] text-black hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            }`}
+          >
+            {view === "pdf" ? "PDF" : "메모"}
+          </button>
+        ))}
+      </div>
 
       {/*
-        고를 글자가 없는 스캔 PDF에서는 이것이 유일한 길이다.
-        글자가 있는 PDF에서도 쪽 전체에 대한 생각을 남길 때 쓴다.
+        높이를 재서 맞춘다. 머리말이 몇 줄이든 창에 딱 맞고, 바깥 스크롤이
+        생기지 않는다. 왜 CSS로 하지 않는지는 fill-viewport.tsx에 적었다.
       */}
-      {memoOpen ? (
-        <PageMemoPanel
-          // 쪽이 바뀌면 창을 새로 만든다. 앞 쪽에 쓰던 메모가 남으면 안 된다.
-          key={currentPage}
-          page={currentPage}
-          busy={save.phase === "saving"}
-          onSave={(memo) => void handleSaveMemo(memo)}
-          onDismiss={() => setMemoOpen(false)}
-        />
-      ) : (
-        <div>
-          <button
-            type="button"
-            onClick={() => {
-              setMemoOpen(true);
-              setNotice(null);
-            }}
-            className="h-10 rounded-full border border-solid border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-          >
-            {currentPage}쪽에 메모
-          </button>
-        </div>
-      )}
+      <FillViewport className="min-h-0">
+        <SplitPane
+          narrowView={mobileView === "pdf" ? "left" : "right"}
+          className="h-full"
+          left={
+            <PdfReader
+              fileId={fileId}
+              initialPage={initialPage}
+              initialZoom={initialZoom}
+              onPositionChange={handlePositionChange}
+              onSelectionChange={handleSelectionChange}
+              onPageChange={handlePageChange}
+            />
+          }
+          right={
+            /*
+            오른쪽: 패널
 
-      {selection ? (
-        <SelectionPanel
-          /*
-            고른 글이 바뀌면 창을 새로 만든다. 그래야 앞 문장에 쓰던 메모가
-            엉뚱한 문장에 붙지 않는다. 글이 길 수 있어 앞부분만 쓴다.
+            data-reader-selection-panel 표시가 여기 붙어 있다. 이 안을 누르면
+            브라우저가 문서의 선택을 푸는데, 뷰어가 그것을 "고른 글이
+            없어졌다"로 읽어 선택을 지워버리기 때문이다. 표시가 없으면 분석
+            칸에 타자를 치는 순간 고른 문장이 사라진다. (pdf-reader.tsx)
           */
-          key={`${selection.locator.page}:${selection.locator.selectedText.slice(0, 60)}`}
-          locator={selection.locator}
-          anchor={selection.anchor}
-          busy={save.phase === "saving"}
-          translationEnabled={translationEnabled}
-          onTranslate={handleTranslate}
-          onSave={(memo) => void handleSaveQuote(memo)}
-          onSaveWithTranslation={(input) => void handleSaveTranslation(input)}
-          onDismiss={() => {
-            setSelection(null);
-            window.getSelection()?.removeAllRanges();
-          }}
+            <aside
+              data-reader-selection-panel=""
+              className="flex min-h-0 flex-1 flex-col rounded-2xl border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950"
+            >
+              <div className="flex shrink-0 gap-1 border-b border-black/[.06] p-2 dark:border-white/[.1]">
+                {tabs.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => setTab(entry.id)}
+                    aria-pressed={tab === entry.id}
+                    className={`h-9 flex-1 rounded-full px-3 text-sm transition-colors ${
+                      tab === entry.id
+                        ? "bg-zinc-900 font-medium text-white dark:bg-zinc-100 dark:text-black"
+                        : "text-zinc-600 hover:bg-black/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]"
+                    }`}
+                  >
+                    {entry.label}
+                    {/* 다른 탭을 보는 중에도 고른 문장이 기다리고 있음을 알린다. */}
+                    {entry.id === "notes" && selection ? " ●" : null}
+                  </button>
+                ))}
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {tab === "analysis" && showAnalysis ? (
+                  <AnalysisForm
+                    sourceId={sourceId}
+                    initial={analysisInitial}
+                    projects={analysisProjects}
+                    compact
+                  />
+                ) : null}
+
+                {tab === "captures" ? capturesSlot : null}
+
+                {tab === "notes" ? (
+                  <div className="flex flex-col gap-6">
+                    {selection ? (
+                      <SelectionPanel
+                        /*
+                      고른 글이 바뀌면 이 칸을 새로 만든다. 그래야 앞 문장에
+                      쓰던 메모가 엉뚱한 문장에 붙지 않는다.
+                    */
+                        key={`${selection.locator.page}:${selection.locator.selectedText.slice(0, 60)}`}
+                        locator={selection.locator}
+                        busy={save.phase === "saving"}
+                        translationEnabled={translationEnabled}
+                        onTranslate={handleTranslate}
+                        onSave={(memo) => void handleSaveQuote(memo)}
+                        onSaveWithTranslation={(input) =>
+                          void handleSaveTranslation(input)
+                        }
+                        onDismiss={() => {
+                          setSelection(null);
+                          window.getSelection()?.removeAllRanges();
+                        }}
+                      />
+                    ) : (
+                      <p className="rounded-lg bg-zinc-50 px-3 py-4 text-xs leading-5 text-zinc-500 dark:bg-white/[.04]">
+                        PDF에서 문장을 드래그하면 여기에 인용과 번역을 남길 수
+                        있습니다.
+                      </p>
+                    )}
+
+                    {/*
+                  고를 글자가 없는 스캔 PDF에서는 이것이 유일한 길이다.
+                  글자가 있는 PDF에서도 쪽 전체에 대한 생각을 남길 때 쓴다.
+                */}
+                    <div className="border-t border-black/[.06] pt-6 dark:border-white/[.1]">
+                      <PageMemoPanel
+                        // 쪽이 바뀌면 칸을 새로 만든다. 앞 쪽에 쓰던 메모가 남으면 안 된다.
+                        key={currentPage}
+                        page={currentPage}
+                        busy={save.phase === "saving"}
+                        onSave={(memo) => void handleSaveMemo(memo)}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </aside>
+          }
         />
-      ) : null}
+      </FillViewport>
     </div>
   );
 }
