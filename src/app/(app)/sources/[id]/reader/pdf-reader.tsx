@@ -84,11 +84,11 @@ async function drawTextLayer(options: {
   scale: number;
   cssWidth: number;
   cssHeight: number;
-}): Promise<{ textLayer: PdfTextLayer | null; hasText: boolean }> {
+}): Promise<{ textLayer: PdfTextLayer | null; text: TextLayerState }> {
   const { pdfjs, layer } = options;
 
   if (!pdfjs || !layer) {
-    return { textLayer: null, hasText: true };
+    return { textLayer: null, text: { kind: "ok" } };
   }
 
   layer.replaceChildren();
@@ -98,16 +98,38 @@ async function drawTextLayer(options: {
 
   let content: { items: unknown[] };
 
+  /*
+    한 번 더 해본다.
+
+    아이패드에서 같은 논문이 데스크톱과 다르게 "글자가 없다"로 나왔다.
+    파일에는 글자가 있으므로 꺼내다가 실패한 것인데, 그런 실패는 잠깐
+    끊긴 것일 수 있다. PDF를 구간별로 받고 있어서 더 그렇다.
+    한 번 더 해보는 값이 싸고, 되면 사용자는 아무것도 몰라도 된다.
+  */
   try {
     content = await options.target.getTextContent();
-  } catch {
-    return { textLayer: null, hasText: false };
+  } catch (first) {
+    try {
+      content = await options.target.getTextContent();
+    } catch (second) {
+      /*
+        여기서 오류를 삼키면 안 된다. 삼켰더니 화면에는 "스캔본인가 봅니다"만
+        뜨고, 실제로는 글자가 멀쩡히 있는 파일이었다. 원인을 알 방법이 아예
+        없어진다. 아이패드에는 콘솔을 붙일 수도 없다. 그래서 화면에 띄운다.
+      */
+      const reason =
+        second instanceof Error ? second.message : String(second ?? first);
+
+      console.error("[ThreadMark] 글자 층 읽기 실패:", reason);
+
+      return { textLayer: null, text: { kind: "failed", reason } };
+    }
   }
 
   // 글자가 하나도 없으면 스캔 이미지 PDF다. (설계 문서 9.5절)
   // OCR은 MVP 범위 밖이라, 안내만 보여주고 페이지 메모는 쓸 수 있게 둔다.
   if (content.items.length === 0) {
-    return { textLayer: null, hasText: false };
+    return { textLayer: null, text: { kind: "empty" } };
   }
 
   const textLayer = new pdfjs.TextLayer({
@@ -124,8 +146,24 @@ async function drawTextLayer(options: {
     // 쪽을 넘기며 멈춘 경우다. 오류가 아니다.
   }
 
-  return { textLayer, hasText: true };
+  return { textLayer, text: { kind: "ok" } };
 }
+
+/**
+ * 글자 층이 어떻게 됐는지.
+ *
+ *   ok      글자를 꺼내 깔았다
+ *   empty   글자가 정말 하나도 없다. 스캔본이다
+ *   failed  꺼내다 실패했다. 파일에 글자가 있어도 여기로 온다
+ *
+ * 마지막 둘을 갈라둔 것이 핵심이다. 예전에는 둘 다 "스캔본인가 봅니다"로
+ * 보여줬는데, 글자가 멀쩡히 있는 파일에서 그 문구가 뜨면 사용자는 파일을
+ * 의심하게 된다. 정작 봐야 할 것은 우리 쪽 실패다.
+ */
+type TextLayerState =
+  | { kind: "ok" }
+  | { kind: "empty" }
+  | { kind: "failed"; reason: string };
 
 type PdfDocument = {
   numPages: number;
@@ -191,7 +229,7 @@ export function PdfReader({
    * 스캔 이미지 PDF에는 글자 층이 없다. 설계 문서 9.5절이 그 경우 안내를
    * 보여주라고 했다. OCR은 MVP 범위 밖이다.
    */
-  const [hasText, setHasText] = useState(true);
+  const [text, setText] = useState<TextLayerState>({ kind: "ok" });
 
   // -------------------------------------------------------------------------
   // 파일 열기
@@ -355,7 +393,7 @@ export function PdfReader({
     });
 
     textRenderRef.current = rendered.textLayer;
-    setHasText(rendered.hasText);
+    setText(rendered.text);
 
     target.cleanup();
   }, [page, zoom]);
@@ -761,11 +799,32 @@ export function PdfReader({
         설계 문서 9.5절. 텍스트 레이어가 없는 파일을 만나면 알린다.
         OCR은 MVP 범위에서 제외되어 있다.
       */}
-      {state.phase === "ready" && !hasText ? (
+      {state.phase === "ready" && text.kind === "empty" ? (
         <p className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           이 PDF에서는 선택 가능한 텍스트를 찾지 못했습니다. 페이지 메모는
           사용할 수 있으며 OCR 기능은 추후 지원됩니다.
         </p>
+      ) : null}
+
+      {/*
+        꺼내다 실패한 경우. 스캔본과 다른 상황이라 다르게 말한다.
+
+        이유를 화면에 그대로 적는다. 브라우저 콘솔을 열 수 없는 기기에서는
+        이것이 원인을 아는 유일한 길이다. 2026-09-24에 아이패드에서 같은
+        논문이 데스크톱과 다르게 동작했는데, 오류를 삼키고 있어서 무엇이
+        일어났는지 알 방법이 없었다.
+      */}
+      {state.phase === "ready" && text.kind === "failed" ? (
+        <div className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          <p>
+            이 쪽의 글자를 꺼내지 못했습니다. 파일에 글자가 없는 것이 아니라
+            읽다가 실패한 것입니다. 쪽을 넘겼다가 돌아오거나 새로고침하면
+            될 때가 있습니다.
+          </p>
+          <p className="mt-1 break-all text-xs opacity-80">
+            이유: {text.reason}
+          </p>
+        </div>
       ) : null}
 
       <p className="text-xs leading-5 text-zinc-500">
