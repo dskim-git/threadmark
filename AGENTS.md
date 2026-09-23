@@ -51,7 +51,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 310개
+npm test          # node --test, 352개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -80,14 +80,15 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 13-D. 파일 변경·삭제 감지 | Phase 4 | 완료 |
 | 14-A. 논문 정보와 APA 참고문헌 | Phase 5 | 완료 |
 | 14-B. 논문 분석 서식 | Phase 5 | 예정 |
-| 14-C. 검색 허브와 가져오기 | Phase 5 | 예정 |
+| 14-C-1. DOI로 가져오기 | Phase 5 | 완료 |
+| 14-C-2. AI 보조·BibTeX·RIS·검색 허브 | Phase 5 | 진행 중 |
 | 14-D. 프로젝트별 활용 계획, 논문 관계 | Phase 5 | 예정 |
 | 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-14-A는 아직 커밋되지 않았다.
+14-C-1은 아직 커밋되지 않았다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -239,6 +240,49 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
   스크롤 아래로 숨어 누를 수가 없다. 무엇을 저장하는지 보는 것보다 저장할 수
   있는 것이 먼저다.
 
+### 서버에서 PDF를 읽을 때
+
+- **`pdfjs-dist`를 `serverExternalPackages`에 넣는다.** (`next.config.ts`)
+  Next.js는 서버에서 쓰는 의존성을 기본으로 자기 묶음에 넣는데, 이 라이브러리는
+  묶이면 깨진다. worker 경로와 `import.meta.url`을 스스로 풀어 쓰는 것을
+  번들러가 다시 써버리기 때문이다.
+
+  **증상이 코드를 의심하게 만든다.** Node에서 따로 돌리면 멀쩡히 되는 코드가
+  앱 안에서만 실패한다. 14-C에서 "PDF를 읽지 못했습니다"만 보고 한참 헤맸다.
+  빌드 결과물에서 `.next/server/chunks/ssr/`에 `node_modules_pdfjs-dist_…`가
+  보이면 묶인 것이고, `[externals]_pdfjs-dist_…`로 보이면 빠진 것이다.
+
+  Next.js가 알아서 빼주는 목록에 이 라이브러리는 없다.
+  목록은 `node_modules/next/dist/docs/.../serverExternalPackages.md`에 있다.
+
+  브라우저 쪽 뷰어(13-A)에는 영향이 없다. 이 설정은 서버 묶음만 건드린다.
+
+- **PDF.js는 줄이 끊긴 자리를 줄바꿈이 아니라 공백으로 잇는다.**
+  조판이 어디서 줄을 바꿨는지를 PDF가 기억하지 않기 때문이다.
+
+  ```text
+  파일 안:  doi:10.1007/s10649-
+            006-9028-2
+  꺼낸 글:  doi:10.1007/s10649- 006-9028-2
+  ```
+
+  메우지 않으면 `10.1007/s10649-`라는 **그럴듯한데 아무것도 가리키지 않는**
+  값을 얻는다. 조회는 조용히 실패하고, 사용자는 "이 논문은 DOI가 없나 보다"
+  하고 손으로 적는다. 되는 기능이 안 되는 것처럼 보이는 쪽이다.
+
+  줄바꿈만 생각하고 만들었다가 실제 PDF를 한 번 돌려보고 알았다.
+  **단위 검사만으로는 못 잡는다.** 검사에 쓴 예시가 전부 줄바꿈이었기 때문이다.
+  밖에서 들어오는 값을 다룰 때는 진짜 값을 한 번 통과시켜 본다.
+
+### 국내 논문의 서지 정보
+
+- **Crossref와 OpenAlex로는 한글 제목을 찾을 수 없다.** 검색이 약한 것이
+  아니라 데이터에 한글 제목이 없다. 국내 학술지가 DOI를 등록할 때 영문
+  제목과 로마자 저자명만 올린다. 블루프린트 8.5-1절에 확인 내용을 적었다.
+
+  그래서 한글이 섞인 검색어는 보내지 않고 미리 알려준다. 보내봐야 0건이
+  돌아오고, 그동안 사용자는 되는 줄 알고 기다린다.
+
 ### 개발 서버와 `.next`
 
 2026-09-22에 한나절을 여기서 잃었다. 둘 다 코드와 무관한 문제였는데 코드를 의심했다.
@@ -283,7 +327,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (310개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (352개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (52검사) |

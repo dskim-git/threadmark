@@ -1,5 +1,8 @@
 /**
- * 번역 요청 횟수 제한. (13-C의 비용 방어 두 번째)
+ * 밖으로 나가는 요청의 횟수 제한.
+ *
+ * 처음에는 번역만을 위한 것이었다(13-C). 14-C에서 Crossref 조회가 생기면서
+ * 세는 규칙을 한 곳에 두고 숫자만 달리 주는 모양으로 바꿨다.
  *
  * 밖으로 나가는 요청 하나하나에 돈이 든다. 길이 제한(types.ts)이 한 건의
  * 크기를 막고, 이것이 건수를 막는다.
@@ -29,6 +32,11 @@ export const TRANSLATION_WINDOW_MS = 60_000;
  */
 export const TRANSLATION_MAX_PER_WINDOW = 10;
 
+export type RateLimitOptions = {
+  windowMs: number;
+  max: number;
+};
+
 export type RateLimitDecision = {
   allowed: boolean;
   /** 막혔을 때 얼마나 기다리면 되는지. 통과했으면 0. */
@@ -46,14 +54,15 @@ export type RateLimitDecision = {
  * @param history 지난 요청 시각들. 오래된 것이 앞에 온다.
  * @param now     지금 시각.
  */
-export function takeTranslationSlot(
+export function takeSlot(
   history: readonly number[],
   now: number,
+  options: RateLimitOptions,
 ): RateLimitDecision {
   // 구간을 벗어난 기록은 버린다. 버리지 않으면 기억이 끝없이 늘어난다.
-  const recent = history.filter((at) => now - at < TRANSLATION_WINDOW_MS);
+  const recent = history.filter((at) => now - at < options.windowMs);
 
-  if (recent.length < TRANSLATION_MAX_PER_WINDOW) {
+  if (recent.length < options.max) {
     return { allowed: true, retryAfterMs: 0, next: [...recent, now] };
   }
 
@@ -62,8 +71,24 @@ export function takeTranslationSlot(
 
   return {
     allowed: false,
-    retryAfterMs: Math.max(0, TRANSLATION_WINDOW_MS - (now - oldest)),
+    retryAfterMs: Math.max(0, options.windowMs - (now - oldest)),
     // 막힌 요청은 세지 않는다. 세면 계속 누르는 동안 영영 풀리지 않는다.
     next: recent,
   };
+}
+
+/**
+ * 번역 요청용 한도.
+ *
+ * 세는 규칙은 위의 takeSlot과 같고 숫자만 다르다. 밖으로 나가는 요청이
+ * 번역 말고도 생기면서(14-C의 Crossref) 규칙을 한 곳에 두게 됐다.
+ */
+export function takeTranslationSlot(
+  history: readonly number[],
+  now: number,
+): RateLimitDecision {
+  return takeSlot(history, now, {
+    windowMs: TRANSLATION_WINDOW_MS,
+    max: TRANSLATION_MAX_PER_WINDOW,
+  });
 }

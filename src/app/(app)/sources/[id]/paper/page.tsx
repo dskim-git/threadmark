@@ -5,29 +5,23 @@ import { notFound, redirect } from "next/navigation";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { formatAuthorsInput } from "@/lib/papers/schema";
-import {
-  MAX_ABSTRACT_LENGTH,
-  MAX_CITATION_LENGTH,
-  MAX_DOI_LENGTH,
-  MAX_JOURNAL_NAME_LENGTH,
-  MAX_PUBLICATION_YEAR,
-  MIN_PUBLICATION_YEAR,
-  PAPER_LANGUAGES,
-} from "@/lib/papers/types";
+import { isReadable, listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
 
-import { savePaperProfile } from "../../paper-actions";
-import { Field } from "../../source-fields";
+import { PaperForm } from "../../paper-form";
 
 export const metadata: Metadata = {
   title: "논문 정보 · ThreadMark",
 };
 
 /**
- * 논문 서지 정보를 적는 화면. (설계 문서 8.1절)
+ * 논문 서지 정보를 적는 화면. (설계 문서 8.1절, 8.5절)
  *
  * 제목과 원본 주소는 여기에 없다. 자료 수정 화면에 이미 있고, 두 곳에서
  * 고칠 수 있으면 어느 쪽이 맞는지 알 수 없게 된다. 여기에는 논문에만 있는 것만 둔다.
+ *
+ * 가져오기로 제목이 함께 와도 마찬가지다. 바로 바꾸지 않고 "제목도 바꿀까요"를
+ * 눈에 보이게 묻는다. 그 물음에 답해야만 sources의 제목이 움직인다.
  *
  * 참고문헌 입력란을 맨 아래에 둔 이유가 있다. 비워두는 것이 기본이기
  * 때문이다. 위의 조각들을 적으면 참고문헌은 저절로 만들어진다.
@@ -61,12 +55,16 @@ export default async function PaperProfilePage({
     );
   }
 
-  const [profile, query] = await Promise.all([
+  const [profile, files, query] = await Promise.all([
     getPaperProfile(source.id),
+    listSourceFiles(source.id),
     searchParams,
   ]);
 
   const error = firstValue(query.error);
+
+  // 읽을 수 있는 PDF가 있을 때만 `PDF에서 찾기`를 보여준다.
+  const pdf = files.find(isReadable) ?? null;
 
   const citation = profile
     ? buildCitation(profile, {
@@ -117,193 +115,25 @@ export default async function PaperProfilePage({
         </section>
       ) : null}
 
-      <form action={savePaperProfile} className="flex flex-col gap-6">
-        <input type="hidden" name="sourceId" value={source.id} />
-
-        <Field
-          label="저자"
-          htmlFor="authors"
-          hint="한 줄에 한 사람. 쉼표가 있으면 앞이 성, 뒤가 이름입니다. 예: Kim, Daesoo / 김대수 / 한국교육과정평가원"
-        >
-          <textarea
-            id="authors"
-            name="authors"
-            rows={4}
-            defaultValue={profile ? formatAuthorsInput(profile.authors) : ""}
-            placeholder={"Kim, Daesoo\n이서연"}
-            className="rounded-lg border border-black/[.08] bg-white px-3 py-2 text-sm leading-6 text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-          />
-        </Field>
-
-        <Field
-          label="원문 언어"
-          htmlFor="originalLanguage"
-          hint="참고문헌 표기가 달라집니다. 한국어는 이름을 그대로 적고, 영어는 Kim, D. 처럼 줄입니다."
-        >
-          <select
-            id="originalLanguage"
-            name="originalLanguage"
-            defaultValue={profile?.originalLanguage ?? ""}
-            className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-          >
-            <option value="">고르지 않음</option>
-            {PAPER_LANGUAGES.map((language) => (
-              <option key={language.code} value={language.code}>
-                {language.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Field
-            label="발행 연도"
-            htmlFor="publicationYear"
-            hint="모르면 비워둡니다. 참고문헌에 n.d.로 적힙니다."
-          >
-            <input
-              id="publicationYear"
-              name="publicationYear"
-              type="number"
-              inputMode="numeric"
-              min={MIN_PUBLICATION_YEAR}
-              max={MAX_PUBLICATION_YEAR}
-              defaultValue={profile?.publicationYear ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-
-          <Field label="학술지명" htmlFor="journalName">
-            <input
-              id="journalName"
-              name="journalName"
-              type="text"
-              maxLength={MAX_JOURNAL_NAME_LENGTH}
-              defaultValue={profile?.journalName ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-3">
-          <Field label="권" htmlFor="volume">
-            <input
-              id="volume"
-              name="volume"
-              type="text"
-              maxLength={50}
-              defaultValue={profile?.volume ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-
-          <Field label="호" htmlFor="issue">
-            <input
-              id="issue"
-              name="issue"
-              type="text"
-              maxLength={50}
-              defaultValue={profile?.issue ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-
-          <Field label="쪽" htmlFor="pageRange" hint="예: 45-67">
-            <input
-              id="pageRange"
-              name="pageRange"
-              type="text"
-              maxLength={50}
-              defaultValue={profile?.pageRange ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Field
-            label="DOI"
-            htmlFor="doi"
-            hint="주소째 붙여넣어도 됩니다. 10.으로 시작하는 부분만 담습니다."
-          >
-            <input
-              id="doi"
-              name="doi"
-              type="text"
-              maxLength={MAX_DOI_LENGTH}
-              placeholder="10.1234/abcd"
-              defaultValue={profile?.doi ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-
-          <Field label="ISSN" htmlFor="issn">
-            <input
-              id="issn"
-              name="issn"
-              type="text"
-              maxLength={20}
-              defaultValue={profile?.issn ?? ""}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-            />
-          </Field>
-        </div>
-
-        <Field
-          label="키워드"
-          htmlFor="keywords"
-          hint="쉼표로 나눕니다. 초록에서 그대로 복사해 붙여도 됩니다."
-        >
-          <input
-            id="keywords"
-            name="keywords"
-            type="text"
-            defaultValue={profile?.keywords.join(", ") ?? ""}
-            className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-          />
-        </Field>
-
-        <Field label="초록" htmlFor="abstract">
-          <textarea
-            id="abstract"
-            name="abstract"
-            rows={6}
-            maxLength={MAX_ABSTRACT_LENGTH}
-            defaultValue={profile?.abstract ?? ""}
-            className="rounded-lg border border-black/[.08] bg-white px-3 py-2 text-sm leading-6 text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-          />
-        </Field>
-
-        <Field
-          label="참고문헌 직접 쓰기"
-          htmlFor="citationOverride"
-          hint="비워두면 위의 조각으로 만듭니다. 만들어진 것이 어색할 때만 적습니다. 여기에 적으면 조각을 고쳐도 이 글이 그대로 쓰입니다."
-        >
-          <textarea
-            id="citationOverride"
-            name="citationOverride"
-            rows={3}
-            maxLength={MAX_CITATION_LENGTH}
-            defaultValue={profile?.citationOverride ?? ""}
-            className="rounded-lg border border-black/[.08] bg-white px-3 py-2 text-sm leading-6 text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
-          />
-        </Field>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            className="h-11 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
-          >
-            저장
-          </button>
-          <Link
-            href={`/sources/${source.id}`}
-            className="h-11 rounded-full border border-solid border-black/[.08] px-5 text-sm font-medium leading-[2.75rem] text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-          >
-            취소
-          </Link>
-        </div>
-      </form>
+      <PaperForm
+        sourceId={source.id}
+        currentTitle={source.title}
+        pdfFileId={pdf?.id ?? null}
+        initial={{
+          authors: profile ? formatAuthorsInput(profile.authors) : "",
+          publicationYear: profile?.publicationYear?.toString() ?? "",
+          journalName: profile?.journalName ?? "",
+          volume: profile?.volume ?? "",
+          issue: profile?.issue ?? "",
+          pageRange: profile?.pageRange ?? "",
+          doi: profile?.doi ?? "",
+          issn: profile?.issn ?? "",
+          abstract: profile?.abstract ?? "",
+          keywords: profile?.keywords.join(", ") ?? "",
+          originalLanguage: profile?.originalLanguage ?? "",
+          citationOverride: profile?.citationOverride ?? "",
+        }}
+      />
     </div>
   );
 }

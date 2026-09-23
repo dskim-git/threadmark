@@ -10,7 +10,11 @@ import {
   readPaperProfileForm,
   toAuthorsJson,
 } from "@/lib/papers/schema";
-import { firstIssueMessage, formValue } from "@/lib/sources/schema";
+import {
+  MAX_TITLE_LENGTH,
+  firstIssueMessage,
+  formValue,
+} from "@/lib/sources/schema";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -86,6 +90,36 @@ export async function savePaperProfile(formData: FormData): Promise<void> {
   const supabase = await createClient();
 
   /*
+    가져오기로 받은 제목을 자료에 반영한다. (설계 문서 8.5절)
+
+    화면에서 "제목도 바꾸기"를 고른 경우에만 이 칸이 온다. 고르지 않으면
+    아예 보내지 않으므로 자료 제목은 손대지 않는다.
+
+    제목은 sources가 주인이다. 논문 정보 화면에 제목 입력란을 두지 않은 것도
+    같은 이유다. 두 곳에서 고칠 수 있으면 어느 쪽이 맞는지 알 수 없어진다.
+    여기서 고치는 것은 "가져온 값을 쓰겠다"는 한 번의 선택이지, 제목을
+    여기서도 관리한다는 뜻이 아니다.
+  */
+  const importedTitle = formValue(formData.get("importedTitle")).trim();
+
+  if (importedTitle.length > 0) {
+    const title = importedTitle.slice(0, MAX_TITLE_LENGTH);
+
+    const { error: titleError } = await supabase
+      .from("sources")
+      .update({ title })
+      .eq("id", sourceId.data);
+
+    if (titleError) {
+      console.error("[ThreadMark] 자료 제목 갱신 실패:", titleError.message);
+
+      redirectWithQuery(`${destination}/paper`, {
+        error: "제목을 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      });
+    }
+  }
+
+  /*
     source_id에 unique가 걸려 있어 upsert가 성립한다.
     onConflict를 명시하지 않으면 PostgREST가 기본키(id)로 판단해,
     이미 있는 자료에 두 번째 행을 만들려다 제약에 걸린다.
@@ -120,6 +154,7 @@ export async function savePaperProfile(formData: FormData): Promise<void> {
   }
 
   revalidatePath(destination);
+  revalidatePath("/library");
   revalidatePath("/library/papers");
 
   /*
