@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { installStreamAsyncIterator } from "@/lib/pdf/stream-async-iterator";
+
 import "./text-layer.css";
 
 /**
@@ -240,6 +242,16 @@ export function PdfReader({
 
     async function open() {
       try {
+        /*
+          pdf.js를 부르기 전에 사파리에 빠진 것을 채운다.
+
+          pdf.js는 글자를 꺼낼 때 스트림을 `for await ... of`로 읽는데,
+          사파리는 아직 그렇게 읽지 못한다. 채우지 않으면 아이패드에서
+          "undefined is not a function"으로 끝난다. 이미 있으면 건드리지
+          않으므로 다른 브라우저에는 아무 일도 일어나지 않는다.
+        */
+        installStreamAsyncIterator(globalThis.ReadableStream?.prototype);
+
         // 화면이 뜬 뒤에 불러온다. 서버에서는 이 라이브러리를 부를 수 없다.
         const pdfjs = await import("pdfjs-dist");
 

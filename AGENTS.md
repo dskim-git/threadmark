@@ -60,7 +60,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 502개
+npm test          # node --test, 510개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -291,6 +291,25 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
   스크롤 아래로 숨어 누를 수가 없다. 무엇을 저장하는지 보는 것보다 저장할 수
   있는 것이 먼저다.
 
+### 사파리에는 있는 줄 알았던 것이 없다
+
+- **`ReadableStream`을 `for await ... of`로 읽지 못한다.** 규격에는 있고
+  구현이 없다. 크롬·엣지·안드로이드 크롬은 된다.
+
+  pdf.js가 글자를 꺼낼 때 그 방식을 쓴다. 그래서 **아이패드에서만** 논문의
+  문장을 드래그할 수 없었다. 같은 파일이 데스크톱과 안드로이드에서는 멀쩡했다.
+  화면에 뜬 이유는 `undefined is not a function (near '...t of e...')`였다.
+  줄여진 `for await (const t of e)`다.
+
+  피해 가지 않고 **빠진 기능을 채운다.** pdf.js 안에 같은 방식으로 읽는 곳이
+  하나 더 있고, 라이브러리를 올릴 때마다 새로 생길 수 있다.
+  `src/lib/pdf/stream-async-iterator.ts`가 없을 때만 채워 넣는다. 사파리가
+  나중에 지원하면 그쪽이 쓰인다.
+
+  **기기가 다르면 다른 브라우저다.** 데스크톱에서 되는 것으로 끝내지 않는다.
+  아이패드에는 콘솔을 붙일 수 없으므로, 실패한 이유를 화면에 적어 사용자가
+  읽어 줄 수 있게 해둔다. 그 한 줄이 없었으면 이 원인을 찾지 못했다.
+
 ### 서버가 보낸 목록을 브라우저가 붙잡아 두지 않는다
 
 - **그릴 때 한 번 만든 상태는, 목록이 늘어나는 순간 터진다.**
@@ -487,7 +506,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (502개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (510개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (68검사) |
