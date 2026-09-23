@@ -16,9 +16,11 @@ import {
 } from "@/lib/papers/types";
 
 import {
+  extractWithAi,
   importByDoi,
   importByTitle,
   importFromPdf,
+  previewPdfTextForAi,
   type ImportResult,
 } from "./import-actions";
 import { savePaperProfile } from "./paper-actions";
@@ -54,9 +56,11 @@ type ImportState =
   | { phase: "idle" }
   | { phase: "working" }
   | { phase: "failed"; message: string }
-  | { phase: "filled"; filled: string[] }
+  | { phase: "filled"; filled: string[]; source: ImportedPaper["source"] }
   | { phase: "candidates"; candidates: ImportCandidate[] }
-  | { phase: "dois"; dois: string[] };
+  | { phase: "dois"; dois: string[] }
+  /** AI에게 보낼 글을 보여주는 중. 아직 아무것도 보내지 않았다. */
+  | { phase: "preview"; text: string; truncated: boolean };
 
 export function PaperForm({
   sourceId,
@@ -64,11 +68,19 @@ export function PaperForm({
   initial,
   /** 이 자료에 붙어 있는 PDF. 없으면 `PDF에서 찾기`를 보여주지 않는다. */
   pdfFileId,
+  aiEnabled,
 }: {
   sourceId: string;
   currentTitle: string;
   initial: FieldValues;
   pdfFileId: string | null;
+  /**
+   * AI 보조를 쓸 수 있는지. 서버가 판단해 내려준다.
+   *
+   * 키가 없으면 버튼 자체를 보여주지 않는다. 눌러야만 안 된다는 것을 알게
+   * 되는 버튼은 없느니만 못하다. 번역(13-C)에서와 같은 처리다.
+   */
+  aiEnabled: boolean;
 }) {
   const [values, setValues] = useState<FieldValues>(initial);
   const [importState, setImportState] = useState<ImportState>({ phase: "idle" });
@@ -135,7 +147,7 @@ export function PaperForm({
       setImportedTitle(null);
     }
 
-    setImportState({ phase: "filled", filled });
+    setImportState({ phase: "filled", filled, source: paper.source });
   }
 
   function handle(result: ImportResult) {
@@ -153,6 +165,16 @@ export function PaperForm({
 
     if (result.kind === "candidates") {
       setImportState({ phase: "candidates", candidates: result.candidates });
+
+      return;
+    }
+
+    if (result.kind === "preview") {
+      setImportState({
+        phase: "preview",
+        text: result.text,
+        truncated: result.truncated,
+      });
 
       return;
     }
@@ -196,7 +218,28 @@ export function PaperForm({
               </button>
               <p className="text-xs text-zinc-500">
                 붙어 있는 PDF의 앞쪽에서 DOI를 찾아 서지 정보를 가져옵니다.
-                국내 논문은 이 길이 가장 잘 됩니다.
+                밖으로 나가는 것은 DOI 하나뿐이고, 값도 치르지 않습니다.
+              </p>
+            </div>
+          ) : null}
+
+          {pdfFileId && aiEnabled ? (
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  run(() => previewPdfTextForAi({ sourceFileId: pdfFileId }))
+                }
+                className="h-10 w-fit rounded-full border border-black/[.08] px-5 text-sm text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                {busy ? "읽는 중…" : "AI로 읽기"}
+              </button>
+              <p className="text-xs leading-5 text-zinc-500">
+                DOI가 인쇄되어 있지 않은 논문에 씁니다. 첫 장에 적힌 것을 AI가
+                읽어 옮깁니다. 저자 이름이 한글 그대로 나옵니다.{" "}
+                <strong>보내기 전에 무엇이 나가는지 보여드립니다.</strong>{" "}
+                요청마다 값이 듭니다.
               </p>
             </div>
           ) : null}
@@ -260,6 +303,12 @@ export function PaperForm({
           busy={busy}
           onPickDoi={(doi) => run(() => importByDoi({ doi }))}
           onPickCandidate={(candidate) => applyPaper(candidate)}
+          onConfirmAi={
+            pdfFileId
+              ? () => run(() => extractWithAi({ sourceFileId: pdfFileId }))
+              : null
+          }
+          onCancelPreview={() => setImportState({ phase: "idle" })}
         />
 
         {importedTitle ? (
@@ -500,11 +549,16 @@ function ImportOutcome({
   busy,
   onPickDoi,
   onPickCandidate,
+  onConfirmAi,
+  onCancelPreview,
 }: {
   state: ImportState;
   busy: boolean;
   onPickDoi: (doi: string) => void;
   onPickCandidate: (candidate: ImportCandidate) => void;
+  /** 보여준 글을 AI에게 보낸다. PDF가 없으면 null. */
+  onConfirmAi: (() => void) | null;
+  onCancelPreview: () => void;
 }) {
   if (state.phase === "idle" || state.phase === "working") {
     return null;
@@ -522,15 +576,82 @@ function ImportOutcome({
   }
 
   if (state.phase === "filled") {
+    /*
+      어디서 온 값인지에 따라 경고의 세기를 달리한다.
+
+      Crossref는 출판사가 등록한 값이라 틀릴 일이 거의 없다.
+      AI는 첫 장을 읽어 옮긴 것이라 틀릴 수 있다. 특히 권·호·쪽처럼
+      작게 인쇄된 것과, 2단 편집에서 줄이 엉킨 곳이 그렇다.
+
+      둘을 같은 얼굴로 보여주면 사용자는 어느 쪽을 더 눈여겨봐야 하는지
+      알 수 없다. 그러면 둘 다 대충 보게 된다.
+    */
+    const ai = state.source === "ai";
+
+    const filled =
+      state.filled.length > 0
+        ? `${state.filled.join(", ")}을(를) 채웠습니다.`
+        : "가져온 값이 이미 적어둔 것과 같아 바뀐 칸이 없습니다.";
+
     return (
       <p
         role="status"
-        className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+        className={
+          ai
+            ? "rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+            : "rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+        }
       >
-        {state.filled.length > 0
-          ? `${state.filled.join(", ")}을(를) 채웠습니다. 확인하고 저장을 눌러 주세요.`
-          : "가져온 값이 이미 적어둔 것과 같아 바뀐 칸이 없습니다."}
+        {filled}{" "}
+        {ai ? (
+          <>
+            <strong>AI가 읽은 것이라 틀릴 수 있습니다.</strong> 저장하기 전에
+            권·호·쪽을 특히 확인해 주세요. DOI는 지어낼 위험이 있어 아예 받지
+            않았습니다.
+          </>
+        ) : (
+          "확인하고 저장을 눌러 주세요."
+        )}
       </p>
+    );
+  }
+
+  if (state.phase === "preview") {
+    /*
+      설계 문서 18절: "요청 전에 전송될 텍스트 범위를 사용자가 확인할 수 있게 한다."
+
+      여기까지는 아무것도 밖으로 나가지 않았다. PDF에서 글을 꺼내 보여준 것뿐이다.
+      `AI에게 보내기`를 눌러야 나간다.
+    */
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+        <p className="text-xs leading-5 text-amber-900 dark:text-amber-200">
+          아래 글이 <strong>Claude에 보내집니다.</strong> 아직 보내지
+          않았습니다. 확인하고 눌러 주세요.
+          {state.truncated ? " (길어서 앞부분만 보냅니다)" : ""}
+        </p>
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-amber-200 bg-white p-2 text-xs leading-5 text-zinc-700 dark:border-amber-900/60 dark:bg-black dark:text-zinc-300">
+          {state.text}
+        </pre>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={busy || onConfirmAi === null}
+            onClick={() => onConfirmAi?.()}
+            className="h-9 rounded-full bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+          >
+            {busy ? "읽는 중…" : "AI에게 보내기"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancelPreview}
+            className="h-9 rounded-full border border-black/[.08] px-4 text-sm text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+          >
+            보내지 않기
+          </button>
+        </div>
+      </div>
     );
   }
 

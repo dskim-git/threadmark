@@ -81,14 +81,15 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 14-A. 논문 정보와 APA 참고문헌 | Phase 5 | 완료 |
 | 14-B. 논문 분석 서식 | Phase 5 | 예정 |
 | 14-C-1. DOI로 가져오기 | Phase 5 | 완료 |
-| 14-C-2. AI 보조·BibTeX·RIS·검색 허브 | Phase 5 | 진행 중 |
+| 14-C-2a. AI 보조 | Phase 5 | 완료 |
+| 14-C-2b. BibTeX·RIS·검색 허브 | Phase 5 | 예정 |
 | 14-D. 프로젝트별 활용 계획, 논문 관계 | Phase 5 | 예정 |
 | 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-14-C-1은 아직 커밋되지 않았다.
+14-C-2a는 아직 커밋되지 않았다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 

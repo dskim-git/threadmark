@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { isAiExtractConfigured } from "@/lib/papers/ai-extract";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { formatAuthorsInput } from "@/lib/papers/schema";
 import { isReadable, listSourceFiles } from "@/lib/sources/files";
@@ -119,6 +120,11 @@ export default async function PaperProfilePage({
         sourceId={source.id}
         currentTitle={source.title}
         pdfFileId={pdf?.id ?? null}
+        /*
+          AI를 쓸 수 있는지는 서버만 안다. API 키가 있는지를 브라우저에
+          내려보내지 않고, "쓸 수 있는가"만 내려보낸다. (13-C와 같다)
+        */
+        aiEnabled={isAiExtractConfigured()}
         initial={{
           authors: profile ? formatAuthorsInput(profile.authors) : "",
           publicationYear: profile?.publicationYear?.toString() ?? "",

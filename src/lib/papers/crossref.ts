@@ -42,8 +42,16 @@ export type ImportedPaper = {
   issn: string | null;
   abstract: string | null;
   originalLanguage: string | null;
-  /** 어디서 가져온 값인지. 화면이 출처를 밝히는 데 쓴다. */
-  source: "crossref";
+  /**
+   * 어디서 가져온 값인지.
+   *
+   *   crossref  출판사가 등록한 값. 추측이 없다.
+   *   ai        AI가 첫 장을 읽어 뽑은 값. 틀릴 수 있다.
+   *
+   * 화면이 이 값으로 경고의 세기를 달리한다. 둘을 같은 얼굴로 보여주면
+   * 사용자는 어느 쪽을 더 눈여겨봐야 하는지 알 수 없다.
+   */
+  source: "crossref" | "ai";
 };
 
 /** 제목으로 찾았을 때 고르게 할 후보 하나. */

@@ -10,6 +10,11 @@ import {
   lookupByDoi,
   searchByTitle,
 } from "@/lib/papers/crossref-lookup";
+import {
+  extractPaperFromText,
+  isAiExtractConfigured,
+  MAX_EXTRACT_INPUT_LENGTH,
+} from "@/lib/papers/ai-extract";
 import { findDois } from "@/lib/papers/doi-scan";
 import { readPdfHeadText } from "@/lib/papers/pdf-text";
 import { normalizeDoi } from "@/lib/papers/schema";
@@ -18,19 +23,24 @@ import { takeSlot } from "@/lib/translation/rate-limit";
 /**
  * 서지 정보 가져오기. (설계 문서 8.5절)
  *
- * 세 가지 길이 있고 모두 같은 곳에서 끝난다.
+ * 길이 넷이고 순서가 있다. 앞의 셋은 공짜이고 추측이 없다.
  *
  *   PDF에서 DOI 찾기  ->  Crossref
  *   DOI 직접 입력      ->  Crossref
  *   제목으로 찾기      ->  Crossref (후보 여럿)
+ *   AI가 첫 장 읽기    ->  마지막 수단. 돈이 들고 틀릴 수 있다
  *
  * **어느 길이든 저장하지 않는다.** 찾은 값을 돌려줄 뿐이고, 입력란을 채우는
  * 것도 저장하는 것도 사용자가 한다. 서지 정보는 틀려도 그럴듯해 보이는 것이
  * 가장 위험하다. 그대로 논문 참고문헌에 실리기 때문이다.
  *
  * 첫 번째 길이 국내 논문에서 특히 중요하다. Crossref의 제목 검색은 한글로는
- * 거의 나오지 않는다. 국내 논문이 영문 제목과 로마자 저자명으로 등록되어
- * 있기 때문이다. (2026-09-23 확인) DOI로는 국내 논문도 잘 나온다.
+ * 아예 나오지 않는다. 국내 논문이 영문 제목과 로마자 저자명으로 등록되어
+ * 있기 때문이다. (블루프린트 8.5-1절) DOI로는 국내 논문도 잘 나온다.
+ *
+ * 네 번째는 DOI가 인쇄되어 있지 않은 국내 학위논문과 오래된 논문을 위한
+ * 것이다. 설계 문서 18절이 "요청 전에 전송될 텍스트 범위를 사용자가 확인할
+ * 수 있게 한다"고 해서, 보낼 글을 먼저 보여주고 확인받는 두 걸음으로 나눴다.
  */
 
 /**
@@ -51,8 +61,23 @@ const scanHistory = new Map<string, readonly number[]>();
 
 const SCAN_LIMIT = { windowMs: 60_000, max: 5 };
 
+/**
+ * AI에게 보내는 것은 돈이 드는 일이라 가장 좁게 건다.
+ *
+ * 논문 한 편을 읽고 판단하는 데는 이만큼이면 넉넉하다. 사람이 결과를 보고
+ * 고치는 시간이 있어서 이보다 빨라지기 어렵다.
+ *
+ * 다만 이것은 건수만 센다. "이번 달에 얼마를 썼는가"를 세는 장부는 16단계에
+ * 만든다. 세는 자리가 서버 프로세스의 기억이라 서버가 여럿이면 헐겁게 걸린다.
+ */
+const aiHistory = new Map<string, readonly number[]>();
+
+const AI_LIMIT = { windowMs: 60_000, max: 5 };
+
 export type ImportResult =
   | { ok: true; kind: "paper"; paper: ImportedPaper }
+  /** AI에게 보낼 글. 사용자가 확인한 뒤에야 보낸다. (설계 문서 18절) */
+  | { ok: true; kind: "preview"; text: string; truncated: boolean }
   | { ok: true; kind: "candidates"; candidates: ImportCandidate[] }
   /** PDF에서 DOI를 여럿 찾은 경우. 어느 것인지 사용자가 고른다. */
   | { ok: true; kind: "dois"; dois: string[] }
@@ -147,41 +172,23 @@ export async function importByTitle(input: unknown): Promise<ImportResult> {
 }
 
 /**
- * 자료에 붙은 PDF에서 DOI를 찾는다.
+ * 자료에 붙은 PDF에서 앞쪽 글을 꺼낸다.
  *
- * 하나만 찾으면 바로 Crossref에 물어 서지 정보까지 돌려준다.
- * 여럿이면 목록만 돌려주고 사용자가 고르게 한다. 보통 첫 번째가 그 논문의
- * 것이지만 **보통**이 늘 맞지는 않다. 참고문헌의 DOI를 주울 수 있다.
+ * 파일이 정말 이 사람 것인지 먼저 확인한다. RLS의 source_files_select_own
+ * 정책이 남의 파일을 돌려주지 않으므로, 찾지 못하면 없는 것으로 본다.
+ * 없는 파일과 남의 파일을 구분하지 않는다.
  */
-export async function importFromPdf(input: unknown): Promise<ImportResult> {
-  const account = await requireActiveAccount();
-
-  const parsed = z
-    .object({ sourceFileId: z.uuid() })
-    .safeParse(input);
-
-  if (!parsed.success) {
-    return { ok: false, message: "잘못된 요청입니다." };
-  }
-
-  const limited = checkLimit(scanHistory, account.userId, SCAN_LIMIT);
-
-  if (limited) {
-    return { ok: false, message: limited };
-  }
-
-  /*
-    파일이 정말 이 사람 것인지 확인한다.
-    RLS의 source_files_select_own 정책이 남의 파일을 돌려주지 않으므로,
-    찾지 못하면 없는 것으로 본다. 없는 파일과 남의 파일을 구분하지 않는다.
-  */
+async function readHeadText(
+  userId: string,
+  sourceFileId: string,
+): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
   const { data: file, error } = await supabase
     .from("source_files")
     .select("id, drive_file_id, mime_type, status")
-    .eq("id", parsed.data.sourceFileId)
+    .eq("id", sourceFileId)
     .maybeSingle();
 
   if (error) {
@@ -194,13 +201,10 @@ export async function importFromPdf(input: unknown): Promise<ImportResult> {
     return { ok: false, message: "읽을 수 있는 PDF를 찾지 못했습니다." };
   }
 
-  const accessToken = await getDriveAccessToken(account.userId);
+  const accessToken = await getDriveAccessToken(userId);
 
   if (!accessToken) {
-    return {
-      ok: false,
-      message: "Google Drive 연결을 확인해 주세요.",
-    };
+    return { ok: false, message: "Google Drive 연결을 확인해 주세요." };
   }
 
   const download = await fetchDriveFileContent({
@@ -220,12 +224,10 @@ export async function importFromPdf(input: unknown): Promise<ImportResult> {
     };
   }
 
-  let text: string;
-
   try {
     const buffer = await download.response.arrayBuffer();
 
-    text = await readPdfHeadText(new Uint8Array(buffer));
+    return { ok: true, text: await readPdfHeadText(new Uint8Array(buffer)) };
   } catch (caught) {
     console.error(
       "[ThreadMark] PDF 글자 읽기 실패:",
@@ -234,20 +236,56 @@ export async function importFromPdf(input: unknown): Promise<ImportResult> {
 
     return { ok: false, message: "PDF를 읽지 못했습니다." };
   }
+}
 
-  const dois = findDois(text);
+/**
+ * 자료에 붙은 PDF에서 DOI를 찾는다.
+ *
+ * 하나만 찾으면 바로 Crossref에 물어 서지 정보까지 돌려준다.
+ * 여럿이면 목록만 돌려주고 사용자가 고르게 한다. 보통 첫 번째가 그 논문의
+ * 것이지만 **보통**이 늘 맞지는 않다. 참고문헌의 DOI를 주울 수 있다.
+ */
+export async function importFromPdf(input: unknown): Promise<ImportResult> {
+  const account = await requireActiveAccount();
+
+  const parsed = z.object({ sourceFileId: z.uuid() }).safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: "잘못된 요청입니다." };
+  }
+
+  const limited = checkLimit(scanHistory, account.userId, SCAN_LIMIT);
+
+  if (limited) {
+    return { ok: false, message: limited };
+  }
+
+  const read = await readHeadText(account.userId, parsed.data.sourceFileId);
+
+  if (!read.ok) {
+    return read;
+  }
+
+  const dois = findDois(read.text);
 
   if (dois.length === 0) {
     /*
       글자가 아예 없으면 스캔본이다. 있는데 DOI만 없는 것과 다른 상황이라
       안내도 다르게 한다. 할 수 있는 일이 다르기 때문이다.
     */
+    if (read.text.trim().length === 0) {
+      return {
+        ok: false,
+        message:
+          "이 PDF에서는 글자를 찾지 못했습니다. 스캔한 파일로 보입니다. 서지 정보는 손으로 적어야 합니다.",
+      };
+    }
+
     return {
       ok: false,
-      message:
-        text.trim().length === 0
-          ? "이 PDF에서는 글자를 찾지 못했습니다. 스캔한 파일로 보입니다. 서지 정보는 손으로 적어야 합니다."
-          : "이 PDF에서 DOI를 찾지 못했습니다. 제목으로 찾거나 손으로 적어 주세요.",
+      message: isAiExtractConfigured()
+        ? "이 PDF에서 DOI를 찾지 못했습니다. 아래 `AI로 읽기`를 써보거나 손으로 적어 주세요."
+        : "이 PDF에서 DOI를 찾지 못했습니다. 제목으로 찾거나 손으로 적어 주세요.",
     };
   }
 
@@ -259,5 +297,102 @@ export async function importFromPdf(input: unknown): Promise<ImportResult> {
 
   return result.ok
     ? { ok: true, kind: "paper", paper: result.value }
+    : { ok: false, message: result.message };
+}
+
+/**
+ * AI에게 보낼 글을 먼저 보여준다. (설계 문서 18절)
+ *
+ * 18절: "요청 전에 전송될 텍스트 범위를 사용자가 확인할 수 있게 한다."
+ *
+ * 그래서 두 걸음이다. 여기서는 PDF에서 글을 꺼내 보여주기만 하고, 밖으로
+ * 아무것도 보내지 않는다. 돈도 들지 않는다. 보낼지는 그것을 보고 정한다.
+ *
+ * 덤으로, 스캔본이어서 글자가 없다는 것을 돈을 쓰기 전에 알게 된다.
+ */
+export async function previewPdfTextForAi(
+  input: unknown,
+): Promise<ImportResult> {
+  const account = await requireActiveAccount();
+
+  if (!isAiExtractConfigured()) {
+    return { ok: false, message: "AI 기능이 아직 설정되지 않았습니다." };
+  }
+
+  const parsed = z.object({ sourceFileId: z.uuid() }).safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: "잘못된 요청입니다." };
+  }
+
+  const limited = checkLimit(scanHistory, account.userId, SCAN_LIMIT);
+
+  if (limited) {
+    return { ok: false, message: limited };
+  }
+
+  const read = await readHeadText(account.userId, parsed.data.sourceFileId);
+
+  if (!read.ok) {
+    return read;
+  }
+
+  const text = read.text.trim();
+
+  if (text.length === 0) {
+    return {
+      ok: false,
+      message:
+        "이 PDF에서는 글자를 찾지 못했습니다. 스캔한 파일로 보입니다. 서지 정보는 손으로 적어야 합니다.",
+    };
+  }
+
+  return {
+    ok: true,
+    kind: "preview",
+    text: text.slice(0, MAX_EXTRACT_INPUT_LENGTH),
+    truncated: text.length > MAX_EXTRACT_INPUT_LENGTH,
+  };
+}
+
+/**
+ * 보여준 글을 AI에게 보내 서지 정보를 뽑는다. (설계 문서 8.5절, 18절)
+ *
+ * 마지막 수단이다. 공짜 길이 모두 막혔을 때만 온다. 돈이 들고 틀릴 수 있다.
+ *
+ * 글을 다시 꺼낸다. 화면이 보낸 글을 그대로 믿지 않는다. 사용자가 방금 본
+ * 그 글과 같은 것이 나가야 하고, 그것을 보장하는 방법은 같은 자리에서 같은
+ * 방식으로 다시 꺼내는 것뿐이다. 화면이 보낸 글을 쓰면, 보여준 것과 보내는
+ * 것이 다를 수 있는 길이 생긴다.
+ */
+export async function extractWithAi(input: unknown): Promise<ImportResult> {
+  const account = await requireActiveAccount();
+
+  if (!isAiExtractConfigured()) {
+    return { ok: false, message: "AI 기능이 아직 설정되지 않았습니다." };
+  }
+
+  const parsed = z.object({ sourceFileId: z.uuid() }).safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: "잘못된 요청입니다." };
+  }
+
+  const limited = checkLimit(aiHistory, account.userId, AI_LIMIT);
+
+  if (limited) {
+    return { ok: false, message: limited };
+  }
+
+  const read = await readHeadText(account.userId, parsed.data.sourceFileId);
+
+  if (!read.ok) {
+    return read;
+  }
+
+  const result = await extractPaperFromText(read.text);
+
+  return result.ok
+    ? { ok: true, kind: "paper", paper: result.paper }
     : { ok: false, message: result.message };
 }
