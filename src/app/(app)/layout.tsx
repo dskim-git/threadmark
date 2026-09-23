@@ -55,6 +55,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             </Link>
 
             <Link
+              href="/research/search"
+              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+            >
+              연구 검색
+            </Link>
+
+            <Link
               href="/projects"
               className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
             >

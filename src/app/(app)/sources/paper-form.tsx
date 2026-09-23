@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import type { ImportCandidate, ImportedPaper } from "@/lib/papers/crossref";
+import { MAX_PASTE_LENGTH, parsePastedCitation } from "@/lib/papers/paste";
 import { formatAuthorsInput } from "@/lib/papers/schema";
 import {
   MAX_ABSTRACT_LENGTH,
@@ -86,6 +87,7 @@ export function PaperForm({
   const [importState, setImportState] = useState<ImportState>({ phase: "idle" });
   const [doiQuery, setDoiQuery] = useState("");
   const [titleQuery, setTitleQuery] = useState(currentTitle);
+  const [pasted, setPasted] = useState("");
   const [pending, startTransition] = useTransition();
 
   /*
@@ -294,8 +296,64 @@ export function PaperForm({
           <p className="text-xs leading-5 text-zinc-500">
             제목 검색은 <strong>한글로는 찾지 못합니다.</strong> 국내 논문도
             영문 제목과 로마자 저자명으로 등록되어 있기 때문입니다. 국내
-            논문은 위의 <strong>PDF에서 찾기</strong>가 가장 잘 듣습니다.
+            논문은 위의 <strong>PDF에서 찾기</strong>가 가장 잘 듣습니다.{" "}
+            <Link
+              href={`/research/search?q=${encodeURIComponent(titleQuery)}`}
+              className="underline underline-offset-2"
+            >
+              국내 사이트에서 찾기
+            </Link>
           </p>
+
+          <div className="flex flex-col gap-2 border-t border-black/[.06] pt-3 dark:border-white/[.1]">
+            <label
+              htmlFor="paste-citation"
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+            >
+              BibTeX · RIS 붙여넣기
+            </label>
+            <textarea
+              id="paste-citation"
+              rows={3}
+              maxLength={MAX_PASTE_LENGTH}
+              value={pasted}
+              disabled={busy}
+              onChange={(event) => setPasted(event.target.value)}
+              placeholder={"@article{...}  또는  TY  - JOUR"}
+              className="rounded-lg border border-black/[.08] bg-white px-3 py-2 font-mono text-xs leading-5 text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={busy || pasted.trim().length === 0}
+                onClick={() => {
+                  /*
+                    밖으로 나가는 요청이 없다. 브라우저에서 바로 읽는다.
+                    공짜이고 즉시 된다. 서버를 다녀올 이유가 없다.
+                  */
+                  const result = parsePastedCitation(pasted);
+
+                  if (!result.ok) {
+                    setImportState({
+                      phase: "failed",
+                      message: result.message,
+                    });
+
+                    return;
+                  }
+
+                  applyPaper(result.paper);
+                }}
+                className="h-9 rounded-full border border-black/[.08] px-4 text-sm text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                읽어서 채우기
+              </button>
+              <span className="text-xs text-zinc-500">
+                학술지 사이트의 `인용 내보내기`에서 받은 글을 그대로
+                붙여넣습니다. 밖으로 나가는 것은 없습니다.
+              </span>
+            </div>
+          </div>
         </div>
 
         <ImportOutcome
@@ -587,10 +645,16 @@ function ImportOutcome({
       알 수 없다. 그러면 둘 다 대충 보게 된다.
     */
     const ai = state.source === "ai";
+    const origin =
+      state.source === "bibtex"
+        ? "BibTeX에서 "
+        : state.source === "ris"
+          ? "RIS에서 "
+          : "";
 
     const filled =
       state.filled.length > 0
-        ? `${state.filled.join(", ")}을(를) 채웠습니다.`
+        ? `${origin}${state.filled.join(", ")}을(를) 채웠습니다.`
         : "가져온 값이 이미 적어둔 것과 같아 바뀐 칸이 없습니다.";
 
     return (
