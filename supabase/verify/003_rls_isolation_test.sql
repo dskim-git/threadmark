@@ -3200,6 +3200,335 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 62. 다른 사용자의 자료 관계를 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 8.4절. 무엇과 무엇을 이어두었는지는 읽고 있는 것의 지도가 된다.
+-- 제목을 모르더라도 몇 편을 어떤 관계로 엮고 있는지가 드러난다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_from   uuid;
+  v_to     uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  if v_other is null then
+    raise exception '검사 62 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  -- 삽입 전에 클레임을 비운다. 비우지 않으면 소유자 고정 트리거가
+  -- owner_id를 앞선 검사에서 설정한 사용자로 덮어쓴다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 A')
+  returning id into v_from;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 B')
+  returning id into v_to;
+
+  insert into public.source_relations
+    (owner_id, from_source_id, to_source_id, relation_type)
+  values
+    (v_owner, v_from, v_to, 'cites'::public.source_relation_type);
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.source_relations where from_source_id = v_from;
+
+  reset role;
+
+  delete from public.source_relations where from_source_id = v_from;
+  delete from public.sources where id in (v_from, v_to);
+
+  if v_seen <> 0 then
+    raise exception '검사 62 실패: 다른 사용자의 자료 관계가 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 63. 다른 사용자의 자료를 도착으로 삼을 수 없다
+-- -----------------------------------------------------------------------------
+-- 같은 표의 행 둘을 잇지만 확인은 두 방향 모두 해야 한다. 이것이 도착 쪽이다.
+-- 막지 않으면 남의 자료 id만 알면 내 자료에 엮어 목록에 끌어올 수 있다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_mine    uuid;
+  v_theirs  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 출발은 다른 사용자 것, 도착은 관리자 것.
+  insert into public.sources (owner_id, type, title)
+  values (v_other, 'paper'::public.source_type, 'RLS 격리 검사용 내 논문')
+  returning id into v_mine;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 남의 논문')
+  returning id into v_theirs;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_relations (from_source_id, to_source_id, relation_type)
+    values (v_mine, v_theirs, 'cites'::public.source_relation_type);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_relations
+  where from_source_id in (v_mine, v_theirs) or to_source_id in (v_mine, v_theirs);
+  delete from public.sources where id in (v_mine, v_theirs);
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 63 실패: 다른 사용자의 자료를 도착으로 삼을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 64. 다른 사용자의 자료를 출발로 삼을 수 없다
+-- -----------------------------------------------------------------------------
+-- 이번은 출발 쪽이다. 막지 않으면 남의 자료 상세에 내 자료가 관련 자료로
+-- 나타난다. 그쪽 화면에 내가 줄 하나를 심는 셈이다. 검사 63과 짝이다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_mine    uuid;
+  v_theirs  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_other, 'paper'::public.source_type, 'RLS 격리 검사용 내 논문')
+  returning id into v_mine;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 남의 논문')
+  returning id into v_theirs;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_relations (from_source_id, to_source_id, relation_type)
+    values (v_theirs, v_mine, 'cites'::public.source_relation_type);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_relations
+  where from_source_id in (v_mine, v_theirs) or to_source_id in (v_mine, v_theirs);
+  delete from public.sources where id in (v_mine, v_theirs);
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 64 실패: 다른 사용자의 자료를 출발로 삼을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 65. 소유자는 자기 자료끼리 잇고 읽고 끊을 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다. 양쪽을 확인하는 트리거가
+-- 지나치면 자기 것끼리의 연결까지 막게 되고, 그러면 기능이 성립하지 않는다.
+--
+-- owner_id를 보내지 않고 넣어 트리거가 채우는지도 함께 본다. (보안 원칙 2)
+-- 끊는 것까지 확인한다. 고치는 길이 없으므로, 잘못 이었을 때 되돌릴 방법은
+-- 끊기 하나뿐이다. 그것이 막혀 있으면 잘못된 줄이 영영 남는다.
+do $$
+declare
+  v_owner   uuid;
+  v_from    uuid;
+  v_to      uuid;
+  v_relation uuid;
+  v_written uuid;
+  v_seen    integer;
+  v_left    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 A')
+  returning id into v_from;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 B')
+  returning id into v_to;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.source_relations (from_source_id, to_source_id, relation_type)
+  values (v_from, v_to, 'similar_study'::public.source_relation_type)
+  returning id, owner_id into v_relation, v_written;
+
+  -- 두 방향 모두에서 읽힌다. 화면이 나간 것과 들어온 것을 따로 읽는다.
+  select
+    (select count(*) from public.source_relations where from_source_id = v_from)
+    + (select count(*) from public.source_relations where to_source_id = v_to)
+  into v_seen;
+
+  delete from public.source_relations where id = v_relation;
+
+  select count(*) into v_left
+  from public.source_relations where id = v_relation;
+
+  reset role;
+
+  delete from public.source_relations where id = v_relation;
+  delete from public.sources where id in (v_from, v_to);
+
+  if v_relation is null then
+    raise exception
+      '검사 65 실패: 소유자가 자기 자료끼리 잇지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+
+  if v_written <> v_owner then
+    raise exception
+      '검사 65 실패: owner_id가 트리거로 채워지지 않았습니다. (%)', v_written;
+  end if;
+
+  if v_seen <> 2 then
+    raise exception
+      '검사 65 실패: 이어둔 관계가 두 방향에서 읽히지 않았습니다. (%)', v_seen;
+  end if;
+
+  if v_left <> 0 then
+    raise exception '검사 65 실패: 이어둔 관계를 끊지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 66. 자기 자신과 잇거나 같은 관계를 두 번 담을 수 없다
+-- -----------------------------------------------------------------------------
+-- 둘 다 제약조건이 막는다. 뜻이 없는 줄과 똑같은 줄 둘을 만들지 않는다.
+-- 똑같은 줄이 둘이면 화면에서 어느 것을 끊어야 할지 알 수 없다.
+do $$
+declare
+  v_owner   uuid;
+  v_from    uuid;
+  v_to      uuid;
+  v_self_blocked  boolean := false;
+  v_twice_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 A')
+  returning id into v_from;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 B')
+  returning id into v_to;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_relations (from_source_id, to_source_id, relation_type)
+    values (v_from, v_from, 'cites'::public.source_relation_type);
+  exception when others then
+    v_self_blocked := true;
+  end;
+
+  insert into public.source_relations (from_source_id, to_source_id, relation_type)
+  values (v_from, v_to, 'cites'::public.source_relation_type);
+
+  begin
+    insert into public.source_relations (from_source_id, to_source_id, relation_type)
+    values (v_from, v_to, 'cites'::public.source_relation_type);
+  exception when others then
+    v_twice_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_relations
+  where from_source_id in (v_from, v_to) or to_source_id in (v_from, v_to);
+  delete from public.sources where id in (v_from, v_to);
+
+  if not v_self_blocked then
+    raise exception '검사 66 실패: 자기 자신과 이을 수 있었습니다.';
+  end if;
+
+  if not v_twice_blocked then
+    raise exception '검사 66 실패: 같은 관계를 두 번 담을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -3226,6 +3555,7 @@ select
   (select count(*) from public.paper_project_uses)                      as 활용_계획,
   (select count(*) from public.paper_project_uses
     where status = 'used'::public.paper_use_status)                     as 원고에_넣음,
+  (select count(*) from public.source_relations)                        as 자료_관계,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

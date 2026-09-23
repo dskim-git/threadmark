@@ -682,6 +682,48 @@ export type Database = {
           },
         ]
       }
+      source_relations: {
+        Row: {
+          created_at: string
+          from_source_id: string
+          id: string
+          owner_id: string
+          relation_type: Database["public"]["Enums"]["source_relation_type"]
+          to_source_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_source_id: string
+          id?: string
+          owner_id?: string
+          relation_type: Database["public"]["Enums"]["source_relation_type"]
+          to_source_id: string
+        }
+        Update: {
+          created_at?: string
+          from_source_id?: string
+          id?: string
+          owner_id?: string
+          relation_type?: Database["public"]["Enums"]["source_relation_type"]
+          to_source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_relations_from_source_id_fkey"
+            columns: ["from_source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "source_relations_to_source_id_fkey"
+            columns: ["to_source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sources: {
         Row: {
           canonical_url: string | null
@@ -807,6 +849,15 @@ export type Database = {
       project_visibility: "private"
       source_file_origin: "upload" | "picked"
       source_file_status: "pending" | "ready" | "missing"
+      source_relation_type:
+        | "cites"
+        | "cited_by"
+        | "found_in_references"
+        | "similar_study"
+        | "contradicts"
+        | "theoretical_basis"
+        | "method_reference"
+        | "follow_up_reading"
       source_status: "active"
       source_type:
         | "paper"
@@ -975,6 +1026,16 @@ export const Constants = {
       project_visibility: ["private"],
       source_file_origin: ["upload", "picked"],
       source_file_status: ["pending", "ready", "missing"],
+      source_relation_type: [
+        "cites",
+        "cited_by",
+        "found_in_references",
+        "similar_study",
+        "contradicts",
+        "theoretical_basis",
+        "method_reference",
+        "follow_up_reading",
+      ],
       source_status: ["active"],
       source_type: [
         "paper",

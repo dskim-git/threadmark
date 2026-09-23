@@ -50,6 +50,7 @@ const PROTECTED_TABLES = [
   "paper_profiles",
   "paper_analyses",
   "paper_project_uses",
+  "source_relations",
   "google_drive_connections",
 ];
 

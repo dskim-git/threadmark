@@ -18,10 +18,19 @@ import { listPaperProjectUses } from "@/lib/papers/project-use-queries";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { listSourceFiles } from "@/lib/sources/files";
-import { getSourceById } from "@/lib/sources/queries";
+import { listSourceRelations } from "@/lib/sources/relation-queries";
+import {
+  SOURCE_RELATION_OPTIONS,
+  getSourceRelationLabel,
+} from "@/lib/sources/relation-types";
+import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
 import { deleteSource } from "../actions";
+import {
+  linkSourceRelation,
+  unlinkSourceRelation,
+} from "../relation-actions";
 import { DrivePickerButton } from "../drive-picker-button";
 import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
@@ -56,6 +65,8 @@ export default async function SourceDetailPage({
     paperProfile,
     paperAnalysis,
     paperUses,
+    relations,
+    allSources,
     query,
   ] = await Promise.all([
     listCapturesForSource(source.id),
@@ -67,6 +78,8 @@ export default async function SourceDetailPage({
     source.type === "paper" ? getPaperProfile(source.id) : null,
     source.type === "paper" ? getPaperAnalysis(source.id) : null,
     source.type === "paper" ? listPaperProjectUses(source.id) : [],
+    listSourceRelations(source.id),
+    listSources(),
     searchParams,
   ]);
 
@@ -86,6 +99,14 @@ export default async function SourceDetailPage({
   const linkableProjects = allProjects.filter(
     (project) => !linkedIds.has(project.id),
   );
+
+  /*
+    이을 수 있는 다른 자료. (설계 문서 8.4절)
+
+    자기 자신은 뺀다. 데이터베이스도 막지만, 목록에 있으면 고를 수 있는 것처럼
+    보이고 눌러야 안 된다는 것을 안다.
+  */
+  const relatableSources = allSources.filter((other) => other.id !== source.id);
 
   /*
     활용 계획 칸을 보여줄 프로젝트. (설계 문서 8.3절)
@@ -312,6 +333,167 @@ export default async function SourceDetailPage({
           />
         </section>
       ) : null}
+
+      {/*
+        자료끼리의 관계. (설계 문서 8.4절)
+
+        논문 유형으로 제한하지 않는다. 이 표는 자료 일반의 것이고, 책이나
+        웹사이트가 논문을 인용하는 일도 있다. 13.1절은 같은 표로 음악의
+        여러 버전을 잇는다. 그 관계 종류는 15단계에서 더한다.
+
+        방향을 화살표로 그대로 보여준다. `인용함`과 `인용됨`이 둘 다 있어서,
+        어느 쪽에서 적었는지에 따라 같은 사실이 다른 말로 남는다.
+        화살표가 없으면 목록에서 그 둘을 구별할 수 없다.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+          관련 자료
+        </h2>
+
+        {relations.outgoing.length > 0 || relations.incoming.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {relations.outgoing.map((related) => (
+              <li
+                key={related.relationId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/[.08] bg-white px-4 py-3 dark:border-white/[.145] dark:bg-zinc-950"
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                  <span className="text-zinc-500">이 자료</span>
+                  <span aria-hidden="true" className="text-zinc-400">
+                    →
+                  </span>
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
+                    {getSourceRelationLabel(related.relationType)}
+                  </span>
+                  <span aria-hidden="true" className="text-zinc-400">
+                    →
+                  </span>
+                  <Link
+                    href={`/sources/${related.id}`}
+                    className="text-black hover:underline dark:text-zinc-50"
+                  >
+                    {related.title}
+                  </Link>
+                </div>
+
+                <form action={unlinkSourceRelation}>
+                  <input
+                    type="hidden"
+                    name="relationId"
+                    value={related.relationId}
+                  />
+                  <input type="hidden" name="returnTo" value={returnTo} />
+                  <button
+                    type="submit"
+                    className="text-sm text-zinc-500 transition-colors hover:text-red-700 dark:hover:text-red-400"
+                  >
+                    관계 끊기
+                  </button>
+                </form>
+              </li>
+            ))}
+
+            {relations.incoming.map((related) => (
+              <li
+                key={related.relationId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/[.08] bg-white px-4 py-3 dark:border-white/[.145] dark:bg-zinc-950"
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                  <Link
+                    href={`/sources/${related.id}`}
+                    className="text-black hover:underline dark:text-zinc-50"
+                  >
+                    {related.title}
+                  </Link>
+                  <span aria-hidden="true" className="text-zinc-400">
+                    →
+                  </span>
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
+                    {getSourceRelationLabel(related.relationType)}
+                  </span>
+                  <span aria-hidden="true" className="text-zinc-400">
+                    →
+                  </span>
+                  <span className="text-zinc-500">이 자료</span>
+                </div>
+
+                <form action={unlinkSourceRelation}>
+                  <input
+                    type="hidden"
+                    name="relationId"
+                    value={related.relationId}
+                  />
+                  <input type="hidden" name="returnTo" value={returnTo} />
+                  <button
+                    type="submit"
+                    className="text-sm text-zinc-500 transition-colors hover:text-red-700 dark:hover:text-red-400"
+                  >
+                    관계 끊기
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-zinc-500">아직 이어둔 자료가 없습니다.</p>
+        )}
+
+        {relatableSources.length > 0 ? (
+          <form
+            action={linkSourceRelation}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <input type="hidden" name="fromSourceId" value={source.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+
+            <label htmlFor="relationType" className="sr-only">
+              관계
+            </label>
+            {/*
+              고를 때 방향을 함께 보여준다. 이름만으로는 `인용함`과 `인용됨`
+              가운데 무엇을 골라야 할지 알 수 없다.
+            */}
+            <select
+              id="relationType"
+              name="relationType"
+              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            >
+              {SOURCE_RELATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label} — {option.hint}
+                </option>
+              ))}
+            </select>
+
+            <label htmlFor="toSourceId" className="sr-only">
+              이을 자료
+            </label>
+            <select
+              id="toSourceId"
+              name="toSourceId"
+              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            >
+              {relatableSources.map((other) => (
+                <option key={other.id} value={other.id}>
+                  {other.title}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="submit"
+              className="h-10 rounded-full border border-solid border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              자료 잇기
+            </button>
+          </form>
+        ) : (
+          <p className="text-xs leading-5 text-zinc-500">
+            이을 다른 자료가 없습니다. 자료를 하나 더 등록하면 여기서 이을 수
+            있습니다.
+          </p>
+        )}
+      </section>
 
       {/*
         파일 영역. 설계 문서 10.3절.

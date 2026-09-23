@@ -213,12 +213,25 @@ export function AnalysisForm({
 
               {/*
                 8.2절의 "연결되는 다른 자료"도 글로 적지 않는다.
-                8.4절의 source_relations가 맡는다. 아직 만들지 않았다.
+                8.4절의 source_relations가 맡는다. (14-D-2a)
+                여기서는 그 자리로 가는 길만 둔다.
               */}
               {section.id === "use" ? (
-                <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs leading-5 text-zinc-500 dark:bg-white/[.04]">
-                  연결되는 다른 자료는 논문끼리 잇는 기능(14-D)에서 다룹니다.
-                </p>
+                <div className="flex flex-col gap-2 rounded-lg bg-zinc-50 p-3 dark:bg-white/[.04]">
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    연결되는 다른 자료
+                  </p>
+                  <p className="text-xs leading-5 text-zinc-500">
+                    인용함·유사 연구·상반된 결과처럼 방향이 있는 관계로 잇습니다.
+                    글로 적지 않고 자료끼리 직접 잇습니다.
+                  </p>
+                  <Link
+                    href={`/sources/${sourceId}`}
+                    className="w-fit text-xs text-zinc-600 underline underline-offset-2 dark:text-zinc-400"
+                  >
+                    자료 상세의 관련 자료에서 잇기
+                  </Link>
+                </div>
               ) : null}
             </div>
           </details>

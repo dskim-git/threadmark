@@ -57,7 +57,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 430개
+npm test          # node --test, 443개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -91,13 +91,14 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 14-C-2b. BibTeX·RIS·검색 허브 | Phase 5 | 완료 |
 | 14-E. 읽기 작업대 (좌측 PDF / 우측 분석·기록) | Phase 5 | 완료 |
 | 14-D-1. 프로젝트별 활용 계획 (8.3절) | Phase 5 | 완료 |
-| 14-D-2. 논문 관계 (8.4절 `source_relations`) | Phase 5 | 예정 |
+| 14-D-2a. 자료끼리의 관계 (8.4절 `source_relations`) | Phase 5 | 완료 |
+| 14-D-2b. 아직 등록하지 않은 논문 (8.4절 `reading_candidate`) | Phase 5 | 예정 |
 | 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-14-D-2를 마치면 14단계가 끝난다.
+14-D-2b를 마치면 14단계가 끝난다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -399,15 +400,15 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (430개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (443개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (61검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (66검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
 격리 검사를 추가하고, `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`에도
 이름을 더한다. 그 목록이 인증 관련 네 표에만 머물러 있어서, 한동안 새 표는
-RLS 검사 밖에 있었다. 2026-09-23에 앱이 만드는 표 전부(지금 13개)로 넓혔다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,
+RLS 검사 밖에 있었다. 2026-09-23에 앱이 만드는 표 전부(지금 14개)로 넓혔다. 검사 19와 27은 승인되지 않은 계정이 있을 때만 실행되며,
 결과 표 마지막 열에 실행 여부가 표시된다.
 
 `SECURITY DEFINER` 함수를 추가하면 001의 허용 목록에 넣고 왜 필요한지 적는다.
