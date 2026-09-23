@@ -62,29 +62,46 @@ export function ProjectUsePanel({
     values: Record<string, string | null>;
   }[];
 }) {
-  const [drafts, setDrafts] = useState<Record<string, Draft>>(() => {
-    const start: Record<string, Draft> = {};
+  /**
+   * 손댄 것만 담는다. 손대지 않은 프로젝트는 그때그때 서버가 보낸 값에서 만든다.
+   *
+   * 처음에는 그릴 때 한 번 모든 프로젝트의 상태를 만들어 두었다. **그것 때문에
+   * 프로젝트를 새로 연결하면 화면이 터졌다.** 연결이 끝나면 서버가 프로젝트가
+   * 하나 늘어난 목록을 보내는데, 이 칸은 이미 그려져 있어서 처음 만든 상태를
+   * 그대로 들고 있다. 새 프로젝트의 상태가 없으니 없는 값을 건드린다.
+   *
+   * 서버 기록에는 아무것도 남지 않는다. 서버는 제 할 일을 다 했고 터진 곳은
+   * 브라우저다. 새로고침하면 처음부터 다시 그려지므로 멀쩡해 보인다.
+   * 2026-09-24에 사용자가 실제로 겪었다.
+   *
+   * 화면에 그려지는 것을 붙잡아 두면, 서버가 보낸 것과 어긋나는 순간이 반드시
+   * 온다. 붙잡을 것은 **사용자가 고친 것**뿐이다.
+   */
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
 
-    for (const project of projects) {
-      const saved = uses.find((use) => use.projectId === project.id) ?? null;
-      const values: Record<string, string> = {};
+  /** 서버가 보낸 값으로 만든 처음 모습. 손대지 않은 칸은 늘 이것이다. */
+  function initial(projectId: string): Draft {
+    const saved = uses.find((use) => use.projectId === projectId) ?? null;
+    const values: Record<string, string> = {};
 
-      for (const field of PROJECT_USE_FIELDS) {
-        values[field.column] = saved?.values[field.column] ?? "";
-      }
-
-      start[project.id] = {
-        status: saved?.status ?? DEFAULT_PAPER_USE_STATUS,
-        values,
-        exists: saved !== null,
-        dirty: false,
-        message: null,
-        confirming: false,
-      };
+    for (const field of PROJECT_USE_FIELDS) {
+      values[field.column] = saved?.values[field.column] ?? "";
     }
 
-    return start;
-  });
+    return {
+      status: saved?.status ?? DEFAULT_PAPER_USE_STATUS,
+      values,
+      exists: saved !== null,
+      dirty: false,
+      message: null,
+      confirming: false,
+    };
+  }
+
+  /** 손댄 것이 있으면 그것을, 없으면 서버가 보낸 것을 쓴다. */
+  function draftFor(projectId: string): Draft {
+    return drafts[projectId] ?? initial(projectId);
+  }
 
   const [pending, startTransition] = useTransition();
   /** 지금 저장·삭제가 도는 프로젝트. 그 줄만 잠근다. */
@@ -93,13 +110,13 @@ export function ProjectUsePanel({
   function update(projectId: string, patch: Partial<Draft>) {
     setDrafts((previous) => ({
       ...previous,
-      [projectId]: { ...previous[projectId], ...patch },
+      [projectId]: { ...(previous[projectId] ?? initial(projectId)), ...patch },
     }));
   }
 
   function setField(projectId: string, column: string, value: string) {
     setDrafts((previous) => {
-      const draft = previous[projectId];
+      const draft = previous[projectId] ?? initial(projectId);
 
       return {
         ...previous,
@@ -115,7 +132,7 @@ export function ProjectUsePanel({
   }
 
   function submit(projectId: string) {
-    const draft = drafts[projectId];
+    const draft = draftFor(projectId);
 
     setBusy(projectId);
 
@@ -190,7 +207,7 @@ export function ProjectUsePanel({
   return (
     <div className="flex flex-col gap-3">
       {projects.map((project) => {
-        const draft = drafts[project.id];
+        const draft = draftFor(project.id);
         const filled = countUseFilled(draft.values);
         const locked = pending && busy === project.id;
 
