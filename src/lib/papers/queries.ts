@@ -1,6 +1,8 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
+import { isReadingCandidate } from "@/lib/sources/types";
+
 import { formatApaCitation, resolveCitation } from "./apa";
 import type { PaperAuthor } from "./types";
 
@@ -38,6 +40,8 @@ export type PaperProfile = {
 /** 목록 화면이 쓰는 한 줄. 참고문헌까지 만들어 담는다. */
 export type PaperListItem = {
   sourceId: string;
+  /** 읽을 후보인지. 참고문헌이 비어 있는 이유가 여기 있다. (설계 문서 8.4절) */
+  readingCandidate: boolean;
   title: string;
   publicationYear: number | null;
   /** 보여줄 참고문헌. */
@@ -179,7 +183,7 @@ export async function listPapers(): Promise<PaperListItem[]> {
   const { data, error } = await supabase
     .from("sources")
     .select(
-      `id, title, original_url, created_at, paper_profiles (${PROFILE_COLUMNS})`,
+      `id, status, title, original_url, created_at, paper_profiles (${PROFILE_COLUMNS})`,
     )
     .eq("type", "paper")
     .is("deleted_at", null)
@@ -194,6 +198,7 @@ export async function listPapers(): Promise<PaperListItem[]> {
   const items = (data ?? []).map((row) => {
     const source = row as unknown as {
       id: string;
+      status: string;
       title: string;
       original_url: string | null;
       paper_profiles: ProfileRow[] | ProfileRow | null;
@@ -211,6 +216,7 @@ export async function listPapers(): Promise<PaperListItem[]> {
     if (!related) {
       return {
         sourceId: source.id,
+        readingCandidate: isReadingCandidate(source.status),
         title: source.title,
         publicationYear: null,
         // 서지 정보가 없으면 제목만으로 만든다. `(n.d.). 제목.`이 나온다.
@@ -239,6 +245,7 @@ export async function listPapers(): Promise<PaperListItem[]> {
 
     return {
       sourceId: source.id,
+      readingCandidate: isReadingCandidate(source.status),
       title: source.title,
       publicationYear: profile.publicationYear,
       citation: citation.text,

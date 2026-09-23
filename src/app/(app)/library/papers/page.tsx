@@ -78,7 +78,16 @@ export default async function PapersPage() {
                 >
                   {paper.title}
                 </Link>
-                <span className="text-xs text-zinc-500">
+                <span className="flex items-center gap-2 text-xs text-zinc-500">
+                  {/*
+                    읽을 후보는 참고문헌이 비어 있는 것이 정상이다.
+                    표시가 없으면 "왜 이것만 비었지"를 묻게 된다. (8.4절)
+                  */}
+                  {paper.readingCandidate ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+                      읽을 후보
+                    </span>
+                  ) : null}
                   {paper.publicationYear ?? "연도 모름"}
                   {paper.citationEdited ? " · 직접 고친 참고문헌" : ""}
                 </span>

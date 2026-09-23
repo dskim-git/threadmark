@@ -40,8 +40,11 @@
 ### 설계 문서에 값이 없을 때
 
 열거형 값이 정의되어 있지 않으면 **지금 쓰이는 값 하나만** 만들고 주석에 이유를 남긴다.
-`source_status`, `project_status`, `visibility`, `app_role`이 그렇게 되어 있다.
+`project_status`, `visibility`, `app_role`이 그렇게 되어 있다.
 쓰지 않을 값을 미리 넣으면 "이게 무슨 뜻이었지" 하는 혼란만 남는다.
+
+`source_status`도 그렇게 시작해 값 하나(`active`)만 두었고, 14-D-2b에서 실제로
+필요해지자 `reading_candidate`를 더했다. 이 방식이 실제로 굴러간다는 예다.
 PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되므로 나중에 늘리기 쉽다.
 다만 더한 값을 **같은 트랜잭션에서 쓸 수는 없다.** 6절을 본다.
 
@@ -57,7 +60,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 443개
+npm test          # node --test, 450개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -68,7 +71,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 
 ## 4. 현재 상태
 
-전체 개발 순서 18단계 중 **13단계까지 완료**, 14단계 진행 중이다.
+전체 개발 순서 18단계 중 **14단계까지 완료**, 15단계가 다음이다.
 
 | 단계 | 블루프린트 23절 | 상태 |
 | --- | --- | --- |
@@ -92,13 +95,13 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 14-E. 읽기 작업대 (좌측 PDF / 우측 분석·기록) | Phase 5 | 완료 |
 | 14-D-1. 프로젝트별 활용 계획 (8.3절) | Phase 5 | 완료 |
 | 14-D-2a. 자료끼리의 관계 (8.4절 `source_relations`) | Phase 5 | 완료 |
-| 14-D-2b. 아직 등록하지 않은 논문 (8.4절 `reading_candidate`) | Phase 5 | 예정 |
+| 14-D-2b. 아직 등록하지 않은 논문 (8.4절 `reading_candidate`) | Phase 5 | 완료 |
 | 15. 다른 매체 (YouTube·TMDB·Kakao·음악) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17. 개인정보·계정 삭제 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 예정 |
 
-14-D-2b를 마치면 14단계가 끝난다.
+14단계가 끝났다. 다음은 15단계(다른 매체)다.
 
 ### 이 표가 16단계에서 18단계가 된 이유
 
@@ -400,10 +403,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (443개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (450개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (66검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (68검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
 격리 검사를 추가하고, `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`에도

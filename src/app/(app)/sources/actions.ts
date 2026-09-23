@@ -159,6 +159,54 @@ export async function updateSource(formData: FormData): Promise<void> {
 }
 
 /**
+ * 읽을 후보를 정식 자료로 바꾼다. (설계 문서 8.4절)
+ *
+ * 후보는 따로 담는 표가 아니라 상태 하나라서, 전환은 상태를 바꾸는 일이다.
+ * 옮겨 담을 것이 없으므로 이어둔 관계와 적어둔 DOI가 그대로 남는다.
+ *
+ * 한 방향뿐이다. 되돌리는 길은 두지 않았고 데이터베이스 가드도 막는다.
+ * 잘못 담아두었다면 지운다. 후보는 제목 한 줄이라 지우는 값이 싸다.
+ */
+export async function promoteReadingCandidate(
+  formData: FormData,
+): Promise<void> {
+  await requireActiveAccount();
+
+  const id = idSchema.safeParse(formValue(formData.get("id")));
+
+  if (!id.success) {
+    redirectWithQuery("/library", { error: "잘못된 요청입니다." });
+  }
+
+  const destination = `/sources/${id.data}`;
+  const supabase = await createClient();
+
+  /*
+    소유자와 승인 상태는 sources_update_own 정책이 건다.
+    이미 정식 자료인 것을 다시 바꾸려 하면 가드 트리거가 막는다.
+    삭제 표시와 달리 갱신 결과가 조회 정책을 벗어나지 않으므로,
+    전용 함수 없이 보통의 갱신으로 할 수 있다.
+  */
+  const { error } = await supabase
+    .from("sources")
+    .update({ status: "active" })
+    .eq("id", id.data);
+
+  if (error) {
+    console.error("[ThreadMark] 읽을 후보 전환 실패:", error.message);
+    redirectWithQuery(destination, {
+      error: "정식 자료로 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    });
+  }
+
+  revalidatePath(destination);
+  revalidatePath("/library");
+  redirectWithQuery(destination, {
+    notice: "정식 자료로 바꿨습니다. 논문 정보를 채워 보세요.",
+  });
+}
+
+/**
  * 삭제 표시를 남긴다.
  *
  * 행을 지우지 않고 deleted_at만 채운다. 실수로 지운 자료를 되살릴 수 있어야 한다.

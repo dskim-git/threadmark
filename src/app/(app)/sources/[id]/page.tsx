@@ -18,16 +18,22 @@ import { listPaperProjectUses } from "@/lib/papers/project-use-queries";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { listSourceFiles } from "@/lib/sources/files";
+import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 import { listSourceRelations } from "@/lib/sources/relation-queries";
 import {
   SOURCE_RELATION_OPTIONS,
   getSourceRelationLabel,
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
-import { getSourceTypeLabel } from "@/lib/sources/types";
-
-import { deleteSource } from "../actions";
 import {
+  getSourceStatusLabel,
+  getSourceTypeLabel,
+  isReadingCandidate,
+} from "@/lib/sources/types";
+
+import { deleteSource, promoteReadingCandidate } from "../actions";
+import {
+  addReadingCandidate,
   linkSourceRelation,
   unlinkSourceRelation,
 } from "../relation-actions";
@@ -108,6 +114,9 @@ export default async function SourceDetailPage({
   */
   const relatableSources = allSources.filter((other) => other.id !== source.id);
 
+  /** 아직 손에 없는 논문인지. 화면 곳곳의 안내가 여기서 갈린다. (8.4절) */
+  const candidate = isReadingCandidate(source.status);
+
   /*
     활용 계획 칸을 보여줄 프로젝트. (설계 문서 8.3절)
 
@@ -168,6 +177,12 @@ export default async function SourceDetailPage({
           <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
             {getSourceTypeLabel(source.type)}
           </span>
+          {/* 읽을 후보는 한눈에 구별되어야 한다. 서지 정보가 비어 있는 이유다. */}
+          {candidate ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+              {getSourceStatusLabel(source.status)}
+            </span>
+          ) : null}
           <span className="text-xs text-zinc-500">
             등록 {formatDateTime(source.createdAt)}
           </span>
@@ -188,6 +203,37 @@ export default async function SourceDetailPage({
           </p>
         ) : null}
       </header>
+
+      {/*
+        읽을 후보 안내와 전환. (설계 문서 8.4절)
+
+        제목만 담아둔 자료다. 파일도 서지 정보도 없는 것이 고장이 아니라는
+        것을 먼저 알린다. 그 말이 없으면 "왜 비어 있지"부터 묻게 된다.
+      */}
+      {candidate ? (
+        <section className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900/60 dark:bg-amber-950/40">
+          <h2 className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            읽을 후보로 담아둔 논문입니다
+          </h2>
+          <p className="text-sm leading-6 text-amber-900 dark:text-amber-200">
+            참고문헌에서 보고 제목만 적어둔 것이라 파일과 서지 정보가 비어
+            있습니다. 실제로 논문을 구하면 정식 자료로 바꾸세요. 이어둔 관계와
+            적어둔 DOI는 그대로 남습니다.
+          </p>
+          <form action={promoteReadingCandidate} className="w-fit">
+            <input type="hidden" name="id" value={source.id} />
+            <button
+              type="submit"
+              className="h-10 rounded-full bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+            >
+              정식 자료로 바꾸기
+            </button>
+          </form>
+          <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
+            되돌릴 수는 없습니다. 잘못 담아두었다면 아래에서 지워 주세요.
+          </p>
+        </section>
+      ) : null}
 
       {source.originalUrl ? (
         <section className="flex flex-col gap-2">
@@ -489,10 +535,101 @@ export default async function SourceDetailPage({
           </form>
         ) : (
           <p className="text-xs leading-5 text-zinc-500">
-            이을 다른 자료가 없습니다. 자료를 하나 더 등록하면 여기서 이을 수
-            있습니다.
+            이을 다른 자료가 없습니다. 아래에서 제목만으로 담아둘 수 있습니다.
           </p>
         )}
+
+        {/*
+          아직 등록하지 않은 논문 담아두기. (설계 문서 8.4절 마지막 줄)
+
+          참고문헌에서 제목만 보고 "나중에 읽어야겠다" 싶은 순간이 있다.
+          그때 자료를 제대로 등록하려면 PDF도 서지 정보도 없는 채로 만들어야
+          해서 읽던 것을 멈추게 된다. 제목 한 줄로 담고 계속 읽게 한다.
+
+          담아두기와 잇기를 한 번에 한다. 어디서 봤는지가 곧 지금 읽고 있는
+          이 자료이고, 나중에 그것이 그 논문을 찾은 유일한 단서가 된다.
+        */}
+        <details className="rounded-2xl border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-black dark:text-zinc-50">
+            목록에 없는 논문 담아두기
+          </summary>
+
+          <form
+            action={addReadingCandidate}
+            className="flex flex-col gap-4 border-t border-black/[.06] px-4 py-4 dark:border-white/[.1]"
+          >
+            <input type="hidden" name="fromSourceId" value={source.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+
+            <p className="text-xs leading-5 text-zinc-500">
+              제목만 적어 담아두면 `읽을 후보`가 됩니다. 논문을 구한 뒤에 정식
+              자료로 바꾸면 파일과 서지 정보를 붙일 수 있습니다.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="candidateTitle"
+                className="text-sm font-medium text-black dark:text-zinc-50"
+              >
+                논문 제목
+              </label>
+              <input
+                id="candidateTitle"
+                name="title"
+                type="text"
+                required
+                maxLength={MAX_TITLE_LENGTH}
+                placeholder="참고문헌에 적힌 제목을 그대로 옮겨 적습니다"
+                className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="candidateDoi"
+                className="text-sm font-medium text-black dark:text-zinc-50"
+              >
+                DOI (없으면 비워둡니다)
+              </label>
+              <input
+                id="candidateDoi"
+                name="doi"
+                type="text"
+                placeholder="10.1007/s10649-006-9028-2"
+                className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              />
+              <p className="text-xs leading-5 text-zinc-500">
+                적어두면 나중에 `DOI로 가져오기`로 서지 정보를 한 번에 채울 수
+                있습니다.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="candidateRelation" className="sr-only">
+                관계
+              </label>
+              <select
+                id="candidateRelation"
+                name="relationType"
+                defaultValue="found_in_references"
+                className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              >
+                {SOURCE_RELATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label} — {option.hint}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="submit"
+                className="h-10 rounded-full border border-solid border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                담아두고 잇기
+              </button>
+            </div>
+          </form>
+        </details>
       </section>
 
       {/*

@@ -3529,6 +3529,116 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 67. 읽을 후보를 정식 자료로 바꿀 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 설계 문서 8.4절: "아직 등록하지 않은 논문은 reading_candidate로 저장한 뒤
+-- 정식 Source로 전환할 수 있게 한다."
+--
+-- 가드 트리거가 상태 변경을 막는데, 허용해야 하는 방향까지 막으면 담아둔 논문이
+-- 영영 후보로 남는다. 막는 것만 확인하면 그것을 놓친다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_status text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  -- 삽입 전에 클레임을 비운다. 비우지 않으면 소유자 고정 트리거가
+  -- owner_id를 앞선 검사에서 설정한 사용자로 덮어쓴다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, status, title)
+  values (
+    v_owner,
+    'paper'::public.source_type,
+    'reading_candidate'::public.source_status,
+    'RLS 격리 검사용 임시 읽을 후보'
+  )
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  update public.sources
+  set status = 'active'::public.source_status
+  where id = v_source;
+
+  select status::text into v_status
+  from public.sources where id = v_source;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if v_status is distinct from 'active' then
+    raise exception
+      '검사 67 실패: 읽을 후보를 정식 자료로 바꾸지 못했습니다. (지금 %)', v_status;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 68. 정식 자료를 읽을 후보로 되돌릴 수 없다
+-- -----------------------------------------------------------------------------
+-- 되돌릴 수 있게 두면 인용과 메모와 파일이 붙은 논문이 "아직 안 읽은 것"이 된다.
+-- 목록에서 후보로 표시되고 서지 정보가 비어 보이는데, 그 상태에서 무엇이 진짜인지
+-- 알 방법이 없다. 자기 자료라도 허용하지 않는다.
+--
+-- RLS의 WITH CHECK는 OLD 행을 볼 수 없어서 이 규칙은 BEFORE 트리거에 있다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_status  text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.sources
+    set status = 'reading_candidate'::public.source_status
+    where id = v_source;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  select status::text into v_status
+  from public.sources where id = v_source;
+
+  reset role;
+
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_status is distinct from 'active' then
+    raise exception
+      '검사 68 실패: 정식 자료를 읽을 후보로 되돌릴 수 있었습니다. (지금 %)', v_status;
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -3540,7 +3650,12 @@ select
   (select count(*) from public.admin_audit_logs)                        as 감사_기록,
   (select (value #>> '{}') from public.app_settings
     where key = 'require_user_approval')                                as 승인_필요_설정,
-  (select count(*) from public.sources where deleted_at is null)        as 저장된_자료,
+  (select count(*) from public.sources
+    where deleted_at is null
+      and status = 'active'::public.source_status)                      as 저장된_자료,
+  (select count(*) from public.sources
+    where deleted_at is null
+      and status = 'reading_candidate'::public.source_status)           as 읽을_후보,
   (select count(*) from public.captures where deleted_at is null)       as 저장된_기록,
   (select count(*) from public.projects where deleted_at is null)       as 프로젝트,
   (select count(*) from public.source_projects)                         as 자료_연결,

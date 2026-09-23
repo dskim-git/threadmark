@@ -6,7 +6,8 @@ import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
-import { formValue } from "@/lib/sources/schema";
+import { doiWasRejected, normalizeDoi } from "@/lib/papers/schema";
+import { MAX_TITLE_LENGTH, formValue } from "@/lib/sources/schema";
 import { SOURCE_RELATION_TYPES } from "@/lib/sources/relation-types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -102,6 +103,131 @@ export async function linkSourceRelation(formData: FormData): Promise<void> {
 
   revalidatePath(destination);
   redirectWithQuery(destination, { notice: "자료를 이었습니다." });
+}
+
+const candidateSchema = z.object({
+  fromSourceId: z.uuid(),
+  title: z
+    .string()
+    .trim()
+    .min(1, "논문 제목을 적어 주세요.")
+    .max(MAX_TITLE_LENGTH, `제목은 ${MAX_TITLE_LENGTH}자를 넘을 수 없습니다.`),
+  /** 비워둘 수 있다. 참고문헌에 DOI가 적혀 있지 않은 경우가 더 많다. */
+  doi: z.string(),
+  relationType: z.enum(SOURCE_RELATION_TYPES),
+  returnTo: z.string(),
+});
+
+/**
+ * 아직 등록하지 않은 논문을 담아두고 바로 잇는다. (설계 문서 8.4절)
+ *
+ * 참고문헌에서 제목만 보고 "이건 나중에 읽어야겠다" 싶은 순간이 있다. 그때
+ * 자료를 제대로 등록하려면 PDF도 서지 정보도 없는 채로 만들어야 해서, 읽던
+ * 것을 멈추게 된다. 제목 한 줄로 담아두고 계속 읽는 길을 둔다.
+ *
+ * 후보는 따로 담는 표가 아니라 자료의 상태 하나다. 그래서 담아두는 순간부터
+ * 관계로 이어지고, 나중에 서지 정보와 분석 서식도 그대로 쓴다.
+ *
+ * 담아두기와 잇기를 한 번에 한다. 관계 없이 담아두면 어디서 봤는지가 남지
+ * 않는다. 그 출처가 바로 지금 읽고 있는 자료다.
+ */
+export async function addReadingCandidate(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const parsed = candidateSchema.safeParse({
+    fromSourceId: formValue(formData.get("fromSourceId")),
+    title: formValue(formData.get("title")),
+    doi: formValue(formData.get("doi")),
+    relationType: formValue(formData.get("relationType")),
+    returnTo: formValue(formData.get("returnTo")),
+  });
+
+  if (!parsed.success) {
+    redirectWithQuery("/library", { error: "잘못된 요청입니다." });
+  }
+
+  const { fromSourceId, title, relationType } = parsed.data;
+  const destination = sanitizeNextPath(parsed.data.returnTo);
+  const rawDoi = parsed.data.doi;
+
+  /*
+    DOI를 적었는데 알아볼 수 없으면 아무것도 만들지 않는다. 만들어놓고
+    DOI만 빠뜨리면, 사용자는 적어 넣었다고 생각하는데 조용히 사라진다.
+  */
+  if (doiWasRejected(rawDoi)) {
+    redirectWithQuery(destination, {
+      error: "DOI를 알아볼 수 없습니다. 10.으로 시작하는 값인지 확인해 주세요.",
+    });
+  }
+
+  const doi = normalizeDoi(rawDoi);
+  const supabase = await createClient();
+
+  // owner_id는 보내지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
+  const { data: created, error: createError } = await supabase
+    .from("sources")
+    .insert({ type: "paper", status: "reading_candidate", title })
+    .select("id")
+    .single();
+
+  if (createError || !created) {
+    console.error(
+      "[ThreadMark] 읽을 후보 저장 실패:",
+      createError?.message ?? "행이 돌아오지 않았습니다.",
+    );
+    redirectWithQuery(destination, {
+      error: "담아두지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    });
+  }
+
+  const { error: relationError } = await supabase
+    .from("source_relations")
+    .insert({
+      from_source_id: fromSourceId,
+      to_source_id: created.id,
+      relation_type: relationType,
+    });
+
+  if (relationError) {
+    /*
+      후보는 이미 만들어졌다. 되돌리지 않고 무슨 일이 있었는지 그대로
+      알린다. 지우면 사용자가 적은 제목까지 함께 사라지는데, 그것은
+      관계가 빠진 것보다 나쁘다. 관계는 화면에서 바로 이을 수 있다.
+    */
+    console.error("[ThreadMark] 후보 관계 저장 실패:", relationError.message);
+    redirectWithQuery(destination, {
+      error: "논문은 담아두었지만 관계는 잇지 못했습니다. 관련 자료에서 다시 이어 주세요.",
+    });
+  }
+
+  if (doi !== null) {
+    /*
+      DOI만 담은 논문 정보를 함께 만든다. 나중에 정식 자료로 바꿀 때
+      14-C의 `DOI로 가져오기`가 그 값을 그대로 쓴다.
+
+      실패해도 멈추지 않는다. 후보와 관계는 이미 만들어졌고, DOI는
+      논문 정보 화면에서 다시 적을 수 있다.
+    */
+    const { error: profileError } = await supabase
+      .from("paper_profiles")
+      .insert({ source_id: created.id, doi });
+
+    if (profileError) {
+      console.error(
+        "[ThreadMark] 후보 DOI 저장 실패:",
+        profileError.message,
+      );
+      revalidatePath(destination);
+      redirectWithQuery(destination, {
+        notice: "담아두었습니다. DOI는 저장되지 않아 논문 정보에서 다시 적어야 합니다.",
+      });
+    }
+  }
+
+  revalidatePath(destination);
+  redirectWithQuery(destination, {
+    notice: "읽을 후보로 담아두고 이었습니다.",
+  });
 }
 
 const unlinkSchema = z.object({

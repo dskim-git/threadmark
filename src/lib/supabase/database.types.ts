@@ -858,7 +858,7 @@ export type Database = {
         | "theoretical_basis"
         | "method_reference"
         | "follow_up_reading"
-      source_status: "active"
+      source_status: "active" | "reading_candidate"
       source_type:
         | "paper"
         | "book"
@@ -1036,7 +1036,7 @@ export const Constants = {
         "method_reference",
         "follow_up_reading",
       ],
-      source_status: ["active"],
+      source_status: ["active", "reading_candidate"],
       source_type: [
         "paper",
         "book",

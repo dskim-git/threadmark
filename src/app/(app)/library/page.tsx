@@ -3,7 +3,12 @@ import Link from "next/link";
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import { countSourcesByType, listSources } from "@/lib/sources/queries";
-import { SOURCE_TYPES, getSourceTypeLabel, isSourceType } from "@/lib/sources/types";
+import {
+  SOURCE_TYPES,
+  getSourceTypeLabel,
+  isReadingCandidate,
+  isSourceType,
+} from "@/lib/sources/types";
 
 export const metadata: Metadata = {
   title: "내 자료 · ThreadMark",
@@ -107,6 +112,16 @@ export default async function LibraryPage({
                   <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
                     {getSourceTypeLabel(source.type)}
                   </span>
+                  {/*
+                    읽을 후보는 구별해 보여준다. (설계 문서 8.4절)
+                    목록에서 감추지 않는다. 담아둔 것을 다시 찾을 길이
+                    없으면 담아둘 이유도 없다.
+                  */}
+                  {isReadingCandidate(source.status) ? (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+                      읽을 후보
+                    </span>
+                  ) : null}
                   <span className="text-xs text-zinc-500">
                     {formatDate(source.createdAt)}
                   </span>

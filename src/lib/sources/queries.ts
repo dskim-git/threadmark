@@ -1,7 +1,12 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
-import { isSourceType, type SourceType } from "./types";
+import {
+  isSourceStatus,
+  isSourceType,
+  type SourceStatus,
+  type SourceType,
+} from "./types";
 
 /**
  * Source 조회 계층.
@@ -14,14 +19,16 @@ import { isSourceType, type SourceType } from "./types";
  */
 
 const LIST_COLUMNS =
-  "id, type, title, subtitle, original_url, created_at, updated_at";
+  "id, type, status, title, subtitle, original_url, created_at, updated_at";
 
 const DETAIL_COLUMNS =
-  "id, type, title, subtitle, description, original_url, canonical_url, thumbnail_url, created_at, updated_at";
+  "id, type, status, title, subtitle, description, original_url, canonical_url, thumbnail_url, created_at, updated_at";
 
 export type SourceListItem = {
   id: string;
   type: SourceType;
+  /** 읽을 후보인지 손에 있는 자료인지. (설계 문서 8.4절) */
+  status: SourceStatus;
   title: string;
   subtitle: string | null;
   originalUrl: string | null;
@@ -70,6 +77,8 @@ export async function listSources(
           {
             id: row.id,
             type: row.type,
+            // 모르는 상태는 보통의 자료로 본다. 목록에서 사라지게 두지 않는다.
+            status: isSourceStatus(row.status) ? row.status : "active",
             title: row.title,
             subtitle: row.subtitle,
             originalUrl: row.original_url,
@@ -111,6 +120,7 @@ export async function getSourceById(id: string): Promise<SourceDetail | null> {
   return {
     id: data.id,
     type: data.type,
+    status: isSourceStatus(data.status) ? data.status : "active",
     title: data.title,
     subtitle: data.subtitle,
     description: data.description,
