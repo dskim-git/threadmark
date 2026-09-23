@@ -60,7 +60,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 498개
+npm test          # node --test, 502개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -347,6 +347,30 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
   브라우저 쪽 뷰어(13-A)에는 영향이 없다. 이 설정은 서버 묶음만 건드린다.
 
+- **묶음에서 뺀 것은 배포에 따로 올려야 한다. `pdf.worker.mjs`가 그랬다.**
+  `serverExternalPackages`는 "묶지 말고 `node_modules`에서 가져다 써라"는 뜻이다.
+  로컬에는 `node_modules`가 통째로 있으니 잘 돈다. 그런데 **배포에는 필요하다고
+  추적된 파일만 올라간다.**
+
+  pdf.js는 Node에서 진짜 worker를 띄우지 않는 대신
+  `GlobalWorkerOptions.workerSrc`를 `./pdf.worker.mjs`로 잡고 그 파일을 불러온다.
+  그 경로는 실행 중에 만들어지는 문자열이라 추적기가 따라가지 못한다.
+  그래서 `pdf.mjs`만 올라가고 worker는 빠진다.
+
+  증상은 2026-09-23의 묶임 문제와 **똑같은 문구**다. "PDF를 읽지 못했습니다".
+  다만 이번에는 로컬에서 멀쩡하고 **배포에서만** 실패한다. 원인이 다르므로
+  로컬에서 아무리 돌려봐도 보이지 않는다.
+
+  `next.config.ts`의 `outputFileTracingIncludes`로 함께 올리게 했다.
+  확인은 `.next/server/app/.../paper/page.js.nft.json`에 `pdf.worker.mjs`가
+  들어 있는지 보면 된다. Vercel이 올릴 파일을 정하는 것이 그 파일이다.
+
+  **그 설정의 열쇠는 경로가 아니라 글로브 무늬다.** `[id]`를 그대로 적으면
+  "i 또는 d 한 글자"라는 뜻이 되어 우리 경로에 맞지 않는다. 맞지 않아도
+  오류가 나지 않는다. 설정은 있는데 아무 일도 하지 않고 빌드는 통과한다.
+  고치는 중에 여기서 한 번 더 헛디뎠다. 대괄호를 이스케이프한다.
+  `tests/pdf-server-config.test.mjs`가 이 둘을 다 붙잡는다.
+
 - **PDF.js는 줄이 끊긴 자리를 줄바꿈이 아니라 공백으로 잇는다.**
   조판이 어디서 줄을 바꿨는지를 PDF가 기억하지 않기 때문이다.
 
@@ -441,7 +465,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (498개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (502개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (68검사) |

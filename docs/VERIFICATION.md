@@ -12,7 +12,7 @@
 ```bash
 npm run lint     # 정적 분석
 npx tsc --noEmit # 타입 검사
-npm test         # 498개 단위 검사
+npm test         # 502개 단위 검사
 npm run build    # production 빌드
 ```
 
@@ -1434,6 +1434,50 @@ PostgreSQL의 전문 검색은 말을 토막 내고 어간을 찾아 견준다. 
 
 블루프린트 22절의 MVP 목록에 있는데 표에 없던 것이 넷이었다. 기본 키워드 검색,
 태그, 웹사이트, 음악 수동 등록이다. 자세한 것은 AGENTS.md 4절에 적었다.
+
+## 4-18. 2026-09-24 배포에서만 PDF를 읽지 못했다
+
+로컬에서 멀쩡하던 `PDF에서 DOI 찾기`와 `AI로 읽기`가 배포에서만
+"PDF를 읽지 못했습니다"로 끝났다. 사용자가 실제 논문을 담다가 발견했다.
+
+### 원인은 올라가지 않은 파일 하나였다
+
+`serverExternalPackages`는 "묶지 말고 `node_modules`에서 가져다 써라"는 뜻이다.
+로컬에는 `node_modules`가 통째로 있으니 잘 돈다. 배포에는 **필요하다고 추적된
+파일만 올라간다.**
+
+pdf.js는 Node에서 진짜 worker를 띄우지 않는 대신 `GlobalWorkerOptions.workerSrc`를
+`./pdf.worker.mjs`로 잡고 그 파일을 불러온다. 그 경로는 실행 중에 만들어지는
+문자열이라 추적기가 따라가지 못한다.
+
+```text
+전:  pdfjs-dist/legacy/build/pdf.mjs                     ← 이것만 올라감
+후:  pdfjs-dist/legacy/build/pdf.mjs + pdf.worker.mjs
+```
+
+확인은 `.next/server/app/(app)/sources/[id]/paper/page.js.nft.json`을 열어
+`pdf.worker.mjs`가 있는지 보면 된다. Vercel이 올릴 파일을 정하는 것이 그 파일이다.
+
+### 2026-09-23의 그것과 문구는 같고 원인은 다르다
+
+둘 다 "PDF를 읽지 못했습니다"다. 그때는 묶여서 깨졌고 이번에는 안 올라가서
+깨졌다. 그때는 로컬에서도 실패했고 이번에는 **로컬에서 멀쩡했다.**
+로컬에서 아무리 돌려봐도 보이지 않는 종류다.
+
+### 고치는 중에 한 번 더 헛디뎠다
+
+`outputFileTracingIncludes`의 열쇠는 경로가 아니라 **글로브 무늬**다.
+`[id]`를 그대로 적으면 "i 또는 d 한 글자"라는 뜻이 되어 우리 경로에 맞지 않는다.
+맞지 않아도 오류가 나지 않는다. 설정은 있는데 아무 일도 하지 않고 빌드는
+통과한다. 빌드 결과를 열어보고서야 알았다.
+
+`tests/pdf-server-config.test.mjs`가 넷을 붙잡는다. 그중 하나는 빌드 결과의
+추적 파일을 직접 열어 본다. 빌드하지 않았으면 건너뛴다.
+
+### 아직 확인하지 않았다
+
+로컬에서는 원래 되던 것이라 여기서는 차이가 보이지 않는다.
+**배포한 뒤 실제 논문으로 확인해야 한다.**
 
 ## 5. 아직 확인하지 못한 것
 
