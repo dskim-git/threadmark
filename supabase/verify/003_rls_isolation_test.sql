@@ -2861,6 +2861,345 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 57. 다른 사용자의 활용 계획을 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 8.3절. 활용 계획에는 "내 원고의 어디에 무엇을 쓸 것인가"가 적힌다.
+-- 논문 목록보다 더 드러나는 글이다. 무엇을 쓰고 있는지가 그대로 보인다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_project uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  if v_other is null then
+    raise exception '검사 57 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  -- 삽입 전에 클레임을 비운다. 비우지 않으면 소유자 고정 트리거가
+  -- owner_id를 앞선 검사에서 설정한 사용자로 덮어쓴다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  insert into public.paper_project_uses
+    (owner_id, paper_source_id, project_id, planned_section, usage_intent)
+  values
+    (v_owner, v_source, v_project, '이론적 배경', '검사용 활용 계획');
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.paper_project_uses where paper_source_id = v_source;
+
+  reset role;
+
+  delete from public.paper_project_uses where paper_source_id = v_source;
+  delete from public.projects where id = v_project;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception '검사 57 실패: 다른 사용자의 활용 계획이 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 58. 다른 사용자의 논문에 활용 계획을 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 연결 표는 두 곳을 가리키므로 양쪽을 따로 확인해야 한다. 이것이 논문 쪽이다.
+-- 내 프로젝트 + 남의 논문. 막지 않으면 남의 논문을 내 프로젝트에 편입시킨다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_project uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 논문은 관리자 것, 프로젝트는 다른 사용자 것.
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.projects (owner_id, name)
+  values (v_other, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.paper_project_uses (paper_source_id, project_id, usage_intent)
+    values (v_source, v_project, '남의 논문에 붙인 계획');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_project_uses where paper_source_id = v_source;
+  delete from public.projects where id = v_project;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 58 실패: 다른 사용자의 논문에 활용 계획을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 59. 다른 사용자의 프로젝트에 활용 계획을 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 이번은 프로젝트 쪽이다. 내 논문 + 남의 프로젝트.
+-- 한쪽만 확인하면 남의 프로젝트에 내 계획을 밀어넣을 수 있다.
+-- source_projects에서 겪은 것과 같은 자리이며, 검사 58과 짝이다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_project uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 논문은 다른 사용자 것, 프로젝트는 관리자 것.
+  insert into public.sources (owner_id, type, title)
+  values (v_other, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.paper_project_uses (paper_source_id, project_id, usage_intent)
+    values (v_source, v_project, '남의 프로젝트에 밀어넣은 계획');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_project_uses where paper_source_id = v_source;
+  delete from public.projects where id = v_project;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 59 실패: 다른 사용자의 프로젝트에 활용 계획을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 60. 소유자는 자기 논문과 자기 프로젝트로 계획을 적고 고칠 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다. 양쪽을 확인하는 트리거가
+-- 지나치면 정상적인 자기 것끼리의 연결까지 막게 되는데, 그러면 기능 자체가
+-- 성립하지 않는다.
+--
+-- owner_id를 보내지 않고 넣어 트리거가 채우는지도 함께 본다. (보안 원칙 2)
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_project uuid;
+  v_use     uuid;
+  v_written uuid;
+  v_value   text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.paper_project_uses (paper_source_id, project_id, usage_intent)
+  values (v_source, v_project, '근거로 쓴다')
+  returning id, owner_id into v_use, v_written;
+
+  update public.paper_project_uses
+  set usage_intent = '반론 상대로 쓴다', status = 'used'::public.paper_use_status
+  where id = v_use;
+
+  select usage_intent into v_value
+  from public.paper_project_uses where id = v_use;
+
+  reset role;
+
+  delete from public.paper_project_uses where id = v_use;
+  delete from public.projects where id = v_project;
+  delete from public.sources where id = v_source;
+
+  if v_use is null then
+    raise exception
+      '검사 60 실패: 소유자가 자기 논문에 활용 계획을 붙이지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+
+  if v_written <> v_owner then
+    raise exception
+      '검사 60 실패: owner_id가 트리거로 채워지지 않았습니다. (%)', v_written;
+  end if;
+
+  if v_value <> '반론 상대로 쓴다' then
+    raise exception
+      '검사 60 실패: 적어둔 계획을 고치지 못했습니다. (지금 %)', v_value;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 61. 계획이 붙은 논문과 프로젝트를 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- 짝을 고칠 수 있으면 A 논문을 두고 적은 계획이 B 논문의 것이 되거나,
+-- C 프로젝트의 계획이 D 프로젝트로 옮겨간다. 자기 것끼리라도 허용하지 않는다.
+-- 잘못 골랐다면 지우고 다시 적는다. 검사 51, 56과 같은 이유다.
+do $$
+declare
+  v_owner    uuid;
+  v_source_a uuid;
+  v_source_b uuid;
+  v_project_c uuid;
+  v_project_d uuid;
+  v_use      uuid;
+  v_paper_blocked   boolean := false;
+  v_project_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 A')
+  returning id into v_source_a;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 B')
+  returning id into v_source_b;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트 C')
+  returning id into v_project_c;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 임시 프로젝트 D')
+  returning id into v_project_d;
+
+  insert into public.paper_project_uses
+    (owner_id, paper_source_id, project_id, usage_intent)
+  values (v_owner, v_source_a, v_project_c, '옮겨볼 계획')
+  returning id into v_use;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.paper_project_uses
+    set paper_source_id = v_source_b where id = v_use;
+  exception when others then
+    v_paper_blocked := true;
+  end;
+
+  begin
+    update public.paper_project_uses
+    set project_id = v_project_d where id = v_use;
+  exception when others then
+    v_project_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_project_uses where id = v_use;
+  delete from public.projects where id in (v_project_c, v_project_d);
+  delete from public.sources where id in (v_source_a, v_source_b);
+
+  if not v_paper_blocked then
+    raise exception
+      '검사 61 실패: 계획이 붙은 논문을 바꿀 수 있었습니다.';
+  end if;
+
+  if not v_project_blocked then
+    raise exception
+      '검사 61 실패: 계획이 붙은 프로젝트를 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -2884,6 +3223,9 @@ select
     where deleted_at is null and ai_generated)                          as 기계_번역,
   (select count(*) from public.paper_profiles)                          as 논문_정보,
   (select count(*) from public.paper_analyses)                          as 논문_분석,
+  (select count(*) from public.paper_project_uses)                      as 활용_계획,
+  (select count(*) from public.paper_project_uses
+    where status = 'used'::public.paper_use_status)                     as 원고에_넣음,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

@@ -410,6 +410,66 @@ export type Database = {
           },
         ]
       }
+      paper_project_uses: {
+        Row: {
+          cautions: string | null
+          citation_plan: string | null
+          created_at: string
+          id: string
+          interpretation: string | null
+          owner_id: string
+          paper_source_id: string
+          planned_section: string | null
+          project_id: string
+          status: Database["public"]["Enums"]["paper_use_status"]
+          updated_at: string
+          usage_intent: string | null
+        }
+        Insert: {
+          cautions?: string | null
+          citation_plan?: string | null
+          created_at?: string
+          id?: string
+          interpretation?: string | null
+          owner_id?: string
+          paper_source_id: string
+          planned_section?: string | null
+          project_id: string
+          status?: Database["public"]["Enums"]["paper_use_status"]
+          updated_at?: string
+          usage_intent?: string | null
+        }
+        Update: {
+          cautions?: string | null
+          citation_plan?: string | null
+          created_at?: string
+          id?: string
+          interpretation?: string | null
+          owner_id?: string
+          paper_source_id?: string
+          planned_section?: string | null
+          project_id?: string
+          status?: Database["public"]["Enums"]["paper_use_status"]
+          updated_at?: string
+          usage_intent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "paper_project_uses_paper_source_id_fkey"
+            columns: ["paper_source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "paper_project_uses_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           approved_at: string | null
@@ -742,6 +802,7 @@ export type Database = {
         | "machine_generated"
         | "user_edited"
       drive_connection_status: "connected" | "revoked" | "error"
+      paper_use_status: "planned" | "used"
       project_status: "active"
       project_visibility: "private"
       source_file_origin: "upload" | "picked"
@@ -909,6 +970,7 @@ export const Constants = {
         "user_edited",
       ],
       drive_connection_status: ["connected", "revoked", "error"],
+      paper_use_status: ["planned", "used"],
       project_status: ["active"],
       project_visibility: ["private"],
       source_file_origin: ["upload", "picked"],

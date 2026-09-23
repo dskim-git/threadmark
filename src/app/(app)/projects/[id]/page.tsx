@@ -5,6 +5,12 @@ import { notFound } from "next/navigation";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
 import {
+  PROJECT_USE_FIELDS,
+  countUseFilled,
+  getPaperUseStatusLabel,
+} from "@/lib/papers/project-use-fields";
+import { listProjectPaperUses } from "@/lib/papers/project-use-queries";
+import {
   getProjectById,
   listProjectCaptures,
   listProjectSources,
@@ -37,12 +43,14 @@ export default async function ProjectDetailPage({
     notFound();
   }
 
-  const [linkedSources, linkedCaptures, allSources, query] = await Promise.all([
-    listProjectSources(project.id),
-    listProjectCaptures(project.id),
-    listSources(),
-    searchParams,
-  ]);
+  const [linkedSources, linkedCaptures, paperUses, allSources, query] =
+    await Promise.all([
+      listProjectSources(project.id),
+      listProjectCaptures(project.id),
+      listProjectPaperUses(project.id),
+      listSources(),
+      searchParams,
+    ]);
 
   const returnTo = `/projects/${project.id}`;
   const linkedIds = new Set(linkedSources.map((source) => source.id));
@@ -199,6 +207,59 @@ export default async function ProjectDetailPage({
           </form>
         ) : null}
       </section>
+
+      {/*
+        논문 활용 계획. (설계 문서 8.3절)
+
+        원고를 쓸 때는 논문 한 편이 아니라 프로젝트 하나를 붙들고 앉는다.
+        그래서 "이 프로젝트에 쓸 논문이 무엇이고 어디까지 됐는가"를 여기서
+        한눈에 본다. 적고 고치는 것은 논문 화면에서 한다. 두 곳에서 고칠 수
+        있게 하면 같은 글을 두 자리에서 맞춰야 한다.
+
+        계획이 하나도 없으면 자리를 만들지 않는다. 논문이 아닌 자료만 모은
+        프로젝트에서는 영원히 빈 칸으로 남는다.
+      */}
+      {paperUses.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+            논문 활용 계획 {paperUses.length}건
+          </h2>
+
+          <ul className="flex flex-col gap-2">
+            {paperUses.map((use) => (
+              <li
+                key={use.id}
+                className="flex flex-col gap-2 rounded-xl border border-black/[.08] bg-white px-4 py-3 dark:border-white/[.145] dark:bg-zinc-950"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <Link
+                    href={`/sources/${use.paperSourceId}`}
+                    className="text-sm text-black hover:underline dark:text-zinc-50"
+                  >
+                    {use.paperTitle}
+                  </Link>
+                  <span className="text-xs text-zinc-500">
+                    {getPaperUseStatusLabel(use.status)} ·{" "}
+                    {countUseFilled(use.values)}/{PROJECT_USE_FIELDS.length}
+                  </span>
+                </div>
+
+                {use.values.planned_section ? (
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                    {use.values.planned_section}
+                  </p>
+                ) : null}
+
+                {use.values.usage_intent ? (
+                  <p className="line-clamp-2 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+                    {use.values.usage_intent}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-black dark:text-zinc-50">

@@ -49,6 +49,7 @@ const PROTECTED_TABLES = [
   "source_files",
   "paper_profiles",
   "paper_analyses",
+  "paper_project_uses",
   "google_drive_connections",
 ];
 

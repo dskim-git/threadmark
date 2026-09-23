@@ -14,6 +14,7 @@ import {
   countFilled,
 } from "@/lib/papers/analysis-fields";
 import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
+import { listPaperProjectUses } from "@/lib/papers/project-use-queries";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { listSourceFiles } from "@/lib/sources/files";
@@ -25,6 +26,7 @@ import { DrivePickerButton } from "../drive-picker-button";
 import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
 import { PaperSummary } from "../paper-summary";
+import { ProjectUsePanel } from "../project-use-panel";
 
 export const metadata: Metadata = {
   title: "자료 · ThreadMark",
@@ -53,6 +55,7 @@ export default async function SourceDetailPage({
     driveConnection,
     paperProfile,
     paperAnalysis,
+    paperUses,
     query,
   ] = await Promise.all([
     listCapturesForSource(source.id),
@@ -63,6 +66,7 @@ export default async function SourceDetailPage({
     // 논문이 아닌 자료에는 조회하지 않는다. 있을 수 없는 행을 찾는 왕복이 된다.
     source.type === "paper" ? getPaperProfile(source.id) : null,
     source.type === "paper" ? getPaperAnalysis(source.id) : null,
+    source.type === "paper" ? listPaperProjectUses(source.id) : [],
     searchParams,
   ]);
 
@@ -82,6 +86,32 @@ export default async function SourceDetailPage({
   const linkableProjects = allProjects.filter(
     (project) => !linkedIds.has(project.id),
   );
+
+  /*
+    활용 계획 칸을 보여줄 프로젝트. (설계 문서 8.3절)
+
+    연결된 프로젝트가 기본이다. 여기에 **연결은 끊겼는데 계획이 남아 있는**
+    프로젝트를 덧붙인다. 빼면 적어둔 글이 사라진 것처럼 보이는데, 사용자는
+    프로젝트 연결만 정리했다고 생각한다.
+  */
+  const usePanelProjects = [
+    ...linkedProjects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      linked: true,
+    })),
+    ...allProjects
+      .filter(
+        (project) =>
+          !linkedIds.has(project.id) &&
+          paperUses.some((use) => use.projectId === project.id),
+      )
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        linked: false,
+      })),
+  ];
 
   return (
     <div className="flex flex-col gap-8">
@@ -258,6 +288,30 @@ export default async function SourceDetailPage({
           </form>
         ) : null}
       </section>
+
+      {/*
+        프로젝트별 활용 계획. 논문 유형일 때만 보여준다. (설계 문서 8.3절)
+
+        프로젝트 영역 바로 아래에 둔다. 계획은 연결된 프로젝트에 딸린 것이고,
+        연결이 없으면 적을 자리도 없다. 떨어뜨려 놓으면 "프로젝트를 연결하라"는
+        안내와 연결하는 자리가 멀어진다.
+      */}
+      {source.type === "paper" ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+            프로젝트별 활용 계획
+          </h2>
+          <p className="text-xs leading-5 text-zinc-500">
+            이 논문을 각 프로젝트에서 어떻게 쓸지 적습니다. 논문이 무엇을
+            말하는지는 논문 분석에, 내 원고의 어디에 넣을지는 여기에 적습니다.
+          </p>
+          <ProjectUsePanel
+            sourceId={source.id}
+            projects={usePanelProjects}
+            uses={paperUses}
+          />
+        </section>
+      ) : null}
 
       {/*
         파일 영역. 설계 문서 10.3절.
