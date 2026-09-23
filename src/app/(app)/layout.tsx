@@ -1,7 +1,8 @@
 import Link from "next/link";
 
-import { signOut } from "@/app/auth/actions";
 import { requireActiveAccount } from "@/lib/auth/account";
+
+import { AppNav, AppSubNav, SettingsLink } from "./app-nav";
 
 /**
  * 보호된 앱 영역의 레이아웃.
@@ -12,6 +13,10 @@ import { requireActiveAccount } from "@/lib/auth/account";
  * 직접 requireActiveAccount를 호출하고, 데이터 접근은 RLS가 한 번 더 막는다.
  *
  * 이 호출의 역할은 승인되지 않은 사용자를 이른 시점에 안내 화면으로 보내는 것이다.
+ *
+ * 메뉴는 브라우저에서 그린다. 지금 어디에 있는지 표시하려면 경로가 필요한데
+ * 서버 레이아웃은 그것을 알 수 없다. 관리자인지는 여기서 정해 넘긴다.
+ * 그 판단을 브라우저에 맡기지 않는다.
  */
 // (app)은 라우트 그룹이라 URL 세그먼트를 만들지 않는다. 경로상 위치는 루트다.
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -20,87 +25,23 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-50 font-sans dark:bg-black">
       <header className="border-b border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950">
-        <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-4 px-6 py-4">
-          <Link
-            href="/home"
-            className="text-sm font-semibold tracking-tight text-black dark:text-zinc-50"
-          >
-            ThreadMark
-          </Link>
-
-          <div className="flex items-center gap-4">
+        <div className="mx-auto flex w-full max-w-4xl flex-col px-6">
+          <div className="flex items-center justify-between gap-6">
             <Link
-              href="/inbox"
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+              href="/home"
+              className="shrink-0 py-3 font-serif text-lg tracking-tight text-black dark:text-zinc-50"
             >
-              빠른 기록
+              ThreadMark
             </Link>
 
-            <Link
-              href="/library"
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              내 자료
-            </Link>
+            <AppNav />
 
-            {/*
-              논문은 내 자료 안에도 있지만 따로 둔다. (설계 문서 21절)
-              그 화면은 제목이 아니라 참고문헌을 보여준다. 찾는 방법이 다르다.
-            */}
-            <Link
-              href="/library/papers"
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              논문
-            </Link>
-
-            <Link
-              href="/research/search"
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              연구 검색
-            </Link>
-
-            <Link
-              href="/projects"
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              프로젝트
-            </Link>
-
-            <Link
-              href="/settings/integrations"
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              연결
-            </Link>
-
-            {/*
-              링크를 감추는 것은 통제가 아니다. 관리자 화면은 각 페이지와
-              Server Action이 직접 권한을 확인하고 RLS가 한 번 더 막는다.
-              여기서는 관리자에게만 진입 경로를 보여줄 뿐이다.
-            */}
-            {account.isAdmin ? (
-              <Link
-                href="/admin/users"
-                className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-              >
-                사용자 승인
-              </Link>
-            ) : null}
-
-            <span className="hidden text-sm text-zinc-500 sm:inline">
-              {account.displayName ?? account.email}
-            </span>
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="rounded-full border border-solid border-black/[.08] px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-              >
-                로그아웃
-              </button>
-            </form>
+            <div className="ml-auto shrink-0">
+              <SettingsLink />
+            </div>
           </div>
+
+          <AppSubNav isAdmin={account.isAdmin} />
         </div>
       </header>
 

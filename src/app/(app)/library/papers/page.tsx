@@ -4,6 +4,7 @@ import Link from "next/link";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { toDoiUrl } from "@/lib/papers/apa";
 import { listPapers } from "@/lib/papers/queries";
+import { PAPER_SORTS, readPaperSort } from "@/lib/sources/sorting";
 
 export const metadata: Metadata = {
   title: "논문 · ThreadMark",
@@ -18,34 +19,32 @@ export const metadata: Metadata = {
  * 논문을 다시 찾을 때 필요한 것이 그것이고, 논문을 쓸 때 통째로 복사해
  * 가져가는 것도 그것이다.
  *
- * 발행 연도 내림차순이다. 최근 것부터 보는 것이 연구에서 더 잦다.
- * 연도를 모르는 논문은 뒤로 보낸다. 없는 값을 0년으로 보고 맨 뒤에 두면
- * 화면에서는 같아 보이지만, 나중에 정렬을 고칠 때 왜 그런지 알 수 없다.
+ * 기본은 발행 연도 내림차순이다. 최근 것부터 보는 것이 연구에서 더 잦다.
+ * 연도를 모르는 논문은 **어느 방향으로 정렬하든** 뒤로 보낸다. 오래된 순에서
+ * 앞으로 오면 연도를 모르는 것이 가장 오래된 것처럼 보인다.
+ *
+ * 정렬 항목이 자료 목록과 다르다. 그쪽은 제목으로 찾고 여기는 참고문헌을
+ * 본다. `참고문헌 가나다순`은 원고의 참고문헌 목록을 그대로 옮겨 적을 때 쓴다.
  *
  * 서지 정보를 아직 적지 않은 논문도 함께 보여준다. 감추면 무엇을 적어야
  * 하는지 알 방법이 없다.
  */
-export default async function PapersPage() {
+export default async function PapersPage({
+  searchParams,
+}: PageProps<"/library/papers">) {
   await requireActiveAccount("/library/papers");
 
-  const papers = await listPapers();
+  const params = await searchParams;
+  const raw = params.sort;
+  const sort = readPaperSort(Array.isArray(raw) ? raw[0] : raw);
+
+  const papers = await listPapers(sort);
 
   return (
     <div className="flex flex-col gap-8">
-      <nav className="text-sm">
-        <Link
-          href="/library"
-          className="text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
-        >
-          ← 내 자료
-        </Link>
-      </nav>
-
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-            논문
-          </h1>
+          <h1 className="text-3xl text-black dark:text-zinc-50">논문</h1>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
             {papers.length}편 · 참고문헌은 APA 7판으로 만듭니다
           </p>
@@ -58,6 +57,29 @@ export default async function PapersPage() {
           논문 등록
         </Link>
       </header>
+
+      {papers.length > 1 ? (
+        <div className="no-scrollbar flex gap-4 overflow-x-auto border-y border-black/[.06] py-2 dark:border-white/[.08]">
+          {PAPER_SORTS.map((item) => (
+            <Link
+              key={item.value}
+              href={
+                item.value === "year_desc"
+                  ? "/library/papers"
+                  : `/library/papers?sort=${item.value}`
+              }
+              aria-current={item.value === sort ? "true" : undefined}
+              className={
+                item.value === sort
+                  ? "shrink-0 text-xs font-medium text-accent dark:text-accent-dark"
+                  : "shrink-0 text-xs text-zinc-500 transition-colors hover:text-black dark:hover:text-zinc-50"
+              }
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      ) : null}
 
       {papers.length === 0 ? (
         <p className="rounded-2xl bg-zinc-50 px-6 py-10 text-center text-sm leading-6 text-zinc-500 dark:bg-white/[.04]">

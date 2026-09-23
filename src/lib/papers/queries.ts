@@ -1,6 +1,10 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
+import {
+  DEFAULT_PAPER_SORT,
+  type PaperSort,
+} from "@/lib/sources/sorting";
 import { isReadingCandidate } from "@/lib/sources/types";
 
 import { formatApaCitation, resolveCitation } from "./apa";
@@ -49,6 +53,7 @@ export type PaperListItem = {
   /** 사람이 고쳐 쓴 것인지. */
   citationEdited: boolean;
   doi: string | null;
+  createdAt: string;
 };
 
 type ProfileRow = {
@@ -175,7 +180,9 @@ export function buildCitation(
  * 논문 유형인 자료 전부를 담는다. 아직 서지 정보를 적지 않은 것도 나온다.
  * 적지 않았다고 목록에서 감추면, 적어야 할 논문이 어느 것인지 알 수 없다.
  */
-export async function listPapers(): Promise<PaperListItem[]> {
+export async function listPapers(
+  sort: PaperSort = DEFAULT_PAPER_SORT,
+): Promise<PaperListItem[]> {
   await requireActiveAccount();
 
   const supabase = await createClient();
@@ -201,6 +208,7 @@ export async function listPapers(): Promise<PaperListItem[]> {
       status: string;
       title: string;
       original_url: string | null;
+      created_at: string;
       paper_profiles: ProfileRow[] | ProfileRow | null;
     };
 
@@ -234,6 +242,7 @@ export async function listPapers(): Promise<PaperListItem[]> {
         }),
         citationEdited: false,
         doi: null,
+        createdAt: source.created_at,
       } satisfies PaperListItem;
     }
 
@@ -251,16 +260,30 @@ export async function listPapers(): Promise<PaperListItem[]> {
       citation: citation.text,
       citationEdited: citation.edited,
       doi: profile.doi,
+      createdAt: source.created_at,
     } satisfies PaperListItem;
   });
 
   /*
-    발행 연도 내림차순. 연도를 모르는 것은 뒤로 보낸다.
-    데이터베이스에서 정렬하지 않는 이유는, 연도가 관계 테이블에 있어
-    PostgREST로 정렬하려면 질의가 복잡해지기 때문이다. 한 사람의 논문 목록은
-    이 방식으로 감당하기 어려울 만큼 길어지지 않는다.
+    데이터베이스에서 정렬하지 않는다. 연도와 참고문헌이 관계 테이블에 있어
+    PostgREST로 정렬하려면 질의가 복잡해진다. 한 사람의 논문 목록은 이 방식으로
+    감당하기 어려울 만큼 길어지지 않는다.
   */
-  return items.sort((a, b) => {
+  return sortPapers(items, sort);
+}
+
+/**
+ * 논문 목록을 고른 방법으로 늘어놓는다.
+ *
+ * 연도를 모르는 논문은 **어느 방향으로 정렬하든 뒤로** 보낸다. 오래된 순에서
+ * 앞으로 오면, 연도를 모르는 것이 가장 오래된 것처럼 보인다. 모르는 것과
+ * 0년은 다르다.
+ */
+function sortPapers(
+  items: PaperListItem[],
+  sort: PaperSort,
+): PaperListItem[] {
+  const byYear = (direction: 1 | -1) => (a: PaperListItem, b: PaperListItem) => {
     if (a.publicationYear === b.publicationYear) {
       return 0;
     }
@@ -273,6 +296,26 @@ export async function listPapers(): Promise<PaperListItem[]> {
       return -1;
     }
 
-    return b.publicationYear - a.publicationYear;
-  });
+    return (a.publicationYear - b.publicationYear) * direction;
+  };
+
+  switch (sort) {
+    case "year_asc":
+      return items.sort(byYear(1));
+
+    case "recent":
+      return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    case "citation":
+      /*
+        참고문헌 가나다순. APA 목록이 저자 이름순이라, 원고에 그대로 옮겨
+        적을 때 이 순서가 필요하다. 한글과 로마자가 섞이므로 한국어 기준으로
+        견준다. 코드 순서로 견주면 한글이 전부 뒤로 밀린다.
+      */
+      return items.sort((a, b) => a.citation.localeCompare(b.citation, "ko"));
+
+    case "year_desc":
+    default:
+      return items.sort(byYear(-1));
+  }
 }

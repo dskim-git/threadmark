@@ -485,6 +485,9 @@ export type Database = {
           status_changed_by: string | null
           status_reason: string | null
           suspended_at: string | null
+          theme_fonts: string
+          theme_mode: string
+          theme_palette: string
           timezone: string
           translation_target_language: string
           updated_at: string
@@ -503,6 +506,9 @@ export type Database = {
           status_changed_by?: string | null
           status_reason?: string | null
           suspended_at?: string | null
+          theme_fonts?: string
+          theme_mode?: string
+          theme_palette?: string
           timezone?: string
           translation_target_language?: string
           updated_at?: string
@@ -521,6 +527,9 @@ export type Database = {
           status_changed_by?: string | null
           status_reason?: string | null
           suspended_at?: string | null
+          theme_fonts?: string
+          theme_mode?: string
+          theme_palette?: string
           timezone?: string
           translation_target_language?: string
           updated_at?: string

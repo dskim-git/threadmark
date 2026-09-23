@@ -1,28 +1,228 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+  =============================================================================
+  밝게 / 어둡게
+  =============================================================================
+  Tailwind의 `dark:`는 원래 컴퓨터 설정만 본다. 그래서 앱에서 밝기를 고를 수
+  없었다. 규칙을 다시 정해 세 가지 상태를 모두 다룬다.
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+    data-mode="dark"    언제나 어둡게
+    data-mode="light"   언제나 밝게 (컴퓨터가 어두운 모드여도)
+    표시 없음            컴퓨터 설정을 따른다
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  두 번째가 이 규칙의 핵심이다. `:not([data-mode="light"])`가 없으면, 밝게를
+  골라도 컴퓨터가 어두운 모드일 때 어두운 쪽이 함께 걸린다.
+*/
+@custom-variant dark {
+  &:where([data-mode="dark"], [data-mode="dark"] *) {
+    @slot;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-mode="light"]), :root:not([data-mode="light"]) *) {
+      @slot;
+    }
   }
 }
 
+/*
+  =============================================================================
+  색과 글꼴
+  =============================================================================
+  화면 서른 곳에 흩어진 `bg-zinc-50`, `text-zinc-600` 같은 이름을 고치지 않고,
+  **그 이름이 가리키는 값만** 여기서 바꾼다.
+
+  아래 @theme에는 `inline`을 붙이지 않는다. 붙이면 Tailwind가 값을 각 클래스에
+  박아 넣어, 나중에 무엇으로도 바꿀 수 없다. 붙이지 않으면 클래스가 변수를
+  가리키게 되고, 그래서 `<html data-palette="...">` 한 글자로 앱 전체의 색이
+  바뀐다. 사람마다 다른 색을 쓸 수 있는 것이 이 차이 하나에 달려 있다.
+
+  기본값은 `한지`와 `명조`다. 아래 `[data-palette]` 규칙이 그 위에 덮인다.
+  덮는 규칙은 레이어 밖에 있어서, 레이어 안에 있는 @theme보다 언제나 이긴다.
+*/
+
+@theme {
+  --font-sans: var(--font-noto-sans-kr), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-noto-serif-kr), ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* 종이와 먹. 알파를 섞어 쓰는 테두리(`border-black/[.08]`)도 함께 따라온다. */
+  --color-white: #fbf9f4;
+  --color-black: #141210;
+
+  --color-zinc-50: #f2efe8;
+  --color-zinc-100: #eae5da;
+  --color-zinc-200: #ded7c8;
+  --color-zinc-300: #c9bfab;
+  --color-zinc-400: #948b7b;
+  --color-zinc-500: #6d6659;
+  --color-zinc-600: #58524a;
+  --color-zinc-700: #453f39;
+  --color-zinc-800: #322e29;
+  --color-zinc-900: #22201c;
+  --color-zinc-950: #1f1d18;
+
+  /*
+    강조 하나.
+
+    지금 어디에 있는지, 무엇이 눌리는지에만 쓴다. 색을 더 늘리지 않는다.
+    `-dark`는 밤에 쓰는 값이다. 낮의 강조색을 밤에 그대로 쓰면 바탕에 묻힌다.
+  */
+  --color-accent: #2e4a6b;
+  --color-accent-soft: #e2e7ee;
+  --color-accent-dark: #93b4d8;
+  --color-accent-dark-soft: #1c2531;
+}
+
+/*
+  -----------------------------------------------------------------------------
+  색 갈래
+  -----------------------------------------------------------------------------
+  값 목록은 src/lib/appearance/theme.ts와 마이그레이션의 check 제약에도 있다.
+  셋이 어긋나면 고를 수는 있는데 저장이 거부되거나, 저장은 되는데 화면이
+  안 바뀐다. tests/appearance-theme.test.mjs가 셋을 맞대어 본다.
+*/
+
+/* 쪽빛과 한지 — 미색 종이에 쪽빛 표시 */
+[data-palette="hanji"] {
+  --color-white: #fbf9f4;
+  --color-black: #141210;
+  --color-zinc-50: #f2efe8;
+  --color-zinc-100: #eae5da;
+  --color-zinc-200: #ded7c8;
+  --color-zinc-300: #c9bfab;
+  --color-zinc-400: #948b7b;
+  --color-zinc-500: #6d6659;
+  --color-zinc-600: #58524a;
+  --color-zinc-700: #453f39;
+  --color-zinc-800: #322e29;
+  --color-zinc-900: #22201c;
+  --color-zinc-950: #1f1d18;
+  --color-accent: #2e4a6b;
+  --color-accent-soft: #e2e7ee;
+  --color-accent-dark: #93b4d8;
+  --color-accent-dark-soft: #1c2531;
+}
+
+/* 흑연 — 색을 거의 쓰지 않는다 */
+[data-palette="graphite"] {
+  --color-white: #ffffff;
+  --color-black: #121416;
+  --color-zinc-50: #f4f5f6;
+  --color-zinc-100: #eceeef;
+  --color-zinc-200: #e2e5e7;
+  --color-zinc-300: #cdd2d5;
+  --color-zinc-400: #949b9f;
+  --color-zinc-500: #6b7276;
+  --color-zinc-600: #575e62;
+  --color-zinc-700: #454b4e;
+  --color-zinc-800: #33383b;
+  --color-zinc-900: #212528;
+  --color-zinc-950: #1d2124;
+  --color-accent: #3d5a66;
+  --color-accent-soft: #e4ebee;
+  --color-accent-dark: #8fb3c0;
+  --color-accent-dark-soft: #1b2226;
+}
+
+/* 이끼 서가 — 바탕에 옅은 초록 */
+[data-palette="moss"] {
+  --color-white: #fafbf7;
+  --color-black: #121610;
+  --color-zinc-50: #eef0ea;
+  --color-zinc-100: #e6eae0;
+  --color-zinc-200: #dde1d6;
+  --color-zinc-300: #c5ccbb;
+  --color-zinc-400: #8b9585;
+  --color-zinc-500: #64705f;
+  --color-zinc-600: #515b4d;
+  --color-zinc-700: #40483d;
+  --color-zinc-800: #2f352d;
+  --color-zinc-900: #20251f;
+  --color-zinc-950: #1d221c;
+  --color-accent: #4a6b4f;
+  --color-accent-soft: #e2ebe1;
+  --color-accent-dark: #9dc2a1;
+  --color-accent-dark-soft: #1b241c;
+}
+
+/*
+  -----------------------------------------------------------------------------
+  글꼴 갈래
+  -----------------------------------------------------------------------------
+  제목(h1과 숫자)은 `--font-serif`, 나머지는 `--font-sans`를 쓴다.
+  `한 글꼴`은 둘을 같은 것으로 둔다. 그래서 제목도 본문 글꼴이 되고,
+  굵기 차이만 남는다.
+*/
+
+[data-fonts="myeongjo"] {
+  --font-sans: var(--font-noto-sans-kr), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-noto-serif-kr), ui-serif, Georgia, serif;
+}
+
+[data-fonts="single"] {
+  --font-sans: var(--font-plex-kr), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-plex-kr), ui-sans-serif, system-ui, sans-serif;
+}
+
+[data-fonts="gowun"] {
+  --font-sans: var(--font-gothic-a1), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-gowun-batang), ui-serif, Georgia, serif;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /*
+    바탕을 여기서 칠한다. 화면 뿌리가 아니라 body에 두는 이유는, 끝까지
+    스크롤해 튕길 때 드러나는 자리가 여기이기 때문이다.
+  */
+  background: var(--color-zinc-50);
+  color: var(--color-black);
+}
+
+/*
+  `color-scheme`은 브라우저가 그리는 것들의 밝기다. 스크롤 막대, 라디오 단추,
+  글상자의 기본 모양이 여기에 따라간다. 이것을 빼먹으면 바탕만 어두워지고
+  단추와 막대는 밝은 채로 남아 화면이 반씩 갈라진다.
+*/
+:root {
+  color-scheme: light;
+}
+
+:root[data-mode="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-mode="dark"] body {
+  background: var(--color-black);
+  color: var(--color-zinc-50);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode="light"]) {
+    color-scheme: dark;
+  }
+
+  :root:not([data-mode="light"]) body {
+    background: var(--color-black);
+    color: var(--color-zinc-50);
+  }
+}
+
+/*
+  제목은 다른 글꼴로.
+
+  h1에만 건다. h2는 `파일`, `프로젝트`처럼 작은 구역 이름으로도 쓰여서,
+  명조로 만들면 글이 아니라 장식처럼 보인다. 큰 제목 하나만 다를 때
+  화면이 차분해진다.
+
+  `한 글꼴` 갈래에서는 sans와 serif가 같은 값이라 이 규칙이 아무 일도 하지
+  않는다. 규칙을 갈래마다 따로 두지 않아도 되는 이유다.
+*/
+h1 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 /*
@@ -55,4 +255,18 @@ main:has([data-wide]) {
   body:has([data-wide]) {
     overflow: hidden;
   }
+}
+
+/*
+  가로로 넘기는 줄에서 스크롤 막대를 감춘다.
+
+  좁은 화면의 메뉴에 쓴다. 막대가 보이면 메뉴 아래에 선이 하나 더 생긴 것처럼
+  보인다. 넘길 수 있다는 것은 잘린 글자가 알려준다.
+*/
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

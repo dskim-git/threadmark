@@ -2,6 +2,13 @@ import { cache } from "react";
 
 import { redirect } from "next/navigation";
 
+import {
+  DEFAULT_APPEARANCE,
+  readThemeFonts,
+  readThemeMode,
+  readThemePalette,
+  type Appearance,
+} from "@/lib/appearance/theme";
 import { getVerifiedClaims } from "@/lib/supabase/claims";
 import { createClient } from "@/lib/supabase/server";
 
@@ -22,6 +29,13 @@ export type Account = {
   status: AccountStatus | null;
   /** user_roles를 기준으로 한 관리자 여부. 이메일로 판단하지 않는다. */
   isAdmin: boolean;
+  /**
+   * 화면 취향. (설계 문서 4.2절)
+   *
+   * 조회에 실패하거나 모르는 값이 들어 있으면 기본값이다. 보기에 관한 값이라
+   * 여기서 막을 일이 아니다. 화면은 어떻게든 보여야 한다.
+   */
+  appearance: Appearance;
 };
 
 /**
@@ -35,6 +49,55 @@ export type Account = {
  * React의 cache로 감싸 한 요청 안에서는 한 번만 조회한다.
  * 레이아웃과 페이지가 각각 확인해도 왕복이 늘지 않는다.
  */
+/**
+ * 프로필을 읽는다. 화면 취향을 읽지 못해도 나머지는 읽어 온다.
+ *
+ * 2026-09-24에 겪은 일이다. 화면 취향 칸을 코드가 먼저 읽고 마이그레이션은
+ * 아직 올리지 않은 상태에서, **앱 전체가 열리지 않았다.** 프로필 조회가
+ * 실패하면 승인 상태를 알 수 없다고 보고 접근을 막기 때문이다.
+ *
+ * 승인 상태를 못 읽었을 때 막는 것은 옳다. (보안 원칙 7) 문제는 막힌 이유가
+ * 승인과 아무 상관 없는 **장식용 칸**이었다는 것이다. 색을 못 읽었다고
+ * 로그인을 막을 이유는 없다.
+ *
+ * 그래서 취향 칸까지 한 번에 읽어보고, 실패하면 그 칸을 빼고 다시 읽는다.
+ * 두 번째까지 실패하면 그때는 진짜로 못 읽는 것이므로 막는다. 왕복이 느는
+ * 것은 어긋났을 때뿐이고, 평소에는 질의 하나 그대로다.
+ *
+ * 이런 상황은 또 온다. Vercel은 main에 푸시하면 바로 배포하는데, 마이그레이션을
+ * 먼저 올리지 않으면 모든 사용자가 같은 화면을 본다. (AGENTS.md 6절)
+ */
+async function readProfile(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+) {
+  const full = await supabase
+    .from("profiles")
+    .select("email, display_name, status, theme_mode, theme_palette, theme_fonts")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!full.error) {
+    return full;
+  }
+
+  console.error(
+    "[ThreadMark] 화면 취향을 읽지 못했습니다. 기본값으로 계속합니다:",
+    full.error.message,
+  );
+
+  /*
+    취향 칸 없이 다시 읽는다. 여기서도 실패하면 권한이나 연결의 문제이므로
+    막는 것이 맞다. 즉 이 두 번째 시도는 "열어주는" 길이 아니라,
+    막아야 할 이유와 막지 않아도 될 이유를 갈라내는 길이다.
+  */
+  return supabase
+    .from("profiles")
+    .select("email, display_name, status")
+    .eq("id", userId)
+    .maybeSingle();
+}
+
 export const getAccount = cache(async (): Promise<Account | null> => {
   const supabase = await createClient();
   const claims = await getVerifiedClaims(supabase);
@@ -49,11 +112,7 @@ export const getAccount = cache(async (): Promise<Account | null> => {
   // RLS의 profiles_select_own 정책이 본인 행만 돌려준다.
   // 관리자 판정은 RLS 정책이 쓰는 것과 같은 함수를 호출해 기준을 하나로 유지한다.
   const [profileResult, adminResult] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("email, display_name, status")
-      .eq("id", userId)
-      .maybeSingle(),
+    readProfile(supabase, userId),
     supabase.rpc("is_admin"),
   ]);
 
@@ -64,7 +123,14 @@ export const getAccount = cache(async (): Promise<Account | null> => {
       profileResult.error.message,
     );
 
-    return { userId, email, displayName: null, status: null, isAdmin: false };
+    return {
+      userId,
+      email,
+      displayName: null,
+      status: null,
+      isAdmin: false,
+      appearance: DEFAULT_APPEARANCE,
+    };
   }
 
   if (adminResult.error) {
@@ -80,6 +146,21 @@ export const getAccount = cache(async (): Promise<Account | null> => {
     status: isAccountStatus(profile?.status) ? profile.status : null,
     // 판정에 실패하면 관리자가 아닌 것으로 본다.
     isAdmin: adminResult.error ? false : adminResult.data === true,
+    /*
+      취향 칸이 없으면 기본값이다. 위의 두 번째 시도로 돌아온 행에는
+      이 칸이 아예 없다. 모르는 값과 없는 값을 같게 본다.
+    */
+    appearance: {
+      mode: readThemeMode(
+        (profile as { theme_mode?: unknown } | null)?.theme_mode,
+      ),
+      palette: readThemePalette(
+        (profile as { theme_palette?: unknown } | null)?.theme_palette,
+      ),
+      fonts: readThemeFonts(
+        (profile as { theme_fonts?: unknown } | null)?.theme_fonts,
+      ),
+    },
   };
 });
 

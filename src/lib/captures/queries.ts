@@ -187,3 +187,23 @@ export async function countInboxCaptures(): Promise<number> {
 
   return count ?? 0;
 }
+
+/** 삭제하지 않은 기록 수. 첫 화면의 요약에 쓴다. */
+export async function countCaptures(): Promise<number> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { count, error } = await supabase
+    .from("captures")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null);
+
+  if (error) {
+    console.error("[ThreadMark] 기록 수 조회 실패:", error.message);
+
+    return 0;
+  }
+
+  return count ?? 0;
+}

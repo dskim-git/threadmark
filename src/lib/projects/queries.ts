@@ -244,3 +244,23 @@ export async function listProjectChips(): Promise<ProjectChip[]> {
 
   return data ?? [];
 }
+
+/** 삭제하지 않은 프로젝트 수. 첫 화면의 요약에 쓴다. */
+export async function countProjects(): Promise<number> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { count, error } = await supabase
+    .from("projects")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null);
+
+  if (error) {
+    console.error("[ThreadMark] 프로젝트 수 조회 실패:", error.message);
+
+    return 0;
+  }
+
+  return count ?? 0;
+}

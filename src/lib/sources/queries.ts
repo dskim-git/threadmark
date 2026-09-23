@@ -2,6 +2,11 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
 import {
+  DEFAULT_SOURCE_SORT,
+  sourceSortOrder,
+  type SourceSort,
+} from "./sorting";
+import {
   isSourceStatus,
   isSourceType,
   type SourceStatus,
@@ -42,22 +47,29 @@ export type SourceDetail = SourceListItem & {
 };
 
 /**
- * 내 자료 목록. 최신순으로 돌려준다.
+ * 내 자료 목록.
+ *
+ * 정렬을 화면이 정한다. 담은 순서만으로는 "제목은 아는데 언제 담았는지
+ * 모르는" 경우에 찾을 방법이 없다. 정렬 값은 sorting.ts 한 곳에 있고,
+ * 모르는 값은 그 쪽에서 기본값으로 바뀌어 들어온다.
  *
  * @param type 지정하면 해당 유형만 돌려준다.
+ * @param sort 지정하지 않으면 최근에 담은 순이다.
  */
 export async function listSources(
   type?: SourceType,
+  sort: SourceSort = DEFAULT_SOURCE_SORT,
 ): Promise<SourceListItem[]> {
   await requireActiveAccount();
 
   const supabase = await createClient();
+  const order = sourceSortOrder(sort);
 
   let query = supabase
     .from("sources")
     .select(LIST_COLUMNS)
     .is("deleted_at", null)
-    .order("created_at", { ascending: false });
+    .order(order.column, { ascending: order.ascending });
 
   if (type) {
     query = query.eq("type", type);
