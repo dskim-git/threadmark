@@ -9,6 +9,11 @@ import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projec
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listCapturesForSource } from "@/lib/captures/queries";
 import { getDriveConnectionSummary } from "@/lib/drive/connection";
+import {
+  ANALYSIS_FIELDS,
+  countFilled,
+} from "@/lib/papers/analysis-fields";
+import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { listSourceFiles } from "@/lib/sources/files";
@@ -47,6 +52,7 @@ export default async function SourceDetailPage({
     files,
     driveConnection,
     paperProfile,
+    paperAnalysis,
     query,
   ] = await Promise.all([
     listCapturesForSource(source.id),
@@ -56,6 +62,7 @@ export default async function SourceDetailPage({
     getDriveConnectionSummary(account.userId),
     // 논문이 아닌 자료에는 조회하지 않는다. 있을 수 없는 행을 찾는 왕복이 된다.
     source.type === "paper" ? getPaperProfile(source.id) : null,
+    source.type === "paper" ? getPaperAnalysis(source.id) : null,
     searchParams,
   ]);
 
@@ -172,6 +179,8 @@ export default async function SourceDetailPage({
           sourceId={source.id}
           profile={paperProfile}
           citation={citation}
+          analysisFilled={countFilled(paperAnalysis?.values ?? {})}
+          analysisTotal={ANALYSIS_FIELDS.length}
         />
       ) : null}
 

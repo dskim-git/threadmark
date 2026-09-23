@@ -16,11 +16,16 @@ export function PaperSummary({
   sourceId,
   profile,
   citation,
+  analysisFilled,
+  analysisTotal,
 }: {
   sourceId: string;
   /** 아직 적지 않았으면 null. */
   profile: PaperProfile | null;
   citation: { text: string; edited: boolean } | null;
+  /** 분석 서식에서 채운 칸 수. (설계 문서 8.2절) */
+  analysisFilled: number;
+  analysisTotal: number;
 }) {
   const editHref = `/sources/${sourceId}/paper`;
 
@@ -116,6 +121,36 @@ export function PaperSummary({
           바꾸거나 오타를 고칠 때 조각만 고치면 됩니다.
         </p>
       )}
+
+      {/*
+        분석 서식으로 가는 길. (설계 문서 8.2절)
+
+        서지 정보와 나란히 두되 따로 둔다. 하나는 논문이 무엇인지를 적는
+        자리이고, 다른 하나는 그것을 읽고 내가 무엇을 생각했는지 적는
+        자리다. 섞으면 어느 쪽이 자료의 말이고 어느 쪽이 내 말인지
+        흐려진다. (2.4절)
+
+        채운 칸 수를 보여준다. 서른 칸을 며칠에 걸쳐 채우게 되는데,
+        여기서 얼마나 했는지 보이면 다시 열게 된다.
+      */}
+      <Link
+        href={`/sources/${sourceId}/analysis`}
+        className="flex items-center justify-between gap-3 rounded-2xl border border-black/[.08] bg-white px-5 py-4 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:bg-zinc-950 dark:hover:bg-white/[.06]"
+      >
+        <span className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium text-black dark:text-zinc-50">
+            논문 분석
+          </span>
+          <span className="text-xs text-zinc-500">
+            {analysisFilled > 0
+              ? "읽으면서 적어둔 것을 이어서 봅니다"
+              : "왜 읽는지, 무엇을 밝혔는지, 내 연구 어디에 쓸지를 적습니다"}
+          </span>
+        </span>
+        <span className="shrink-0 text-xs text-zinc-500">
+          {analysisFilled}/{analysisTotal}
+        </span>
+      </Link>
     </section>
   );
 }

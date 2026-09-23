@@ -2633,6 +2633,234 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 53. 다른 사용자의 논문 분석을 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 설계 문서 8.2절의 "나의 활용"에는 연구 계획이 그대로 적힌다.
+-- 무엇을 준비하고 있는지가 드러나므로, 자료나 기록보다 더 사적인 글이다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  if v_other is null then
+    raise exception '검사 53 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  -- 삽입 전에 클레임을 비운다. 비우지 않으면 소유자 고정 트리거가
+  -- owner_id를 앞선 검사에서 설정한 사용자로 덮어쓴다.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.paper_analyses
+    (owner_id, source_id, reading_purpose, where_to_use)
+  values
+    (v_owner, v_source, '검사용 읽는 목적', '검사용 활용 계획');
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.paper_analyses where source_id = v_source;
+
+  reset role;
+
+  delete from public.paper_analyses where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 0 then
+    raise exception '검사 53 실패: 다른 사용자의 논문 분석이 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 54. 다른 사용자의 자료에 분석을 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키 제약은 RLS를 보지 않는다. 자료 id만 알면 남의 자료에 분석을
+-- 붙일 수 있으므로, set_paper_analysis_owner 트리거가 참조 대상을 확인한다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.paper_analyses (source_id, reading_purpose)
+    values (v_source, '남의 자료에 붙인 분석');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_analyses where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 54 실패: 다른 사용자의 자료에 분석을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 55. 소유자는 자기 자료에 분석을 붙이고 읽고 고칠 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다.
+-- 이 서식은 며칠에 걸쳐 여러 번 고쳐 적는 것이라, 고치는 길이 열려 있는지가
+-- 특히 중요하다. 한 번 적고 못 고치면 서식으로 쓸 수 없다.
+--
+-- owner_id를 보내지 않고 넣어 트리거가 채우는지도 함께 본다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_value  text;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.paper_analyses (source_id, reading_purpose, main_argument)
+  values (v_source, '처음 적은 목적', '핵심 주장');
+
+  -- 며칠 뒤에 이어서 고친다.
+  update public.paper_analyses
+  set reading_purpose = '다시 적은 목적'
+  where source_id = v_source;
+
+  select count(*), max(reading_purpose) into v_seen, v_value
+  from public.paper_analyses
+  where source_id = v_source and owner_id = v_owner;
+
+  reset role;
+
+  delete from public.paper_analyses where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 55 실패: 소유자가 자기 자료에 분석을 붙이지 못했습니다. 정책이 과하게 잠겼습니다.';
+  end if;
+
+  if v_value is distinct from '다시 적은 목적' then
+    raise exception
+      '검사 55 실패: 적어둔 분석을 고치지 못했습니다. (지금 %)', v_value;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 56. 분석이 붙은 자료를 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- source_id를 고칠 수 있으면 A 논문을 읽고 적은 분석이 B 자료에 붙는다.
+-- 서른 칸을 채운 글이 엉뚱한 논문의 것이 되고, 알아챌 방법이 없다.
+-- 자기 자료끼리라도 허용하지 않는다. source_files와 paper_profiles와 같다.
+do $$
+declare
+  v_owner    uuid;
+  v_source   uuid;
+  v_other    uuid;
+  v_analysis uuid;
+  v_blocked  boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 A')
+  returning id into v_source;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문 B')
+  returning id into v_other;
+
+  insert into public.paper_analyses (owner_id, source_id, reading_purpose)
+  values (v_owner, v_source, '옮겨볼 분석')
+  returning id into v_analysis;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.paper_analyses set source_id = v_other where id = v_analysis;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.paper_analyses where id = v_analysis;
+  delete from public.sources where id in (v_source, v_other);
+
+  if not v_blocked then
+    raise exception
+      '검사 56 실패: 분석이 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -2655,6 +2883,7 @@ select
   (select count(*) from public.captures
     where deleted_at is null and ai_generated)                          as 기계_번역,
   (select count(*) from public.paper_profiles)                          as 논문_정보,
+  (select count(*) from public.paper_analyses)                          as 논문_분석,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

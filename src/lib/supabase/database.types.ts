@@ -220,6 +220,128 @@ export type Database = {
         }
         Relationships: []
       }
+      paper_analyses: {
+        Row: {
+          agreements_objections: string | null
+          analysis_method: string | null
+          cautions: string | null
+          created_at: string
+          data_collection: string | null
+          discovery_path: string | null
+          discussion: string | null
+          expected_relevance: string | null
+          first_impression: string | null
+          future_research: string | null
+          id: string
+          implications: string | null
+          intended_audience: string | null
+          key_concepts: string | null
+          key_findings: string | null
+          limitations: string | null
+          main_argument: string | null
+          my_interpretation: string | null
+          owner_id: string
+          paraphrase_candidates: string | null
+          participants: string | null
+          quote_candidates: string | null
+          reading_purpose: string | null
+          research_method: string | null
+          research_purpose: string | null
+          research_questions: string | null
+          research_topic: string | null
+          significance: string | null
+          source_id: string
+          study_context: string | null
+          study_type: string | null
+          supports_claim: string | null
+          theoretical_background: string | null
+          updated_at: string
+          where_to_use: string | null
+        }
+        Insert: {
+          agreements_objections?: string | null
+          analysis_method?: string | null
+          cautions?: string | null
+          created_at?: string
+          data_collection?: string | null
+          discovery_path?: string | null
+          discussion?: string | null
+          expected_relevance?: string | null
+          first_impression?: string | null
+          future_research?: string | null
+          id?: string
+          implications?: string | null
+          intended_audience?: string | null
+          key_concepts?: string | null
+          key_findings?: string | null
+          limitations?: string | null
+          main_argument?: string | null
+          my_interpretation?: string | null
+          owner_id?: string
+          paraphrase_candidates?: string | null
+          participants?: string | null
+          quote_candidates?: string | null
+          reading_purpose?: string | null
+          research_method?: string | null
+          research_purpose?: string | null
+          research_questions?: string | null
+          research_topic?: string | null
+          significance?: string | null
+          source_id: string
+          study_context?: string | null
+          study_type?: string | null
+          supports_claim?: string | null
+          theoretical_background?: string | null
+          updated_at?: string
+          where_to_use?: string | null
+        }
+        Update: {
+          agreements_objections?: string | null
+          analysis_method?: string | null
+          cautions?: string | null
+          created_at?: string
+          data_collection?: string | null
+          discovery_path?: string | null
+          discussion?: string | null
+          expected_relevance?: string | null
+          first_impression?: string | null
+          future_research?: string | null
+          id?: string
+          implications?: string | null
+          intended_audience?: string | null
+          key_concepts?: string | null
+          key_findings?: string | null
+          limitations?: string | null
+          main_argument?: string | null
+          my_interpretation?: string | null
+          owner_id?: string
+          paraphrase_candidates?: string | null
+          participants?: string | null
+          quote_candidates?: string | null
+          reading_purpose?: string | null
+          research_method?: string | null
+          research_purpose?: string | null
+          research_questions?: string | null
+          research_topic?: string | null
+          significance?: string | null
+          source_id?: string
+          study_context?: string | null
+          study_type?: string | null
+          supports_claim?: string | null
+          theoretical_background?: string | null
+          updated_at?: string
+          where_to_use?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "paper_analyses_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       paper_profiles: {
         Row: {
           abstract: string | null
