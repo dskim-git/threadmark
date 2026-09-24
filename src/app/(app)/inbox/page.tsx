@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { createCapture } from "@/app/(app)/captures/actions";
+import { Panel } from "@/app/(app)/panel";
 import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { AutoNotice } from "@/app/(app)/auto-notice";
@@ -120,10 +121,14 @@ export default async function InboxPage({
         <AutoNotice>{notice}</AutoNotice>
       ) : null}
 
-      <section className="rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">
-        <h2 className="mb-4 text-sm font-medium text-black dark:text-zinc-50">
-          새 기록
-        </h2>
+      {/*
+        새 기록 칸은 **접지 않는다.**
+
+        받은함에 오는 이유가 그것이기 때문이다. 자주 하는 일은 화면을 많이
+        써야 하고, 한 번 더 누르게 만들면 그만큼 덜 적게 된다.
+        (panel.tsx의 기준)
+      */}
+      <Panel title="새 기록">
         <CaptureForm
           action={createCapture}
           submitLabel="기록하기"
@@ -142,7 +147,7 @@ export default async function InboxPage({
             translationLanguage: "",
           }}
         />
-      </section>
+      </Panel>
 
       {tagSlug && !activeTag ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
@@ -187,14 +192,11 @@ export default async function InboxPage({
         </nav>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-              남긴 기록
-            </h2>
-            <HelpButton topic="capture-types" label="기록의 종류" />
-          </div>
+      <Panel
+        title="남긴 기록"
+        help="capture-types"
+        helpLabel="기록의 종류"
+        action={
           <StarFilter
             allHref={linkTo({ starred: false })}
             starredHref={linkTo({ starred: true })}
@@ -202,7 +204,8 @@ export default async function InboxPage({
             starred={counts.starred}
             starredOnly={starredOnly}
           />
-        </div>
+        }
+      >
         <CaptureList
           captures={captures}
           returnTo={returnTo}
@@ -217,7 +220,7 @@ export default async function InboxPage({
                 : "아직 남긴 기록이 없습니다. 위에서 바로 적어보세요."
           }
         />
-      </section>
+      </Panel>
     </div>
   );
 }

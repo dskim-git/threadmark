@@ -385,10 +385,7 @@ export default async function SourceDetailPage({
       ) : null}
 
       {source.originalUrl ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-            원본 주소
-          </h2>
+        <Panel title="원본 주소">
           {/*
             저장 시점에 http/https만 통과시키므로 링크로 만들어도 안전하다.
             외부로 나가는 링크이므로 referrer와 opener를 넘기지 않는다.
@@ -401,18 +398,15 @@ export default async function SourceDetailPage({
           >
             {source.originalUrl}
           </a>
-        </section>
+        </Panel>
       ) : null}
 
       {source.description ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-            설명
-          </h2>
+        <Panel title="설명">
           <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-700 dark:text-zinc-300">
             {source.description}
           </p>
-        </section>
+        </Panel>
       ) : null}
 
       {/*
@@ -666,20 +660,16 @@ export default async function SourceDetailPage({
         안내와 연결하는 자리가 멀어진다.
       */}
       {source.type === "paper" ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-            프로젝트별 활용 계획
-          </h2>
-          <p className="text-xs leading-5 text-zinc-500">
-            이 논문을 각 프로젝트에서 어떻게 쓸지 적습니다. 논문이 무엇을
-            말하는지는 논문 분석에, 내 원고의 어디에 넣을지는 여기에 적습니다.
-          </p>
+        <Panel
+          title="프로젝트별 활용 계획"
+          hint="이 논문을 각 프로젝트에서 어떻게 쓸지 적습니다. 논문이 무엇을 말하는지는 논문 분석에, 내 원고의 어디에 넣을지는 여기에 적습니다."
+        >
           <ProjectUsePanel
             sourceId={source.id}
             projects={usePanelProjects}
             uses={paperUses}
           />
-        </section>
+        </Panel>
       ) : null}
 
       {/*
@@ -1004,10 +994,7 @@ export default async function SourceDetailPage({
         />
       </section>
 
-      <section className="rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">
-        <h2 className="mb-4 text-sm font-medium text-black dark:text-zinc-50">
-          새 기록
-        </h2>
+      <Panel title="새 기록">
         <CaptureForm
           action={createCapture}
           submitLabel="기록하기"
@@ -1026,7 +1013,7 @@ export default async function SourceDetailPage({
             translationLanguage: "",
           }}
         />
-      </section>
+      </Panel>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-black/[.08] pt-6 dark:border-white/[.145]">
         {/*

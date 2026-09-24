@@ -30,6 +30,8 @@ import {
   unlinkCaptureFromProject,
   unlinkSourceFromProject,
 } from "../actions";
+import { Panel, Reveal } from "@/app/(app)/panel";
+
 import { OutlinePanel } from "../outline-panel";
 
 export const metadata: Metadata = {
@@ -179,11 +181,7 @@ export default async function ProjectDetailPage({
         ]}
       />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-          연결된 자료 {linkedSources.length}건
-        </h2>
-
+      <Panel title={`연결된 자료 ${linkedSources.length}건`}>
         {linkedSources.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {linkedSources.map((source) => (
@@ -220,9 +218,10 @@ export default async function ProjectDetailPage({
         )}
 
         {linkableSources.length > 0 ? (
+          <Reveal label="자료 잇기">
           <form
             action={linkSourceToProject}
-            className="flex flex-wrap items-center gap-2"
+            className="flex min-w-0 flex-wrap items-center gap-2"
           >
             <input type="hidden" name="projectId" value={project.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
@@ -247,8 +246,9 @@ export default async function ProjectDetailPage({
               자료 연결
             </button>
           </form>
+          </Reveal>
         ) : null}
-      </section>
+      </Panel>
 
       {/*
         논문 활용 계획. (설계 문서 8.3절)
@@ -262,11 +262,7 @@ export default async function ProjectDetailPage({
         프로젝트에서는 영원히 빈 칸으로 남는다.
       */}
       {paperUses.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-            논문 활용 계획 {paperUses.length}건
-          </h2>
-
+        <Panel title={`논문 활용 계획 ${paperUses.length}건`}>
           <ul className="flex flex-col gap-2">
             {paperUses.map((use) => (
               <li
@@ -300,14 +296,10 @@ export default async function ProjectDetailPage({
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-          연결된 기록 {linkedCaptures.length}건
-        </h2>
-
+      <Panel title={`연결된 기록 ${linkedCaptures.length}건`}>
         {linkedCaptures.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {linkedCaptures.map((capture) => (
@@ -362,10 +354,11 @@ export default async function ProjectDetailPage({
           </ul>
         ) : (
           <p className="text-sm text-zinc-500">
-            연결된 기록이 없습니다. 기록 아래의 프로젝트 선택에서 연결합니다.
+            연결된 기록이 없습니다. 기록 아래의 `프로젝트에 추가`나 `자리에
+            놓기`에서 이어집니다.
           </p>
         )}
-      </section>
+      </Panel>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-black/[.08] pt-6 dark:border-white/[.145]">
         <Link

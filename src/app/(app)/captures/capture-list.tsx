@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { linkCaptureToProject } from "@/app/(app)/projects/actions";
+import { Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { PlacedWhere } from "@/app/(app)/projects/placed-where";
 import type { Capture } from "@/lib/captures/queries";
@@ -275,7 +276,15 @@ export function CaptureList({
               <NodePicker item={`capture:${capture.id}`} returnTo={returnTo} />
             </div>
 
+            {/*
+              프로젝트 고르는 칸은 눌러야 나온다.
+
+              읽기 화면의 좁은 칸에서 **가장 넓은 것이 이 칸**이었다.
+              프로젝트 이름이 길면 카드를 밀고 나간다. 그리고 기록 하나를
+              적을 때마다 프로젝트를 고르는 것도 아니다. (panel.tsx의 기준)
+            */}
             {projects.length > 0 ? (
+              <Reveal label="프로젝트에 잇기">
               <form
                 action={linkCaptureToProject}
                 className="flex min-w-0 flex-wrap items-center gap-2"
@@ -308,6 +317,7 @@ export function CaptureList({
                   프로젝트에 추가
                 </button>
               </form>
+              </Reveal>
             ) : null}
           </div>
         </li>
