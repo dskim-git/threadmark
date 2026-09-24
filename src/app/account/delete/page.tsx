@@ -94,6 +94,55 @@ export default async function AccountDeletePage({
           </dl>
 
           {/*
+            지우기 전에 챙겨 가는 길. (18단계)
+
+            **지우는 화면에 둔다.** 내려받기가 가장 필요한 순간이 여기다.
+            설정 화면에도 같은 길을 두었지만, 지우려고 온 사람이 그것을
+            찾으러 돌아가지는 않는다. 되돌릴 수 없는 일 바로 앞에 둔다.
+
+            `a`로 만든다. 파일을 받는 일이라 화면이 바뀌지 않아야 하고,
+            `download`를 붙이지 않는다. 파일 이름은 서버가 정한다.
+          */}
+          <section className="flex flex-col gap-3 rounded-lg border border-black/[.08] px-4 py-4 dark:border-white/[.145]">
+            <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+              지우기 전에 챙겨 가기
+            </h2>
+            <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              담아둔 것을 파일로 받아 두실 수 있습니다.{" "}
+              <strong className="font-medium text-zinc-800 dark:text-zinc-200">
+                계정을 지우면 되돌릴 수 없으니, 필요하시면 먼저 받아 주세요.
+              </strong>
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="/api/account/export?format=json"
+                className="h-9 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium leading-9 text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                전부 받기 (JSON)
+              </a>
+              <a
+                href="/api/account/export?format=sources"
+                className="h-9 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium leading-9 text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                자료 표 (CSV)
+              </a>
+              <a
+                href="/api/account/export?format=captures"
+                className="h-9 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium leading-9 text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                기록 표 (CSV)
+              </a>
+            </div>
+
+            <p className="text-xs leading-5 text-zinc-500">
+              JSON은 빠짐없는 사본이고, CSV는 엑셀에서 열어 볼 수 있는
+              표입니다. Google Drive에 올린 파일은 원래 내 Drive에 있으므로
+              여기 담기지 않습니다.
+            </p>
+          </section>
+
+          {/*
             무엇이 사라지고 무엇이 남는지를 **나란히** 보여준다.
 
             사라지는 것만 늘어놓으면 "그럼 Drive에 올린 파일은?"이 남는다.

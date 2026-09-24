@@ -34,13 +34,18 @@ import {
   EXTERNAL_PROCESSORS,
   POLICY_UPDATED_AT,
   PRIVACY_SECTIONS,
+  TERMS_SECTIONS,
 } from "../src/lib/legal/content.ts";
 import { OUTGOING_HEADER_SETS } from "../src/lib/net/request-headers.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const appDir = path.join(root, "src", "app");
 
-const ALL_SECTIONS = [...PRIVACY_SECTIONS, ...DELETION_SECTIONS];
+const ALL_SECTIONS = [
+  ...PRIVACY_SECTIONS,
+  ...DELETION_SECTIONS,
+  ...TERMS_SECTIONS,
+];
 
 // -----------------------------------------------------------------------------
 // 1. 밖으로 보내는 곳이 방침에 모두 있는가
@@ -100,13 +105,13 @@ test("맡기는 곳마다 이름·하는 일·닿는 것이 모두 있다", () =
 // 2. 로그인 없이 볼 수 있는가
 // -----------------------------------------------------------------------------
 
-test("방침과 삭제 안내는 로그인을 요구하지 않는다", () => {
+test("방침·삭제 안내·약관은 로그인을 요구하지 않는다", () => {
   /*
     Google OAuth 동의 화면에 등록하는 주소다. 검수하는 사람에게는 우리
     계정이 없다. 가입을 망설이는 사람도 가입 전에 읽어야 한다.
     앱 묶음 안으로 옮기면 둘 다 깨진다.
   */
-  for (const route of ["privacy", "data-deletion"]) {
+  for (const route of ["privacy", "data-deletion", "terms"]) {
     const source = readFileSync(
       path.join(appDir, route, "page.tsx"),
       "utf8",
@@ -125,11 +130,11 @@ test("방침과 삭제 안내는 로그인을 요구하지 않는다", () => {
 // 3. 로그인 화면에서 닿을 수 있는가
 // -----------------------------------------------------------------------------
 
-test("로그인 화면에 방침과 삭제 안내로 가는 길이 있다", () => {
+test("로그인 화면에 방침·삭제 안내·약관으로 가는 길이 있다", () => {
   // 읽을 수 있어도 찾을 수 없으면 없는 것과 같다.
   const source = readFileSync(path.join(appDir, "login", "page.tsx"), "utf8");
 
-  for (const href of ["/privacy", "/data-deletion"]) {
+  for (const href of ["/privacy", "/data-deletion", "/terms"]) {
     assert.ok(
       source.includes(`"${href}"`),
       `로그인 화면에 ${href} 링크가 없다`,
@@ -196,7 +201,7 @@ test("방침과 삭제 안내가 가리키는 앱 경로가 모두 실제 화면
 
 test("절마다 열쇠가 겹치지 않는다", () => {
   // 겹치면 차례의 링크가 엉뚱한 곳으로 간다.
-  for (const sections of [PRIVACY_SECTIONS, DELETION_SECTIONS]) {
+  for (const sections of [PRIVACY_SECTIONS, DELETION_SECTIONS, TERMS_SECTIONS]) {
     const ids = sections.map((section) => section.id);
 
     assert.equal(new Set(ids).size, ids.length, "절의 열쇠가 겹친다");
@@ -206,6 +211,7 @@ test("절마다 열쇠가 겹치지 않는다", () => {
 test("절마다 제목과 내용이 있다", () => {
   assert.ok(PRIVACY_SECTIONS.length > 0);
   assert.ok(DELETION_SECTIONS.length > 0);
+  assert.ok(TERMS_SECTIONS.length > 0);
 
   for (const section of ALL_SECTIONS) {
     assert.ok(section.title.length > 0, `${section.id}: 제목이 없다`);
@@ -292,7 +298,7 @@ test("마지막으로 고친 날이 적혀 있다", () => {
   assert.match(POLICY_UPDATED_AT, /^\d{4}-\d{2}-\d{2}$/u);
 });
 
-test("두 화면이 문의할 곳을 보여준다", () => {
+test("세 화면이 문의할 곳을 보여준다", () => {
   /*
     앱에서 지울 수 없는 사람에게는 메일이 유일한 길이다. 그 길이 화면에서
     빠지면 나가지 못하는 사람이 생긴다.
@@ -301,7 +307,7 @@ test("두 화면이 문의할 곳을 보여준다", () => {
     주소가 코드에 들어가는 것을 막는 검사가 따로 있다. 그래서 "주소가
     맞는가"가 아니라 **"주소를 읽어 오기는 하는가"**를 본다.
   */
-  for (const route of ["privacy", "data-deletion"]) {
+  for (const route of ["privacy", "data-deletion", "terms"]) {
     const source = readFileSync(path.join(appDir, route, "page.tsx"), "utf8");
 
     assert.ok(

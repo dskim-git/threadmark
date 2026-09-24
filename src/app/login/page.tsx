@@ -121,6 +121,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           */}
           <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-500">
             <a
+              href="/terms"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              서비스 약관
+            </a>
+            {" · "}
+            <a
               href="/privacy"
               className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
             >

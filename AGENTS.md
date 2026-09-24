@@ -381,7 +381,9 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 19-B. 자리에 재료 놓기 (7.4절) | | 완료 |
 | 19-C. 조망과 거꾸로 보기 (7.5절) | | 완료 (거꾸로 보기는 19-B에서) |
 | 19-D. 자리에 맞는 재료 AI 추천 | | 예정 |
-| 18. 최종 보안 점검과 배포 | | 늘 마지막 |
+| 18. 최종 보안 점검과 배포 | | 진행 중 |
+
+18단계에서 한 것과 남은 것은 `docs/VERIFICATION.md` 4-36절에 있다.
 
 ### 15단계가 A~E로 나뉜 이유 (2026-09-24)
 
@@ -1069,7 +1071,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (857개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (884개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (112검사) |

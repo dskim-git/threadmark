@@ -296,6 +296,26 @@ export default async function SettingsPage({
           계정 정리
         </h2>
 
+        {/*
+          내려받기. **지우기보다 위에 둔다.** 챙겨 가는 일이 먼저고,
+          그 다음이 지우는 일이다. 차례가 곧 권하는 순서다.
+
+          `SettingsLink`를 쓰지 않는다. 그것은 화면으로 가는 링크이고
+          이쪽은 파일을 받는 길이라, 눌렀을 때 일어나는 일이 다르다.
+        */}
+        <a
+          href="/api/account/export?format=json"
+          className="flex flex-col gap-1 rounded-lg border border-black/[.08] px-4 py-3 transition-colors hover:bg-black/[.03] dark:border-white/[.145] dark:hover:bg-white/[.06]"
+        >
+          <span className="text-sm font-medium text-black dark:text-zinc-50">
+            담아둔 것 내려받기
+          </span>
+          <span className="text-xs leading-5 text-zinc-500">
+            자료·기록·프로젝트를 파일 하나로 받습니다. 표로 받는 길은 계정
+            지우기 화면에 함께 있습니다.
+          </span>
+        </a>
+
         <SettingsLink
           href="/account/delete"
           title="계정 지우기"
@@ -319,6 +339,12 @@ export default async function SettingsPage({
           href="/credits"
           title="출처 표기"
           description="자료의 정보를 가져오는 곳과 그 표기입니다."
+        />
+
+        <SettingsLink
+          href="/terms"
+          title="서비스 약관"
+          description="무엇을 해드리고 무엇은 약속드리지 못하는지 적어 두었습니다."
         />
 
         <SettingsLink
