@@ -913,6 +913,53 @@ export type Database = {
         }
         Relationships: []
       }
+      website_profiles: {
+        Row: {
+          author: string | null
+          created_at: string
+          favicon_url: string | null
+          fetched_at: string | null
+          id: string
+          owner_id: string
+          published_at: string | null
+          site_name: string | null
+          source_id: string
+          updated_at: string
+        }
+        Insert: {
+          author?: string | null
+          created_at?: string
+          favicon_url?: string | null
+          fetched_at?: string | null
+          id?: string
+          owner_id?: string
+          published_at?: string | null
+          site_name?: string | null
+          source_id: string
+          updated_at?: string
+        }
+        Update: {
+          author?: string | null
+          created_at?: string
+          favicon_url?: string | null
+          fetched_at?: string | null
+          id?: string
+          owner_id?: string
+          published_at?: string | null
+          site_name?: string | null
+          source_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "website_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

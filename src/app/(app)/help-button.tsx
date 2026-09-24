@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { findGuideTopic } from "@/lib/guide/content";
 
@@ -35,7 +35,89 @@ export function HelpButton({
   const topic = findGuideTopic(topicId);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+
+  /*
+    **창을 재서 놓는다.**
+
+    처음에는 `오른쪽 끝을 단추에 맞춘다`는 규칙 하나로 두었다. 오른쪽에 있는
+    단추에서는 맞았지만, **화면 왼쪽에 있는 단추에서는 창이 왼쪽으로 밀려
+    화면 밖으로 나갔다.** 자료 화면의 태그 칸 물음표가 그랬다.
+
+    AGENTS.md 6절에 이미 적혀 있던 것이다. "떠 있는 창은 재서 놓는다.
+    `고른 글이 화면 위쪽이면 아래에` 같은 규칙만으로는 창이 커지는 순간
+    화면 밖으로 넘친다." 읽기 화면의 선택 창에서 겪은 것과 같은 종류다.
+    자리를 정하는 규칙이 아니라 **재는 코드**가 필요하다.
+
+    `position: fixed`로 둔다. 감싸는 칸에 `overflow: hidden`이 걸려 있어도
+    잘리지 않는다. 대신 화면을 스크롤하면 단추가 움직이므로 그때 다시 잰다.
+
+    상태를 두지 않고 DOM을 직접 고친다. 상태로 하면 "재고 → 다시 그리고 →
+    또 재고"가 되어 한 번 깜빡이고, React 19는 effect 안에서 상태를 바꾸는
+    것을 막는다. `fill-viewport.tsx`와 같은 방식이다.
+  */
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const place = () => {
+      const button = buttonRef.current;
+      const panel = panelRef.current;
+
+      if (!button || !panel) {
+        return;
+      }
+
+      const anchor = button.getBoundingClientRect();
+      const gap = 12;
+      const width = Math.min(352, window.innerWidth - gap * 2);
+
+      panel.style.width = `${width}px`;
+
+      /*
+        오른쪽 끝을 단추에 맞추되 화면 안으로 밀어 넣는다. 단추가 화면
+        왼쪽에 있으면 왼쪽 여백에 붙는다.
+      */
+      const wanted = anchor.right - width;
+      const left = Math.min(
+        Math.max(wanted, gap),
+        window.innerWidth - width - gap,
+      );
+
+      panel.style.left = `${Math.round(left)}px`;
+
+      /*
+        아래위 중 넓은 쪽에 놓는다. 아래에 자리가 모자라면 위로 올린다.
+        그려진 실제 높이를 다시 재서 정한다. 짐작하는 값을 두지 않는다.
+      */
+      const below = window.innerHeight - anchor.bottom - gap * 2;
+      const above = anchor.top - gap * 2;
+      const height = panel.offsetHeight;
+
+      if (height <= below || below >= above) {
+        panel.style.top = `${Math.round(anchor.bottom + 8)}px`;
+        panel.style.maxHeight = `${Math.round(below)}px`;
+      } else {
+        panel.style.maxHeight = `${Math.round(above)}px`;
+        // 최대 높이를 걸고 나서 다시 재야 실제로 그려진 높이가 나온다.
+        panel.style.top = `${Math.round(Math.max(anchor.top - panel.offsetHeight - 8, gap))}px`;
+      }
+    };
+
+    place();
+
+    window.addEventListener("resize", place);
+    // 세 번째 인수가 true다. 안쪽 칸이 스크롤될 때도 받는다.
+    window.addEventListener("scroll", place, true);
+
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   /*
     바깥을 누르거나 Esc를 누르면 닫는다.
@@ -89,6 +171,7 @@ export function HelpButton({
       className={`relative inline-flex ${className ?? ""}`}
     >
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
@@ -102,15 +185,15 @@ export function HelpButton({
 
       {open ? (
         <div
+          ref={panelRef}
           id={panelId}
           role="dialog"
           aria-label={`${name} 사용법`}
           /*
-            오른쪽 끝을 단추에 맞춘다. 왼쪽에 맞추면 화면 오른쪽 가장자리에
-            있는 단추에서 창이 화면 밖으로 넘친다. 좁은 화면에서는 너비를
-            화면에 맞춰 줄인다.
+            자리는 위의 effect가 재서 넣는다. 여기서는 겹치는 순서와 모양만
+            정한다. `overflow-y-auto`는 재어 넣은 최대 높이 안에서만 움직인다.
           */
-          className="absolute right-0 top-8 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-black/[.08] bg-white p-4 text-left shadow-lg dark:border-white/[.145] dark:bg-zinc-900"
+          className="fixed left-0 top-0 z-50 flex max-h-[80vh] flex-col overflow-y-auto rounded-2xl border border-black/[.08] bg-white p-4 text-left shadow-lg dark:border-white/[.145] dark:bg-zinc-900"
         >
           <div className="flex items-start justify-between gap-3">
             <h3 className="text-sm font-semibold text-black dark:text-zinc-50">
@@ -144,7 +227,7 @@ export function HelpButton({
             길어지면 창 안에서만 스크롤한다. 창이 화면보다 길어지면 아래쪽
             내용에 닿을 방법이 없어진다.
           */}
-          <div className="mt-3 max-h-[min(24rem,60vh)] overflow-y-auto">
+          <div className="mt-3">
             <ol className="flex list-decimal flex-col gap-1.5 pl-4 text-xs leading-5 text-zinc-700 dark:text-zinc-300">
               {topic.steps.map((step, index) => (
                 <li key={index}>

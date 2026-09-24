@@ -1315,6 +1315,7 @@ RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 �
 /library/images
 /library/audio
 /sources/new
+/sources/new/website
 /sources/[id]
 /sources/[id]/edit
 /sources/[id]/reader
@@ -1331,6 +1332,11 @@ RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 �
 /admin/users
 /admin/settings
 ```
+
+`/sources/new/website`도 원래 없었다. 11.2절의 흐름은 **주소를 넣고 읽어 온 뒤
+확인해서 담는** 세 걸음이라, 적어서 담는 보통의 자료 등록과 중간에 서버를
+한 번 다녀오는 걸음이 다르다. 한 폼에 욱여넣으면 파일 올리기와 읽어 오기가
+섞여 무엇을 눌러야 하는지 알 수 없어진다. (2026-09-24, 15-C)
 
 `/tags`도 원래 없었다. 태그를 **다는** 곳은 자료 화면과 기록 카드이고, 이 경로는
 달아둔 것을 모아 보고 이름을 고치는 자리다. 둘을 갈라 둔 이유는, 다는 일은 읽는

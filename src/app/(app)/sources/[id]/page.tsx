@@ -33,6 +33,7 @@ import {
   getSourceRelationLabel,
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
+import { getWebsiteProfile } from "@/lib/websites/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import {
   getTagBySlug,
@@ -109,6 +110,7 @@ export default async function SourceDetailPage({
     paperProfile,
     paperAnalysis,
     paperUses,
+    websiteProfile,
     relations,
     allSources,
     sourceTags,
@@ -124,6 +126,8 @@ export default async function SourceDetailPage({
     source.type === "paper" ? getPaperProfile(source.id) : null,
     source.type === "paper" ? getPaperAnalysis(source.id) : null,
     source.type === "paper" ? listPaperProjectUses(source.id) : [],
+    // 웹사이트가 아닌 자료에는 조회하지 않는다. 있을 수 없는 행을 찾는 왕복이 된다.
+    source.type === "website" ? getWebsiteProfile(source.id) : null,
     listSourceRelations(source.id),
     listSources(),
     listTagsForSource(source.id),
@@ -408,6 +412,64 @@ export default async function SourceDetailPage({
           analysisFilled={countFilled(paperAnalysis?.values ?? {})}
           analysisTotal={ANALYSIS_FIELDS.length}
         />
+      ) : null}
+
+      {/*
+        웹사이트 정보. 웹사이트 유형일 때만 보여준다. (설계 문서 11.1절)
+
+        **언제 받아온 값인지 함께 적는다.** 웹페이지는 바뀐다. 그 말이 없으면
+        사이트가 글을 고친 뒤에도 우리가 보여주는 옛 제목을 지금의 사실로
+        읽게 된다.
+      */}
+      {source.type === "website" && websiteProfile ? (
+        <section className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950">
+          <div className="flex items-center gap-2">
+            {websiteProfile.faviconUrl ? (
+              /*
+                next/image를 쓰지 않는다. 그것은 남의 그림을 우리 서버가
+                받아오게 만드는데, 그러면 SSRF를 막아둔 자리가 다시 열린다.
+                안 떠도 화면이 무너지지 않는 크기로 둔다.
+              */
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={websiteProfile.faviconUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="h-4 w-4 shrink-0 rounded-sm"
+              />
+            ) : null}
+            <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+              {websiteProfile.siteName ?? "웹사이트 정보"}
+            </h2>
+          </div>
+
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+            {websiteProfile.author ? (
+              <div className="flex gap-2">
+                <dt className="shrink-0 text-zinc-500">작성자</dt>
+                <dd className="text-black dark:text-zinc-100">
+                  {websiteProfile.author}
+                </dd>
+              </div>
+            ) : null}
+
+            {websiteProfile.publishedAt ? (
+              <div className="flex gap-2">
+                <dt className="shrink-0 text-zinc-500">게시일</dt>
+                <dd className="text-black dark:text-zinc-100">
+                  {websiteProfile.publishedAt}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+
+          {websiteProfile.fetchedAt ? (
+            <p className="text-xs leading-5 text-zinc-500">
+              {formatDateTime(websiteProfile.fetchedAt)}에 읽어 온 값입니다.
+              그 뒤로 페이지가 바뀌었을 수 있습니다.
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       <section className="flex flex-col gap-3">

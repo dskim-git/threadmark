@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -39,6 +40,22 @@ export default async function NewSourcePage({
           이미지가 있다면 함께 올릴 수 있습니다.
         </p>
       </header>
+
+      {/*
+        웹사이트는 담는 걸음이 다르다. 주소를 넣고 읽어 온 뒤 확인해서
+        담는다. 여기서도 담을 수는 있지만 제목과 주소를 손으로 적어야 한다.
+        그 길이 따로 있다는 것을 알려준다. (설계 문서 11.2절)
+      */}
+      <p className="rounded-lg border border-black/[.08] bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700 dark:border-white/[.145] dark:bg-white/[.04] dark:text-zinc-300">
+        웹페이지를 담으려면{" "}
+        <Link
+          href="/sources/new/website"
+          className="font-medium underline underline-offset-2"
+        >
+          웹사이트 담기
+        </Link>
+        를 쓰면 제목과 설명을 읽어 옵니다.
+      </p>
 
       <NewSourceForm
         driveConnected={driveConnection?.status === "connected"}

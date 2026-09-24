@@ -146,12 +146,24 @@ export default async function LibraryPage({
           </p>
         </div>
 
-        <Link
-          href="/sources/new"
-          className="h-11 rounded-full bg-zinc-900 px-6 text-sm font-medium leading-[2.75rem] text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
-        >
-          자료 담기
-        </Link>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {/*
+            웹사이트는 담는 걸음이 다르다. 주소를 넣고 읽어 온 뒤 확인해서
+            담는다. 그래서 들어가는 길도 따로 둔다. (설계 문서 11.2절)
+          */}
+          <Link
+            href="/sources/new/website"
+            className="h-11 rounded-full border border-solid border-black/[.08] px-5 text-sm font-medium leading-[2.75rem] text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+          >
+            웹사이트 담기
+          </Link>
+          <Link
+            href="/sources/new"
+            className="h-11 rounded-full bg-zinc-900 px-6 text-sm font-medium leading-[2.75rem] text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+          >
+            자료 담기
+          </Link>
+        </div>
       </header>
 
       {error ? (
