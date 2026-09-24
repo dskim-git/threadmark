@@ -108,21 +108,52 @@ export function FileStatusNotice({
   const gone = isUnusable(outcome);
 
   return (
-    <div className="flex flex-col gap-2">
+    /*
+      머리말 한 줄 안에 들어간다. 그래서 감싸는 칸을 두지 않고 조각만 돌려준다.
+
+      읽기 화면의 세로는 전부 PDF에 주어야 한다. 예전에는 이 버튼이 제 줄을
+      하나 차지했는데, 파일이 멀쩡한 날에도 그 줄이 늘 자리를 먹었다.
+      **알릴 것이 있을 때만** 줄을 하나 쓴다. (w-full이 그 일을 한다)
+    */
+    <>
+      {/*
+        확인하는 수단은 결과와 무관하게 늘 있어야 한다.
+        문제가 있을 때만 버튼을 두면, 방금 Drive에서 지운 경우처럼
+        "아직 멀쩡해 보이는" 상태에서 확인할 길이 없다.
+      */}
+      <span className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void check()}
+          disabled={busy}
+          className="h-8 rounded-full border border-black/[.08] px-3 text-xs font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+        >
+          {busy ? "확인하는 중…" : "파일 확인"}
+        </button>
+
+        <span className="text-xs text-zinc-500">
+          {confirmedFine
+            ? "그대로입니다"
+            : lastVerifiedAt
+              ? formatDateTime(lastVerifiedAt)
+              : "확인한 적 없음"}
+        </span>
+      </span>
+
       {message ? (
         <div
           role="status"
           className={
             gone
-              ? "flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
-              : "flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
+              ? "flex w-full flex-col gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+              : "flex w-full flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
           }
         >
           <p>{message}</p>
 
           {gone ? (
             <p className="text-xs leading-5">
-              휴지통에서 복원했거나 파일을 되살렸다면 아래 `파일 확인`을 눌러
+              휴지통에서 복원했거나 파일을 되살렸다면 `파일 확인`을 눌러
               주세요. 다른 파일로 바꾸려면 자료 화면에서 새로 올리거나
               Drive에서 고르면 됩니다. 그대로 두셔도 자료와 기록은 사라지지
               않습니다.
@@ -130,35 +161,7 @@ export function FileStatusNotice({
           ) : null}
         </div>
       ) : null}
-
-      {/*
-        확인하는 수단은 결과와 무관하게 늘 있어야 한다.
-        문제가 있을 때만 버튼을 두면, 방금 Drive에서 지운 경우처럼
-        "아직 멀쩡해 보이는" 상태에서 확인할 길이 없다.
-      */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void check()}
-          disabled={busy}
-          className="h-9 rounded-full border border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-        >
-          {busy ? "확인하는 중…" : "파일 확인"}
-        </button>
-
-        {confirmedFine ? (
-          <span className="text-xs text-zinc-500">
-            Drive의 파일이 그대로입니다.
-          </span>
-        ) : (
-          <span className="text-xs text-zinc-500">
-            {lastVerifiedAt
-              ? `마지막 확인 ${formatDateTime(lastVerifiedAt)}`
-              : "아직 확인한 적이 없습니다."}
-          </span>
-        )}
-      </div>
-    </div>
+    </>
   );
 }
 

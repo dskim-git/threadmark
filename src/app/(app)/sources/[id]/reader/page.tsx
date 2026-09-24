@@ -87,61 +87,79 @@ export default async function ReaderPage({
     <div data-wide className="flex flex-col gap-3">
       {selected ? (
         <>
-          <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          {/*
+            머리말을 한 줄로 모았다.
+
+            예전에는 세 줄이었다. 제목 줄, 파일 고르는 줄, 파일 확인 줄이다.
+            사용자가 "논문 화면의 세로가 작다"고 했고, 재어 보니 그 세 줄이
+            100픽셀 가까이 먹고 있었다. 이 화면은 창 높이를 재서 남는 만큼을
+            PDF에 주므로, 위에서 줄인 만큼이 그대로 읽는 자리가 된다.
+
+            자료 제목과 파일 이름은 길다. 줄바꿈으로 흘려보내지 않고 잘라낸다.
+            줄이 늘면 아래가 그만큼 줄어드는 화면이라, 길이를 예측할 수 있는
+            편이 낫다. 전체 이름은 마우스를 올리면 보인다.
+          */}
+          <header className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             <Link
               href={`/sources/${source.id}`}
-              className="text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+              title={source.title}
+              className="max-w-[18rem] shrink truncate text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
             >
               ← {source.title}
             </Link>
-            <span aria-hidden="true" className="text-zinc-300">
-              /
-            </span>
-            <h1 className="font-medium text-black dark:text-zinc-50">
-              {selected.fileName}
-            </h1>
-            <span className="text-xs text-zinc-500">
+
+            {readable.length > 1 ? (
+              /* 파일이 여럿이면 고를 수 있게 한다. 이름은 여기에만 둔다. */
+              <nav className="flex min-w-0 flex-wrap gap-1.5">
+                {readable.map((file) => {
+                  const active = file.id === selected.id;
+
+                  return (
+                    <Link
+                      key={file.id}
+                      href={`/sources/${source.id}/reader?file=${file.id}`}
+                      aria-current={active ? "page" : undefined}
+                      title={file.fileName}
+                      className={`max-w-[16rem] truncate rounded-full border px-3 py-1 text-xs transition-colors ${
+                        active
+                          ? "border-transparent bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
+                          : "border-black/[.08] text-black hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+                      }`}
+                    >
+                      {file.fileName}
+                    </Link>
+                  );
+                })}
+              </nav>
+            ) : (
+              /* 하나뿐이면 고를 것이 없다. 이름만 적는다. */
+              <h1
+                title={selected.fileName}
+                className="max-w-[24rem] shrink truncate text-xs font-medium text-black dark:text-zinc-50"
+              >
+                {selected.fileName}
+              </h1>
+            )}
+
+            <span className="ml-auto shrink-0 text-xs text-zinc-500">
               {formatByteSize(selected.byteSize)}
             </span>
+
+            {/*
+              파일이 그대로인지 확인하고 아니면 알린다. (설계 문서 9.2절, 10.4절)
+              멀쩡할 때는 이 줄 안에 단추 하나로만 있고, 알릴 것이 있을 때만
+              아래로 한 줄을 더 쓴다.
+            */}
+            <FileStatusNotice
+              key={`notice-${selected.id}`}
+              fileId={selected.id}
+              shouldVerify={shouldVerify(selected.lastVerifiedAt, new Date())}
+              initialOutcome={
+                selected.status === "missing" ? "missing" : "unchanged"
+              }
+              lastVerifiedAt={selected.lastVerifiedAt}
+            />
           </header>
-
-          {/* 파일이 여럿이면 고를 수 있게 한다. */}
-          {readable.length > 1 ? (
-            <nav className="flex flex-wrap gap-2">
-              {readable.map((file) => {
-                const active = file.id === selected.id;
-
-                return (
-                  <Link
-                    key={file.id}
-                    href={`/sources/${source.id}/reader?file=${file.id}`}
-                    aria-current={active ? "page" : undefined}
-                    className={`max-w-xs truncate rounded-full border px-3 py-1 text-sm transition-colors ${
-                      active
-                        ? "border-transparent bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
-                        : "border-black/[.08] text-black hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-                    }`}
-                  >
-                    {file.fileName}
-                  </Link>
-                );
-              })}
-            </nav>
-          ) : null}
-
-          {/*
-            파일이 그대로인지 확인하고 아니면 알린다. (설계 문서 9.2절, 10.4절)
-            멀쩡할 때는 아무것도 보여주지 않는다.
-          */}
-          <FileStatusNotice
-            key={`notice-${selected.id}`}
-            fileId={selected.id}
-            shouldVerify={shouldVerify(selected.lastVerifiedAt, new Date())}
-            initialOutcome={
-              selected.status === "missing" ? "missing" : "unchanged"
-            }
-            lastVerifiedAt={selected.lastVerifiedAt}
-          />
 
           {selected.status === "missing" ? (
             <p className="rounded-2xl bg-zinc-50 px-6 py-10 text-center text-sm text-zinc-500 dark:bg-white/[.04]">
