@@ -297,7 +297,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 714개
+npm test          # node --test, 715개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -646,6 +646,16 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
   만들어지고 브라우저 업로드만 CORS에서 막혀 진행률이 0%에서 멈춘다.
   `createResumableUploadSession()`에 있다. 2026-09-22에 3001번에서 통과를 확인했다.
 
+### 목록을 훑는 검사는 목록이 비는 날을 생각해 둔다 (2026-09-24)
+
+음악 검색 바로가기 일곱 곳을 모두 확인해 `copy`가 하나도 남지 않자,
+`확인하지 않은 곳은 검색 화면만 연다` 검사가 **아무것도 하지 않으면서
+통과하게 되었다.** 지어낸 항목을 만들어 함께 확인하도록 고쳤다.
+
+`outgoing-headers.test.mjs`에 "목록이 비면 아래 검사들이 조용히 아무것도 하지
+않는다"고 이미 적혀 있던 함정이다. 실제 목록을 훑는 검사를 쓸 때는,
+그 목록이 비거나 한쪽으로 쏠리는 날에도 규칙이 지켜지는지 함께 본다.
+
 ### 도구
 
 - **Node 테스트 러너는 상대 경로 import에 확장자가 필요하다.** 순수 모듈끼리
@@ -974,7 +984,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (714개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (715개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (68검사) |

@@ -21,13 +21,22 @@
  *   나오는지 세는 것도 틀렸다. 요즘 사이트는 화면을 자바스크립트로 그려서
  *   서버 응답만으로는 알 수 없다.
  *
- *   그래서 **처음에는 전부 `copy`로 둔다.** 검색어를 클립보드에 복사해 두고
+ *   그래서 **처음에는 전부 `copy`로 두었다.** 검색어를 클립보드에 복사해 두고
  *   검색 화면만 연다. 붙여넣기 한 번이 더 들지만 **어느 사이트에서도
  *   틀리지 않는다.** 주소에 검색어를 실어 보내놓고 빈 화면이 뜨면 사용자는
  *   우리 기능이 고장 난 줄 안다.
  *
  *   브라우저에서 사람이 눌러보고 "이 주소는 검색어를 받는다"를 확인한 것만
  *   `link`로 바꾼다. 서버에서 받아본 것으로 바꾸지 않는다.
+ *
+ *   **2026-09-24에 사용자가 일곱 곳을 모두 눌러보고 `밤편지 아이유`로 실제
+ *   검색되는 것을 확인했다.** 그래서 지금은 전부 `link`다. 붙여넣기 없이
+ *   바로 검색된다.
+ *
+ *   `copy`를 없애지 않는다. **새로 더하는 곳의 안전한 출발점**이기 때문이다.
+ *   지금 쓰는 곳이 없다고 지우면, 다음에 사이트를 더할 때 확인도 하기 전에
+ *   `link`로 적게 된다. 쓰지 않을 값을 미리 만들지 않는다는 원칙과 다르다.
+ *   이것은 쓰지 않을 값이 아니라 **다음 사람이 반드시 거쳐야 할 자리**다.
  *
  * 데이터베이스 의존성이 없는 순수 모듈이라 단위 검사로 검증한다.
  */
@@ -56,7 +65,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "youtube-music",
     name: "YouTube Music",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://music.youtube.com/search?q={q}",
     searchUrl: "https://music.youtube.com/",
     korean: false,
@@ -64,7 +73,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "youtube",
     name: "YouTube",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://www.youtube.com/results?search_query={q}",
     searchUrl: "https://www.youtube.com/",
     korean: false,
@@ -72,7 +81,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "spotify",
     name: "Spotify",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://open.spotify.com/search/{q}",
     searchUrl: "https://open.spotify.com/search",
     korean: false,
@@ -80,7 +89,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "melon",
     name: "멜론",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://www.melon.com/search/total/index.htm?q={q}",
     searchUrl: "https://www.melon.com/",
     korean: true,
@@ -88,7 +97,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "bugs",
     name: "벅스",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://music.bugs.co.kr/search/integrated?q={q}",
     searchUrl: "https://music.bugs.co.kr/",
     korean: true,
@@ -96,7 +105,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "genie",
     name: "지니뮤직",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://www.genie.co.kr/search/searchMain?query={q}",
     searchUrl: "https://www.genie.co.kr/",
     korean: true,
@@ -104,7 +113,7 @@ export const MUSIC_SEARCH_SITES: readonly MusicSearchSite[] = [
   {
     id: "vibe",
     name: "바이브",
-    mode: "copy",
+    mode: "link",
     queryTemplate: "https://vibe.naver.com/search?query={q}",
     searchUrl: "https://vibe.naver.com/today",
     korean: true,

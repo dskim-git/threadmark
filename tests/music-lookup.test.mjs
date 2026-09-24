@@ -388,14 +388,55 @@ test("확인하지 않은 곳은 검색 화면만 연다", () => {
     검색어를 주소로 넘길 수 있는지는 사람이 브라우저에서 눌러봐야 안다.
     8.5절에서 두 번 틀렸다. 확인 전에는 `copy`로 두어 클립보드에 복사하고
     검색 화면만 연다. 어느 사이트에서도 틀리지 않는 방식이다.
+
+    **지어낸 곳으로 확인한다.** 2026-09-24에 일곱 곳을 모두 확인해 `copy`인
+    곳이 하나도 남지 않았다. 실제 목록만 훑으면 이 검사는 아무것도 하지
+    않으면서 통과한다. 그러면 다음에 사이트를 더할 때 그 출발점이 성한지
+    아무도 모른다. `link` 쪽 검사가 이미 같은 방식으로 되어 있다.
   */
+  const unverified = {
+    id: "x",
+    name: "x",
+    mode: "copy",
+    queryTemplate: "https://example.com/search?q={q}",
+    searchUrl: "https://example.com/",
+    korean: false,
+  };
+
+  const url = buildSearchUrl(unverified, "밤편지", "아이유");
+
+  assert.equal(url, unverified.searchUrl);
+  assert.ok(!url.includes("%"), "검색어가 주소에 실려 있다");
+
+  // 실제 목록에 `copy`가 남아 있다면 그것도 같은 규칙을 지켜야 한다.
   for (const site of MUSIC_SEARCH_SITES) {
     if (site.mode === "copy") {
-      const url = buildSearchUrl(site, "밤편지", "아이유");
-
-      assert.equal(url, site.searchUrl, site.id);
-      assert.ok(!url.includes("%"), `${site.id}: 검색어가 주소에 실려 있다`);
+      assert.equal(buildSearchUrl(site, "밤편지", "아이유"), site.searchUrl, site.id);
     }
+  }
+});
+
+test("확인한 곳은 검색어 자리를 갖추고 있다", () => {
+  /*
+    2026-09-24에 사용자가 일곱 곳을 브라우저에서 눌러보고 `밤편지 아이유`로
+    실제 검색되는 것을 확인했다. 그 결과가 코드에 남아 있는지 본다.
+
+    주소가 정말 검색되는지는 여기서 확인할 수 없다. 그것은 사람이 눌러봐야
+    안다. 여기서 보는 것은 **`link`라고 적어놓고 검색어를 안 싣는 일**이
+    없는지다.
+  */
+  const verified = MUSIC_SEARCH_SITES.filter((site) => site.mode === "link");
+
+  assert.ok(verified.length > 0, "확인한 곳이 하나도 없다");
+
+  for (const site of verified) {
+    const url = buildSearchUrl(site, "밤편지", "아이유");
+
+    assert.ok(
+      url.includes(encodeURIComponent("밤편지 아이유")),
+      `${site.id}: link인데 검색어가 주소에 실리지 않는다`,
+    );
+    assert.notEqual(url, site.searchUrl, `${site.id}: 검색 화면만 연다`);
   }
 });
 
