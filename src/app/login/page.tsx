@@ -72,7 +72,17 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
           <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-500">
             현재 ThreadMark는 제한적으로 운영합니다. 로그인한 뒤 관리자 승인을
-            받아야 자료 저장 기능을 사용할 수 있습니다.
+            받아야 자료 저장 기능을 사용할 수 있습니다.{" "}
+            {/*
+              로그인 전에도 이 앱이 무엇인지 알 수 있어야 한다.
+              링크 하나로 남에게 알릴 수 있게 하는 것이 이 화면의 몫이다.
+            */}
+            <a
+              href="/guide"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              사용법 보기
+            </a>
           </p>
         </div>
       </main>

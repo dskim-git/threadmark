@@ -49,9 +49,15 @@ const SECTIONS: readonly Section[] = [
   {
     href: "/library",
     label: "자료",
-    owns: ["/library", "/sources"],
+    owns: ["/library", "/sources", "/tags"],
     // 논문 목록은 자료 아래 경로지만 `논문` 구역의 것이다.
     excludes: ["/library/papers"],
+    children: [
+      { href: "/library", label: "내 자료" },
+      // 태그는 자료와 기록 양쪽에 달리지만 정리하는 자리는 하나다.
+      // 자주 쓰는 곳이 자료 목록이라 그 아래에 둔다.
+      { href: "/tags", label: "태그" },
+    ],
   },
   {
     href: "/library/papers",

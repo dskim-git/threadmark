@@ -9,12 +9,17 @@ import {
   createPdfTranslationCapture,
 } from "../../../captures/actions";
 import { translateSelection } from "../../../captures/translate-actions";
-import { PDF_PAGE_KIND } from "@/lib/captures/pdf-locator";
+import {
+  PDF_PAGE_KIND,
+  describeLocatorPages,
+  joinSelectedText,
+} from "@/lib/captures/pdf-locator";
 import {
   getTranslationLanguageLabel,
   type TranslationLanguageCode,
 } from "@/lib/translation/types";
 
+import { MAX_TEXT_LENGTH } from "@/lib/captures/schema";
 import { NOTICE_CLASS_NAME, NOTICE_HIDE_MS } from "../../../auto-notice";
 import { AnalysisForm } from "../../analysis-form";
 import { saveReadingPosition } from "../../file-actions";
@@ -98,7 +103,24 @@ export function ReaderView({
 }) {
   const router = useRouter();
 
-  const [selection, setSelection] = useState<ReadSelection | null>(null);
+  /*
+    쌓아둔 인용 조각. (15-G)
+
+    한 조각이 보통이다. 쪽을 넘어가는 문장은 조각이 둘 이상이 된다.
+    조각을 그대로 들고 있는 이유는 **되돌릴 수 있게** 하기 위해서다. 합친
+    글만 들고 있으면 잘못 이어 붙였을 때 손으로 고쳐야 하는데, 인용은 고칠
+    수 없는 칸이라(2.4절) 처음부터 다시 골라야 한다.
+  */
+  const [pieces, setPieces] = useState<ReadSelection[]>([]);
+
+  /*
+    이어 붙일 후보. 쌓아둔 것이 있는데 **다른 쪽에서** 새로 골랐을 때 여기 온다.
+
+    바로 이어 붙이지 않고 후보로 두는 이유가 있다. 다음 쪽에서 고른 것이
+    이어지는 문장일 수도 있고, 아예 다른 문장을 새로 고르려던 것일 수도
+    있다. 우리는 그것을 알 수 없으므로 물어본다.
+  */
+  const [piece, setPiece] = useState<ReadSelection | null>(null);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [save, setSave] = useState<SaveState>({ phase: "idle" });
   const [notice, setNotice] = useState<string | null>(null);
@@ -152,7 +174,17 @@ export function ReaderView({
   const handleSelectionChange = useCallback(
     (picked: { pageElement: HTMLElement; page: number } | null) => {
       if (!picked) {
-        setSelection(null);
+        /*
+          브라우저의 선택만 풀렸다. **쌓아둔 인용은 그대로 둔다.** (15-G)
+
+          쪽을 넘기면 여기로 온다. 예전에는 이때 창을 닫았다. 그래서 쪽을
+          넘어가는 문장은 뒷부분을 고르러 넘기는 순간 앞부분이 사라져,
+          한 인용으로 남길 방법이 아예 없었다.
+
+          이어 붙일 후보만 비운다. 다음 쪽에서 다시 고르면 새 후보가 온다.
+          창을 닫는 것은 사용자가 X나 Esc로 정한다.
+        */
+        setPiece(null);
 
         return;
       }
@@ -165,22 +197,97 @@ export function ReaderView({
         fileChecksum,
       });
 
-      setSelection(read);
+      if (!read) {
+        return;
+      }
 
-      if (read) {
-        setError(null);
-        setNotice(null);
+      setError(null);
+      setNotice(null);
+
+      /*
+        드래그했다는 것은 이 문장으로 무언가 하겠다는 뜻이다.
+        탭을 손으로 고르게 하면 손이 두 번 간다.
+      */
+      setTab("notes");
+      setMobileView("panel");
+
+      setPieces((current) => {
+        const last = current[current.length - 1];
 
         /*
-          드래그했다는 것은 이 문장으로 무언가 하겠다는 뜻이다.
-          탭을 손으로 고르게 하면 손이 두 번 간다.
+          **같은 쪽에서 다시 골랐으면 그것으로 새로 시작한다.**
+          같은 쪽을 다시 고르는 것은 "잘못 골랐다"는 뜻이다. 거기서
+          물어보면 인용 하나 고칠 때마다 단추를 눌러야 한다.
+
+          다른 쪽에서 골랐으면 아래에서 후보로 둔다. 문장이 이어지는
+          경우가 그것이고, 우리가 임의로 이어 붙이지 않는다.
         */
-        setTab("notes");
-        setMobileView("panel");
-      }
+        if (!last || last.locator.page === picked.page) {
+          setPiece(null);
+
+          return [read];
+        }
+
+        setPiece(read);
+
+        return current;
+      });
     },
     [fileId, fileChecksum],
   );
+
+  /**
+   * 쌓아둔 조각을 한 인용으로 합친다. (15-G)
+   *
+   * 시작한 쪽과 그 쪽의 좌표는 **첫 조각**의 것을 쓴다. 되짚어 갈 자리는
+   * 문장이 시작하는 곳이고, 좌표는 쪽 안의 비율이라 여러 쪽을 한 묶음에
+   * 담을 방법이 없다.
+   *
+   * 뒤 문맥(contextAfter)은 **마지막 조각**의 것을 쓴다. 문장이 끝난 뒤에
+   * 무엇이 오는지가 되짚을 때 쓸모 있는 값이다.
+   */
+  const quote = mergePieces(pieces);
+
+  /** 이어 붙였을 때의 글. 미리 보여주고 길이도 여기서 잰다. */
+  const joinedPreview =
+    quote && piece
+      ? joinSelectedText(
+          quote.locator.selectedText,
+          piece.locator.selectedText,
+        )
+      : null;
+
+  const joinedTooLong =
+    joinedPreview !== null && joinedPreview.length > MAX_TEXT_LENGTH;
+
+  function handleAppendPiece() {
+    if (!piece || joinedTooLong) {
+      return;
+    }
+
+    setPieces((current) => [...current, piece]);
+    setPiece(null);
+  }
+
+  /** 후보를 새 인용으로 삼는다. 이어지는 문장이 아니었을 때다. */
+  function handleReplaceWithPiece() {
+    if (!piece) {
+      return;
+    }
+
+    setPieces([piece]);
+    setPiece(null);
+  }
+
+  /** 마지막으로 이어 붙인 조각을 떼어낸다. */
+  function handleUndoPiece() {
+    setPieces((current) => (current.length > 1 ? current.slice(0, -1) : current));
+  }
+
+  function clearQuote() {
+    setPieces([]);
+    setPiece(null);
+  }
 
   /** 저장이 끝난 뒤 공통으로 하는 일. */
   function afterSaved(message: string) {
@@ -195,7 +302,7 @@ export function ReaderView({
   }
 
   async function handleSaveQuote(memo: string) {
-    if (!selection) {
+    if (!quote) {
       return;
     }
 
@@ -204,7 +311,7 @@ export function ReaderView({
     const result = await createPdfSelectionCapture({
       sourceId,
       memo,
-      locator: selection.locator,
+      locator: quote.locator,
     });
 
     setSave({ phase: "idle" });
@@ -215,10 +322,10 @@ export function ReaderView({
       return;
     }
 
-    const page = selection.locator.page;
+    const where = describeLocatorPages(quote.locator);
 
-    setSelection(null);
-    afterSaved(`${page}쪽에서 인용을 남겼습니다.`);
+    clearQuote();
+    afterSaved(`${where}에서 인용을 남겼습니다.`);
   }
 
   /**
@@ -246,7 +353,7 @@ export function ReaderView({
 
   /** 원문과 옮긴 글을 함께 기록으로 남긴다. (9.4절 4~5번) */
   async function handleSaveTranslation(input: TranslationSaveInput) {
-    if (!selection) {
+    if (!quote) {
       return;
     }
 
@@ -255,7 +362,7 @@ export function ReaderView({
     const result = await createPdfTranslationCapture({
       sourceId,
       memo: input.memo,
-      locator: selection.locator,
+      locator: quote.locator,
       targetLanguage: input.targetLanguage,
       machineTranslatedText: input.machineTranslatedText,
       translatedText: input.translatedText,
@@ -270,11 +377,11 @@ export function ReaderView({
       return;
     }
 
-    const page = selection.locator.page;
+    const where = describeLocatorPages(quote.locator);
     const languageLabel = getTranslationLanguageLabel(input.targetLanguage);
 
-    setSelection(null);
-    afterSaved(`${page}쪽 문장을 ${languageLabel} 번역과 함께 남겼습니다.`);
+    clearQuote();
+    afterSaved(`${where} 문장을 ${languageLabel} 번역과 함께 남겼습니다.`);
   }
 
   async function handleSaveMemo(memo: string) {
@@ -389,7 +496,7 @@ export function ReaderView({
                   >
                     {entry.label}
                     {/* 다른 탭을 보는 중에도 고른 문장이 기다리고 있음을 알린다. */}
-                    {entry.id === "notes" && selection ? " ●" : null}
+                    {entry.id === "notes" && quote ? " ●" : null}
                   </button>
                 ))}
               </div>
@@ -408,14 +515,25 @@ export function ReaderView({
 
                 {tab === "notes" ? (
                   <div className="flex flex-col gap-6">
-                    {selection ? (
+                    {quote ? (
                       <SelectionPanel
                         /*
-                      고른 글이 바뀌면 이 칸을 새로 만든다. 그래야 앞 문장에
-                      쓰던 메모가 엉뚱한 문장에 붙지 않는다.
-                    */
-                        key={`${selection.locator.page}:${selection.locator.selectedText.slice(0, 60)}`}
-                        locator={selection.locator}
+                          고른 글이 바뀌면 이 칸을 새로 만든다. 그래야 앞 문장에
+                          쓰던 메모가 엉뚱한 문장에 붙지 않는다.
+
+                          **첫 조각만 보고 정한다.** 이어 붙일 때마다 새로
+                          만들면 적어둔 메모가 사라진다. 쪽을 넘어가는 문장을
+                          이어 붙이는 것은 같은 인용을 계속 다루는 일이다.
+                        */
+                        key={`${pieces[0].locator.page}:${pieces[0].locator.selectedText.slice(0, 60)}`}
+                        locator={quote.locator}
+                        pendingPiece={piece?.locator ?? null}
+                        joinedPreview={joinedPreview}
+                        joinedTooLong={joinedTooLong}
+                        pieceCount={pieces.length}
+                        onAppendPiece={handleAppendPiece}
+                        onReplaceWithPiece={handleReplaceWithPiece}
+                        onUndoPiece={handleUndoPiece}
                         busy={save.phase === "saving"}
                         translationEnabled={translationEnabled}
                         onTranslate={handleTranslate}
@@ -424,7 +542,7 @@ export function ReaderView({
                           void handleSaveTranslation(input)
                         }
                         onDismiss={() => {
-                          setSelection(null);
+                          clearQuote();
                           window.getSelection()?.removeAllRanges();
                         }}
                       />
@@ -457,4 +575,40 @@ export function ReaderView({
       </FillViewport>
     </div>
   );
+}
+
+/**
+ * 쌓아둔 조각을 한 인용으로 합친다. (15-G)
+ *
+ * 화면 밖으로 꺼내 둔 이유는 순수한 계산이라 검사하기 쉽고, 이 파일에서
+ * 상태를 다루는 코드와 섞이지 않게 하려는 것이다.
+ */
+function mergePieces(pieces: readonly ReadSelection[]): ReadSelection | null {
+  const first = pieces[0];
+
+  if (!first) {
+    return null;
+  }
+
+  if (pieces.length === 1) {
+    return first;
+  }
+
+  const last = pieces[pieces.length - 1];
+
+  return {
+    // 창을 놓을 자리는 마지막으로 고른 곳이 자연스럽다.
+    anchor: last.anchor,
+    locator: {
+      ...first.locator,
+      selectedText: pieces.reduce(
+        (text, next, index) =>
+          index === 0 ? next.locator.selectedText : joinSelectedText(text, next.locator.selectedText),
+        "",
+      ),
+      // 문장이 끝난 뒤에 무엇이 오는지. 마지막 조각의 것이다.
+      contextAfter: last.locator.contextAfter,
+      endPage: last.locator.page,
+    },
+  };
 }

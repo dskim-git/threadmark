@@ -102,10 +102,13 @@ function toCapture(row: CaptureRow): Capture[] {
  * 특정 자료에 달린 기록. 오래된 것부터 보여준다. 읽은 순서를 따라가기 쉽다.
  *
  * @param starredOnly 참이면 별을 단 기록만 돌려준다. (설계 문서 6.2-1절)
+ * @param onlyIds 주면 이 id에 든 기록만 돌려준다. 태그로 거를 때 쓴다.
+ *   빈 배열은 "그 태그가 달린 기록이 없다"는 뜻이다. (설계 문서 20-1절)
  */
 export async function listCapturesForSource(
   sourceId: string,
   starredOnly = false,
+  onlyIds?: readonly string[],
 ): Promise<Capture[]> {
   await requireActiveAccount();
 
@@ -120,6 +123,10 @@ export async function listCapturesForSource(
 
   if (starredOnly) {
     query = query.eq("starred", true);
+  }
+
+  if (onlyIds !== undefined) {
+    query = query.in("id", onlyIds);
   }
 
   const { data, error } = await query;
@@ -140,9 +147,11 @@ export async function listCapturesForSource(
  * 최신순으로 보여줘 방금 적은 것이 먼저 보이게 한다.
  *
  * @param starredOnly 참이면 별을 단 기록만 돌려준다. (설계 문서 6.2-1절)
+ * @param onlyIds 주면 이 id에 든 기록만 돌려준다. 태그로 거를 때 쓴다.
  */
 export async function listInboxCaptures(
   starredOnly = false,
+  onlyIds?: readonly string[],
 ): Promise<Capture[]> {
   await requireActiveAccount();
 
@@ -161,6 +170,10 @@ export async function listInboxCaptures(
   */
   if (starredOnly) {
     query = query.eq("starred", true);
+  }
+
+  if (onlyIds !== undefined) {
+    query = query.in("id", onlyIds);
   }
 
   const { data, error } = await query;

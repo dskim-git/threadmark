@@ -16,6 +16,7 @@ import { formatByteSize } from "@/lib/drive/upload";
 import { isReadable, listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
+import { listTags, listTagsForCaptures } from "@/lib/tags/queries";
 import { isTranslationConfigured } from "@/lib/translation/anthropic";
 
 import { FileStatusNotice } from "./file-status-notice";
@@ -56,16 +57,35 @@ export default async function ReaderPage({
   const query = await searchParams;
   const starredOnly = readStarredOnly(firstValue(query[STARRED_PARAM]));
 
-  const [files, captures, captureCounts, analysis, projects, projectChips] =
-    await Promise.all([
-      listSourceFiles(source.id),
-      listCapturesForSource(source.id, starredOnly),
-      countCaptureStars(source.id),
-      // 논문이 아닌 자료에는 분석 탭이 없다. 있을 수 없는 행을 찾지 않는다.
-      isPaper ? getPaperAnalysis(source.id) : null,
-      isPaper ? listProjectsForSource(source.id) : [],
-      listProjectChips(),
-    ]);
+  const [
+    files,
+    captures,
+    captureCounts,
+    analysis,
+    projects,
+    projectChips,
+    allTags,
+  ] = await Promise.all([
+    listSourceFiles(source.id),
+    listCapturesForSource(source.id, starredOnly),
+    countCaptureStars(source.id),
+    // 논문이 아닌 자료에는 분석 탭이 없다. 있을 수 없는 행을 찾지 않는다.
+    isPaper ? getPaperAnalysis(source.id) : null,
+    isPaper ? listProjectsForSource(source.id) : [],
+    listProjectChips(),
+    listTags(),
+  ]);
+
+  /*
+    읽는 중에도 태그를 달 수 있게 한다. (설계 문서 20-1절)
+
+    방금 남긴 인용에 "이건 수업 준비용"을 붙이는 일은 읽는 흐름 안에서
+    일어난다. 여기서 못 달면 나중에 자료 화면으로 돌아가 다시 찾아야 하고,
+    그러면 대개 달지 않게 된다.
+  */
+  const captureTags = await listTagsForCaptures(
+    captures.map((capture) => capture.id),
+  );
 
   const readable = files.filter(isReadable);
   const requested = firstValue(query.file);
@@ -238,6 +258,8 @@ export default async function ReaderPage({
                         : "아직 이 자료에 남긴 기록이 없습니다."
                     }
                     projects={projectChips}
+                    captureTags={captureTags}
+                    allTags={allTags}
                     fileChecksums={Object.fromEntries(
                       files.map((file) => [file.id, file.checksum]),
                     )}

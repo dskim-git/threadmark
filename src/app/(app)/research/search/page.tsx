@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 
 import { SearchLinks } from "./search-links";
@@ -35,9 +36,12 @@ export default async function ResearchSearchPage({
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          연구 검색
-        </h1>
+        <div className="flex items-center gap-2">
+  <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            연구 검색
+          </h1>
+          <HelpButton topic="research-search" />
+        </div>
         <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           논문을 찾는 사이트로 한 번에 갑니다. 무엇을 찾는지는 그 사이트만
           알고 ThreadMark는 기록하지 않습니다.

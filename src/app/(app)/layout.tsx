@@ -68,6 +68,20 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               찾기
             </Link>
 
+            {/*
+              사용법으로 가는 길. 설정 옆에 둔다.
+
+              앱 묶음 밖의 화면이라 같은 창에서 열리되 이 머리말이 없다.
+              돌아오는 링크가 그 화면 위쪽에 있다. 곳곳의 물음표 단추로
+              대부분 해결되므로 이 길은 작게 둔다.
+            */}
+            <Link
+              href="/guide"
+              className="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm text-zinc-500 transition-colors hover:text-black dark:hover:text-zinc-50"
+            >
+              사용법
+            </Link>
+
             <div className="shrink-0">
               <SettingsLink />
             </div>

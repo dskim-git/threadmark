@@ -67,6 +67,22 @@ export const pdfSelectionLocatorSchema = z.object({
 
   page: z.number().int().min(1).max(100000),
 
+  /**
+   * 쪽을 넘어가는 문장을 이어 붙였을 때 **끝나는** 쪽. (15-G)
+   *
+   * 논문의 문장은 쪽 경계에서 끊긴다. 앞쪽 끝에서 고른 조각과 다음 쪽
+   * 처음에서 고른 조각을 한 인용으로 합칠 수 있게 했고, 그때 이 값이 붙는다.
+   *
+   * 한 쪽에서 끝나는 보통의 인용에는 없다. 없는 값을 page와 같게 채워 넣지
+   * 않는다. 그러면 "이어 붙인 것"과 "한 쪽에서 끝난 것"을 구분할 수 없고,
+   * 예전에 저장한 기록과도 모양이 달라진다.
+   *
+   * `page`는 늘 **시작한** 쪽이다. 되짚어 갈 자리는 문장이 시작하는 곳이다.
+   * `rects`도 시작한 쪽의 좌표만 담는다. 좌표는 쪽 안의 비율이라 여러 쪽을
+   * 한 묶음에 담을 방법이 없다.
+   */
+  endPage: z.number().int().min(1).max(100000).optional(),
+
   selectedText: z.string().min(1).max(MAX_TEXT_LENGTH),
   contextBefore: z.string().max(MAX_CONTEXT_LENGTH),
   contextAfter: z.string().max(MAX_CONTEXT_LENGTH),
@@ -168,6 +184,76 @@ export function tidySelectedText(value: string): string {
     )
     .filter((paragraph) => paragraph.length > 0)
     .join("\n");
+}
+
+/**
+ * 쪽을 넘어가는 문장의 두 조각을 잇는다. (15-G)
+ *
+ * PDF는 조판이 어디서 줄을 바꿨는지 기억하지 않는다. 그래서 쪽 끝에서
+ * 잘린 문장을 다음 쪽 것과 이을 때 우리가 그 자리를 메워야 한다.
+ *
+ * 규칙은 둘이다.
+ *
+ *   앞 조각이 붙임표로 끝나면  공백 없이 붙인다
+ *   그 밖에는                  공백 하나로 잇는다
+ *
+ * **붙임표를 지우지 않는다.** 인쇄된 쪽에 그 표가 있고, 인용은 원문
+ * 그대로여야 한다. (설계 문서 2.4절) `develop-`과 `ment`를 이으면
+ * `develop-ment`가 되어 읽기에 거슬리지만, 지워버리면 원문에 없던 낱말을
+ * 만들어내는 셈이다. 무엇을 지울지 우리가 판단할 수 없다.
+ *
+ * 붙임표는 여러 글자가 쓰인다. 보통의 하이픈, 유니코드 하이픈, 비줄바꿈
+ * 하이픈, 그리고 보이지 않는 소프트 하이픈이다. 소프트 하이픈은 눈에 보이지
+ * 않으면서 글자로는 있어서, 이 규칙에서 빠뜨리면 공백이 하나 끼어든다.
+ */
+/**
+ * 붙임표로 끝나는가.
+ *
+ * 글자를 정규식에 그대로 적지 않고 번호로 적는다. 소프트 하이픈(00AD)은
+ * **눈에 보이지 않는 글자**라서, 그대로 적어두면 나중에 이 줄을 고칠 때
+ * 있는 줄도 모르고 지운다. 지워도 검사 하나만 조용히 실패한다.
+ */
+const HYPHEN_CODES = [
+  0x2d, // 보통의 하이픈
+  0x2010, // 유니코드 하이픈
+  0x2011, // 비줄바꿈 하이픈
+  0x00ad, // 소프트 하이픈. 보이지 않는다
+];
+
+function endsWithHyphen(value: string): boolean {
+  const last = value.codePointAt(value.length - 1);
+
+  return last !== undefined && HYPHEN_CODES.includes(last);
+}
+
+/**
+ * 이 기록이 몇 쪽에 있는지 한 마디로. `9쪽` 또는 `9~10쪽`. (15-G)
+ *
+ * 쪽을 넘어간 인용만 범위로 보인다. 한 쪽에서 끝난 것은 예전 그대로다.
+ * 화면 여러 곳이 같은 말을 써야 해서 여기 한 번만 적는다.
+ */
+export function describeLocatorPages(locator: {
+  page: number;
+  endPage?: number;
+}): string {
+  return locator.endPage !== undefined && locator.endPage !== locator.page
+    ? `${locator.page}~${locator.endPage}쪽`
+    : `${locator.page}쪽`;
+}
+
+export function joinSelectedText(first: string, next: string): string {
+  const head = tidySelectedText(first);
+  const tail = tidySelectedText(next);
+
+  if (head.length === 0) {
+    return tail;
+  }
+
+  if (tail.length === 0) {
+    return head;
+  }
+
+  return endsWithHyphen(head) ? `${head}${tail}` : `${head} ${tail}`;
 }
 
 /**

@@ -66,6 +66,18 @@ export default async function PendingPage() {
             </p>
           ) : null}
 
+          {/*
+            기다리는 동안 볼 것을 준다. 승인 전에는 앱 화면에 들어갈 수 없어서
+            이 앱이 무엇을 하는 것인지 알 방법이 없었다. 사용법은 우리가 쓴
+            글이라 승인 없이 보여도 새는 것이 없다.
+          */}
+          <a
+            href="/guide"
+            className="flex h-11 w-full items-center justify-center rounded-full bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+          >
+            그동안 사용법 보기
+          </a>
+
           <form action={signOut}>
             <button
               type="submit"

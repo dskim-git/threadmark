@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AutoNotice } from "@/app/(app)/auto-notice";
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { getDriveConnectionSummary } from "@/lib/drive/connection";
 import { describeOAuthError } from "@/lib/drive/oauth";
@@ -57,9 +58,12 @@ export default async function IntegrationsPage({
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          연결 설정
-        </h1>
+        <div className="flex items-center gap-2">
+  <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            연결 설정
+          </h1>
+          <HelpButton topic="drive" />
+        </div>
         <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           ThreadMark가 다른 서비스와 주고받는 권한을 관리합니다.
         </p>

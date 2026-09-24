@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AutoNotice } from "@/app/(app)/auto-notice";
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listProjects } from "@/lib/projects/queries";
 
@@ -37,9 +38,12 @@ export default async function ProjectsPage({
       */}
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-            프로젝트
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+              프로젝트
+            </h1>
+            <HelpButton topic="projects" />
+          </div>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
             같은 자료도 목적에 따라 다르게 쓰입니다. 논문, 수업, 연수처럼
             쓰임새를 기준으로 묶습니다.

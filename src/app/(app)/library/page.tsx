@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AutoNotice } from "@/app/(app)/auto-notice";
+import { HelpButton } from "@/app/(app)/help-button";
 import { StarButton } from "@/app/(app)/star-button";
+import { TagChips } from "@/app/(app)/tag-editor";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { countSources, listSources } from "@/lib/sources/queries";
 import {
@@ -20,6 +22,12 @@ import {
   isSourceType,
 } from "@/lib/sources/types";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
+import {
+  getTagBySlug,
+  listSourceIdsForTag,
+  listTagsForSources,
+  listTagsWithCounts,
+} from "@/lib/tags/queries";
 
 import { toggleSourceStar } from "../sources/actions";
 
@@ -52,10 +60,32 @@ export default async function LibraryPage({
   const view = readListView(firstValue(params.view));
   const starredOnly = readStarredOnly(firstValue(params[STARRED_PARAM]));
 
-  const [sources, counts] = await Promise.all([
-    listSources(activeType, sort, starredOnly),
+  /*
+    태그로 거르기. (설계 문서 20-1절)
+
+    주소에는 태그 이름(slug)이 들어간다. id를 넣으면 주소가 읽을 수 없는 글이
+    되고, 태그를 지웠다 다시 만들면 담아둔 즐겨찾기가 끊긴다.
+
+    모르는 태그 이름이 오면 거르지 않는다. 주소는 사용자가 고쳐 쓸 수 있고,
+    지운 태그의 주소가 즐겨찾기에 남아 있을 수 있다. 빈 목록을 보여주면
+    자료가 사라진 것처럼 보인다. 대신 화면이 "그런 태그가 없다"고 알린다.
+  */
+  const tagSlug = firstValue(params.tag);
+  const activeTag = tagSlug ? await getTagBySlug(tagSlug) : null;
+  const taggedIds = activeTag
+    ? await listSourceIdsForTag(activeTag.id)
+    : undefined;
+
+  const [sources, counts, allTags] = await Promise.all([
+    listSources(activeType, sort, starredOnly, taggedIds),
     countSources(),
+    listTagsWithCounts(),
   ]);
+
+  // 카드마다 보여줄 태그. 한 번에 묶어서 가져온다.
+  const sourceTags = await listTagsForSources(
+    sources.map((source) => source.id),
+  );
 
   const total = counts.total;
   const notice = firstValue(params.notice);
@@ -67,6 +97,7 @@ export default async function LibraryPage({
     sort?: SourceSort;
     view?: ListView;
     starred?: boolean;
+    tag?: string | null;
   }) => {
     const query = new URLSearchParams();
     const type = next.type === undefined ? activeType : next.type;
@@ -77,6 +108,13 @@ export default async function LibraryPage({
 
     if (next.starred ?? starredOnly) {
       query.set(STARRED_PARAM, STARRED_ON);
+    }
+
+    // 태그는 고른 채로 유지한다. `tag: null`을 주면 벗긴다.
+    const nextTag = next.tag === undefined ? (tagSlug ?? null) : next.tag;
+
+    if (nextTag) {
+      query.set("tag", nextTag);
     }
 
     // 기본값은 주소에 적지 않는다. 짧은 주소가 읽기 쉽다.
@@ -99,7 +137,10 @@ export default async function LibraryPage({
     <div className="flex flex-col gap-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl text-black dark:text-zinc-50">내 자료</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl text-black dark:text-zinc-50">내 자료</h1>
+            <HelpButton topic="library" />
+          </div>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
             담아둔 자료 {total}건
           </p>
@@ -124,6 +165,17 @@ export default async function LibraryPage({
 
       {notice ? (
         <AutoNotice>{notice}</AutoNotice>
+      ) : null}
+
+      {/*
+        주소에 태그 이름이 있는데 그런 태그가 없을 때.
+        빈 목록만 보여주면 자료가 사라진 것처럼 보인다.
+      */}
+      {tagSlug && !activeTag ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          `{tagSlug}` 태그를 찾지 못했습니다. 지워졌거나 주소가 잘못된 것 같습니다.
+          아래는 거르지 않은 전체 목록입니다.
+        </p>
       ) : null}
 
       {/* 자료가 있는 유형만 보여준다. 빈 유형까지 늘어놓으면 고르기 어렵다. */}
@@ -159,6 +211,45 @@ export default async function LibraryPage({
               </Chip>
             ),
           )}
+        </nav>
+      ) : null}
+
+      {/*
+        태그 고르는 줄. 유형·별과 겹쳐 걸린다.
+
+        태그가 달린 자료가 있는 것만 보여준다. 기록에만 달린 태그를 여기
+        늘어놓으면 눌러도 빈 목록이 나온다.
+      */}
+      {allTags.some((tag) => tag.sourceCount > 0) ? (
+        <nav className="no-scrollbar flex items-center gap-2 overflow-x-auto">
+          <span className="shrink-0 text-xs text-zinc-500">태그</span>
+          <HelpButton topic="tags" className="shrink-0" />
+          {allTags
+            .filter((tag) => tag.sourceCount > 0)
+            .map((tag) => {
+              const active = activeTag?.id === tag.id;
+
+              return (
+                <Link
+                  key={tag.id}
+                  href={linkTo({ tag: active ? null : tag.slug })}
+                  aria-current={active ? "true" : undefined}
+                  className={
+                    active
+                      ? "shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-medium text-white dark:bg-accent-dark dark:text-black"
+                      : "shrink-0 rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent transition-opacity hover:opacity-80 dark:bg-accent-dark-soft dark:text-accent-dark"
+                  }
+                >
+                  {tag.name} {tag.sourceCount}
+                </Link>
+              );
+            })}
+          <Link
+            href="/tags"
+            className="shrink-0 text-xs text-zinc-500 underline underline-offset-4 transition-colors hover:text-black dark:hover:text-zinc-50"
+          >
+            태그 정리
+          </Link>
         </nav>
       ) : null}
 
@@ -237,6 +328,19 @@ export default async function LibraryPage({
                     </span>
                   </Link>
 
+                  {/*
+                    태그는 카드를 덮는 링크 밖에 둔다. 링크 안에 링크를 넣을
+                    수 없고, 눌렀을 때 그 태그로 걸러지는 편이 쓸모 있다.
+                  */}
+                  {(sourceTags[source.id] ?? []).length > 0 ? (
+                    <div className="px-5 pb-4">
+                      <TagChips
+                        tags={sourceTags[source.id] ?? []}
+                        hrefFor={(tag) => linkTo({ tag: tag.slug })}
+                      />
+                    </div>
+                  ) : null}
+
                   <StarButton
                     action={toggleSourceStar}
                     id={source.id}
@@ -249,6 +353,11 @@ export default async function LibraryPage({
               ))}
             </ul>
           ) : (
+            /*
+              목록 보기에는 태그를 그리지 않는다. 이 보기는 제목을 빠르게
+              훑으려고 고르는 것인데, 줄마다 꼬리표가 붙으면 그 일이 안 된다.
+              태그를 보려면 격자 보기나 자료 화면으로 간다.
+            */
             <ul className="flex flex-col">
               {sources.map((source) => (
                 <li
@@ -290,7 +399,9 @@ export default async function LibraryPage({
         </>
       ) : (
         <p className="rounded-2xl bg-white px-6 py-12 text-center text-sm leading-6 text-zinc-500 dark:bg-zinc-950">
-          {starredOnly
+          {activeTag
+            ? `\`${activeTag.name}\` 태그를 단 자료가 없습니다.`
+            : starredOnly
             ? "별을 단 자료가 없습니다."
             : activeType
               ? "이 유형으로 담아둔 자료가 없습니다."

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { toDoiUrl } from "@/lib/papers/apa";
 import { listPapers } from "@/lib/papers/queries";
@@ -44,7 +45,10 @@ export default async function PapersPage({
     <div className="flex flex-col gap-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl text-black dark:text-zinc-50">논문</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl text-black dark:text-zinc-50">논문</h1>
+            <HelpButton topic="paper" label="논문 정보" />
+          </div>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
             {papers.length}편 · 참고문헌은 APA 7판으로 만듭니다
           </p>

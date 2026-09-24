@@ -58,11 +58,16 @@ export type SourceDetail = SourceListItem & {
  * @param type 지정하면 해당 유형만 돌려준다.
  * @param sort 지정하지 않으면 최근에 담은 순이다.
  * @param starredOnly 참이면 별을 단 자료만 돌려준다. (설계 문서 5.2-1절)
+ * @param onlyIds 주면 이 id에 든 자료만 돌려준다. 태그로 거를 때 쓴다.
+ *   빈 배열을 주면 아무것도 돌려주지 않는다. "그 태그가 달린 자료가 없다"와
+ *   "거르지 않는다"를 구분해야 하므로, 거르지 않을 때는 undefined를 준다.
+ *   (설계 문서 20-1절)
  */
 export async function listSources(
   type?: SourceType,
   sort: SourceSort = DEFAULT_SOURCE_SORT,
   starredOnly = false,
+  onlyIds?: readonly string[],
 ): Promise<SourceListItem[]> {
   await requireActiveAccount();
 
@@ -86,6 +91,11 @@ export async function listSources(
   */
   if (starredOnly) {
     query = query.eq("starred", true);
+  }
+
+  if (onlyIds !== undefined) {
+    // 빈 배열이면 아무것도 나오지 않는다. 그것이 맞는 답이다.
+    query = query.in("id", onlyIds);
   }
 
   const { data, error } = await query;

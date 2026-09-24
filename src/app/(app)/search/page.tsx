@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
 import { normalizeSearchTerm } from "@/lib/search/query";
@@ -41,7 +42,10 @@ export default async function SearchPage({
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-3xl text-black dark:text-zinc-50">찾기</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl text-black dark:text-zinc-50">찾기</h1>
+          <HelpButton topic="search" />
+        </div>
         <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           자료의 제목과 설명, 기록의 글에서 찾습니다. 붙여 쓴 말 안에서도
           찾으니 일부만 적어도 됩니다.

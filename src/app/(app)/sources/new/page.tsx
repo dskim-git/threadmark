@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { getDriveConnectionSummary } from "@/lib/drive/connection";
 import { isSourceType } from "@/lib/sources/types";
@@ -27,9 +28,12 @@ export default async function NewSourcePage({
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          자료 등록
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            자료 등록
+          </h1>
+          <HelpButton topic="source-new" />
+        </div>
         <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           논문, 책, 웹사이트처럼 나중에 다시 찾아볼 자료를 등록합니다. PDF나
           이미지가 있다면 함께 올릴 수 있습니다.

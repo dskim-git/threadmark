@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { linkCaptureToProject } from "@/app/(app)/projects/actions";
 import type { Capture } from "@/lib/captures/queries";
+import { describeLocatorPages } from "@/lib/captures/pdf-locator";
 import { locatorIsStale } from "@/lib/drive/file-check";
 import {
   getCaptureTypeLabel,
@@ -13,7 +14,10 @@ import {
 } from "@/lib/translation/types";
 import type { ProjectChip } from "@/lib/projects/queries";
 
+import type { Tag } from "@/lib/tags/queries";
+
 import { StarButton } from "../star-button";
+import { TagEditor } from "../tag-editor";
 import { deleteCapture, toggleCaptureStar } from "./actions";
 
 /**
@@ -32,6 +36,8 @@ export function CaptureList({
   emptyText,
   projects = [],
   fileChecksums,
+  captureTags,
+  allTags,
 }: {
   captures: Capture[];
   returnTo: string;
@@ -45,6 +51,15 @@ export function CaptureList({
   fileChecksums?: Record<string, string | null>;
   /** 비어 있지 않으면 기록마다 프로젝트 연결 선택을 보여준다. */
   projects?: ProjectChip[];
+  /**
+   * 기록마다 달린 태그. 기록 id로 찾는다. (설계 문서 20-1절)
+   *
+   * 넘기지 않으면 태그 칸을 그리지 않는다. 읽기 화면처럼 자리가 좁은 곳에서
+   * 빼기 위해서다. 넘기려면 allTags도 함께 넘겨야 쓰던 태그를 눌러서 달 수 있다.
+   */
+  captureTags?: Record<string, Tag[]>;
+  /** 내가 쓴 태그 전부. */
+  allTags?: readonly Tag[];
 }) {
   if (captures.length === 0) {
     return (
@@ -77,7 +92,7 @@ export function CaptureList({
                   href={`/sources/${capture.sourceId}/reader?file=${capture.pdfLocation.sourceFileId}&page=${capture.pdfLocation.page}`}
                   className="rounded-full border border-black/[.08] px-2.5 py-0.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-300 dark:hover:bg-white/[.06]"
                 >
-                  {capture.pdfLocation.page}쪽으로
+                  {describeLocatorPages(capture.pdfLocation)}으로
                 </Link>
               ) : null}
 
@@ -173,6 +188,23 @@ export function CaptureList({
                 {capture.content}
               </p>
             </div>
+          ) : null}
+
+          {/*
+            태그. (설계 문서 20-1절)
+
+            본문 아래, 고치기·삭제 줄 위에 둔다. 기록을 읽고 나서 "이게
+            무엇에 대한 것이었지"를 붙이는 순서가 자연스럽다.
+          */}
+          {captureTags && allTags ? (
+            <TagEditor
+              target="capture"
+              id={capture.id}
+              tags={captureTags[capture.id] ?? []}
+              allTags={allTags}
+              returnTo={returnTo}
+              compact
+            />
           ) : null}
 
           <div className="flex items-center gap-3 border-t border-black/[.06] pt-3 dark:border-white/[.1]">

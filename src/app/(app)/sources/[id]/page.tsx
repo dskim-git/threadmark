@@ -7,7 +7,9 @@ import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projects/actions";
 import { AutoNotice } from "@/app/(app)/auto-notice";
+import { HelpButton } from "@/app/(app)/help-button";
 import { StarButton } from "@/app/(app)/star-button";
+import { TagEditor } from "@/app/(app)/tag-editor";
 import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
 import {
@@ -32,6 +34,13 @@ import {
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
+import {
+  getTagBySlug,
+  listCaptureIdsForTag,
+  listTags,
+  listTagsForCaptures,
+  listTagsForSource,
+} from "@/lib/tags/queries";
 import {
   getSourceStatusLabel,
   getSourceTypeLabel,
@@ -80,6 +89,16 @@ export default async function SourceDetailPage({
   const query = await searchParams;
   const starredOnly = readStarredOnly(firstValue(query[STARRED_PARAM]));
 
+  /*
+    이 자료의 기록을 태그로 거른다. (설계 문서 20-1절)
+    모르는 태그 이름이면 거르지 않는다. 자료 화면 자체는 그대로 열려야 한다.
+  */
+  const tagSlug = firstValue(query.tag);
+  const activeTag = tagSlug ? await getTagBySlug(tagSlug) : null;
+  const taggedCaptureIds = activeTag
+    ? await listCaptureIdsForTag(activeTag.id)
+    : undefined;
+
   const [
     captures,
     captureCounts,
@@ -92,8 +111,10 @@ export default async function SourceDetailPage({
     paperUses,
     relations,
     allSources,
+    sourceTags,
+    allTags,
   ] = await Promise.all([
-    listCapturesForSource(source.id, starredOnly),
+    listCapturesForSource(source.id, starredOnly, taggedCaptureIds),
     countCaptureStars(source.id),
     listProjectsForSource(source.id),
     listProjectChips(),
@@ -105,7 +126,17 @@ export default async function SourceDetailPage({
     source.type === "paper" ? listPaperProjectUses(source.id) : [],
     listSourceRelations(source.id),
     listSources(),
+    listTagsForSource(source.id),
+    listTags(),
   ]);
+
+  /*
+    기록에 달린 태그는 기록 id를 다 안 뒤에야 물어볼 수 있다.
+    기록마다 따로 물어보면 왕복이 기록 수만큼 늘어난다.
+  */
+  const captureTags = await listTagsForCaptures(
+    captures.map((capture) => capture.id),
+  );
 
   const citation =
     paperProfile !== null
@@ -118,14 +149,34 @@ export default async function SourceDetailPage({
   const error = firstValue(query.error);
   const notice = firstValue(query.notice);
   const detailPath = `/sources/${source.id}`;
-  const starredPath = `${detailPath}?${STARRED_PARAM}=${STARRED_ON}`;
+
+  /** 지금 고른 것을 지키면서 하나만 바꾼 주소. */
+  const captureListHref = (next: { starred?: boolean; tag?: string | null }) => {
+    const params = new URLSearchParams();
+
+    if (next.starred ?? starredOnly) {
+      params.set(STARRED_PARAM, STARRED_ON);
+    }
+
+    const nextTag = next.tag === undefined ? (tagSlug ?? null) : next.tag;
+
+    if (nextTag) {
+      params.set("tag", nextTag);
+    }
+
+    const text = params.toString();
+
+    return text.length > 0 ? `${detailPath}?${text}` : detailPath;
+  };
+
+  const starredPath = captureListHref({ starred: true });
 
   /*
     돌아올 자리. 별로 걸러 보는 중이면 그 상태를 지킨다.
     별만 보다가 하나를 떼면 목록에서 빠지는데, 그때 필터까지 풀려버리면
     어디를 보고 있었는지 잃는다.
   */
-  const returnTo = starredOnly ? starredPath : detailPath;
+  const returnTo = captureListHref({});
 
   const linkedIds = new Set(linkedProjects.map((project) => project.id));
   const linkableProjects = allProjects.filter(
@@ -260,6 +311,26 @@ export default async function SourceDetailPage({
             {source.subtitle}
           </p>
         ) : null}
+
+        {/*
+          태그. (설계 문서 20-1절)
+
+          제목 바로 아래에 둔다. "이 자료가 무엇에 대한 것인가"는 제목 다음으로
+          먼저 보이는 것이 자연스럽고, 아래로 내려갈수록 있는 줄도 모르게 된다.
+          제목 옆 `제목·설명 고치기`가 아래에 있다가 안 쓰이던 것과 같은 이유다.
+        */}
+        <div className="flex items-start gap-2">
+          <HelpButton topic="tags" className="mt-1.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+        <TagEditor
+          target="source"
+          id={source.id}
+          tags={sourceTags}
+          allTags={allTags}
+          returnTo={returnTo}
+        />
+          </div>
+        </div>
       </header>
 
       {/*
@@ -697,9 +768,12 @@ export default async function SourceDetailPage({
         그래서 화면을 막지 않고 안내만 보여준다. (설계 문서 10.4절 마지막 줄)
       */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-          파일
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+            파일
+          </h2>
+          <HelpButton topic="drive" label="파일 보관" />
+        </div>
 
         <FileList sourceId={source.id} files={files} />
 
@@ -730,12 +804,15 @@ export default async function SourceDetailPage({
 
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-          <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
-            기록 {captureCounts.total}건
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
+              기록 {captureCounts.total}건
+            </h2>
+            <HelpButton topic="capture-types" label="기록의 종류" />
+          </div>
 
           <StarFilter
-            allHref={detailPath}
+            allHref={captureListHref({ starred: false })}
             starredHref={starredPath}
             total={captureCounts.total}
             starred={captureCounts.starred}
@@ -746,6 +823,8 @@ export default async function SourceDetailPage({
           captures={captures}
           returnTo={returnTo}
           projects={allProjects}
+          captureTags={captureTags}
+          allTags={allTags}
           /*
             기록에 적힌 checksum과 지금 파일의 checksum을 견주어
             "위치가 달라졌을 수 있음"을 표시한다. (설계 문서 9.2절)
@@ -754,9 +833,11 @@ export default async function SourceDetailPage({
             files.map((file) => [file.id, file.checksum]),
           )}
           emptyText={
-            starredOnly
-              ? "별을 단 기록이 없습니다."
-              : "아직 이 자료에 남긴 기록이 없습니다."
+            activeTag
+              ? `\`${activeTag.name}\` 태그를 단 기록이 없습니다.`
+              : starredOnly
+                ? "별을 단 기록이 없습니다."
+                : "아직 이 자료에 남긴 기록이 없습니다."
           }
         />
       </section>

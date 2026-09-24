@@ -58,6 +58,13 @@ export type TranslationSaveInput = {
 
 export function SelectionPanel({
   locator,
+  pendingPiece,
+  joinedPreview,
+  joinedTooLong,
+  pieceCount,
+  onAppendPiece,
+  onReplaceWithPiece,
+  onUndoPiece,
   busy,
   translationEnabled,
   onTranslate,
@@ -66,6 +73,22 @@ export function SelectionPanel({
   onDismiss,
 }: {
   locator: PdfSelectionLocator;
+  /**
+   * 이어 붙일 후보. 다른 쪽에서 새로 고른 문장이다. (15-G)
+   *
+   * 없으면 보통의 창이다. 있으면 "이어지는 문장인가, 새로 고른 것인가"를
+   * 묻는 칸이 하나 더 붙는다. 우리가 임의로 정하지 않는다.
+   */
+  pendingPiece: PdfSelectionLocator | null;
+  /** 이어 붙였을 때의 글. 누르기 전에 보여준다. */
+  joinedPreview: string | null;
+  /** 이어 붙이면 길이 한도를 넘는가. */
+  joinedTooLong: boolean;
+  /** 지금 쌓인 조각 수. 둘 이상이면 되돌릴 수 있다. */
+  pieceCount: number;
+  onAppendPiece: () => void;
+  onReplaceWithPiece: () => void;
+  onUndoPiece: () => void;
   busy: boolean;
   /**
    * 번역을 쓸 수 있는지.
@@ -138,7 +161,9 @@ export function SelectionPanel({
     <div className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium text-zinc-500">
-          {locator.page}쪽에서 고른 문장
+          {locator.endPage && locator.endPage !== locator.page
+            ? `${locator.page}~${locator.endPage}쪽에 걸친 문장`
+            : `${locator.page}쪽에서 고른 문장`}
         </span>
         <button
           type="button"
@@ -156,6 +181,75 @@ export function SelectionPanel({
       <blockquote className="max-h-40 overflow-auto rounded-lg border-l-2 border-zinc-300 bg-zinc-50 px-3 py-2 text-sm leading-6 text-zinc-800 dark:border-zinc-600 dark:bg-white/[.04] dark:text-zinc-200">
         {locator.selectedText}
       </blockquote>
+
+      {/*
+        이어 붙인 것을 한 걸음 되돌린다. (15-G)
+
+        인용 칸은 고칠 수 없으므로(2.4절) 잘못 이어 붙였을 때 손으로 고칠
+        길이 없다. 되돌릴 수 없으면 처음부터 다시 골라야 한다.
+      */}
+      {pieceCount > 1 ? (
+        <button
+          type="button"
+          onClick={onUndoPiece}
+          disabled={locked}
+          className="self-start text-xs text-zinc-500 underline underline-offset-2 transition-colors hover:text-black disabled:opacity-50 dark:hover:text-zinc-50"
+        >
+          마지막으로 이어 붙인 것 되돌리기
+        </button>
+      ) : null}
+
+      {/*
+        다른 쪽에서 새로 고른 문장. (15-G)
+
+        쪽을 넘어가는 문장의 뒷부분일 수도 있고, 아예 다른 문장을 새로
+        고르려던 것일 수도 있다. 우리는 알 수 없으므로 **묻는다.**
+        이어 붙였을 때의 글을 미리 보여주어, 누르기 전에 결과를 알 수 있게 한다.
+      */}
+      {pendingPiece ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent-soft/50 p-3 dark:border-accent-dark/40 dark:bg-accent-dark-soft/40">
+          <span className="text-xs font-medium text-accent dark:text-accent-dark">
+            {pendingPiece.page}쪽에서 새로 고른 문장
+          </span>
+
+          <blockquote className="max-h-24 overflow-auto text-xs leading-5 text-zinc-700 dark:text-zinc-300">
+            {pendingPiece.selectedText}
+          </blockquote>
+
+          {joinedTooLong ? (
+            <p className="text-xs leading-5 text-red-700 dark:text-red-400">
+              이어 붙이면 한 기록에 담을 수 있는 길이를 넘습니다. 나눠서
+              남겨 주세요.
+            </p>
+          ) : joinedPreview ? (
+            <details className="text-xs text-zinc-600 dark:text-zinc-400">
+              <summary className="cursor-pointer">이어 붙이면 이렇게 됩니다</summary>
+              <p className="mt-1 max-h-24 overflow-auto leading-5">
+                {joinedPreview}
+              </p>
+            </details>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onAppendPiece}
+              disabled={locked || joinedTooLong}
+              className="h-9 rounded-full bg-zinc-900 px-4 text-xs font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+            >
+              이어 붙이기
+            </button>
+            <button
+              type="button"
+              onClick={onReplaceWithPiece}
+              disabled={locked}
+              className="h-9 rounded-full border border-black/[.08] px-4 text-xs font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              이것만 남기기
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {translationEnabled ? (
         <div className="flex flex-col gap-2 rounded-lg border border-black/[.06] p-3 dark:border-white/[.1]">

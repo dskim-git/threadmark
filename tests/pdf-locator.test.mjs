@@ -23,6 +23,8 @@ import {
   toPageRatioRect,
   trimContextAfter,
   trimContextBefore,
+  describeLocatorPages,
+  joinSelectedText,
 } from "../src/lib/captures/pdf-locator.ts";
 
 const FILE_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
@@ -310,4 +312,91 @@ test("페이지 크기를 모르면 계산하지 않는다", () => {
 test("기록 목록에 보여줄 자리를 만든다", () => {
   assert.equal(describeLocator(locator()), "17쪽");
   assert.equal(describeLocator({}), null);
+});
+
+// -----------------------------------------------------------------------------
+// 쪽을 넘어가는 문장 잇기 (15-G)
+// -----------------------------------------------------------------------------
+
+test("보통은 공백 하나로 잇는다", () => {
+  assert.equal(
+    joinSelectedText("학생의 오류는", "교사의 설명과 무관하지 않다."),
+    "학생의 오류는 교사의 설명과 무관하지 않다.",
+  );
+});
+
+test("붙임표로 끝나면 공백 없이 붙인다", () => {
+  // 조판이 낱말을 쪼갠 자리다. 공백을 넣으면 없던 띄어쓰기가 생긴다.
+  assert.equal(joinSelectedText("develop-", "ment of proof"), "develop-ment of proof");
+});
+
+test("붙임표를 지우지 않는다", () => {
+  /*
+    인쇄된 쪽에 그 표가 있다. 인용은 원문 그대로여야 하고, 무엇을 지울지
+    우리가 판단할 수 없다. (설계 문서 2.4절)
+  */
+  assert.ok(joinSelectedText("develop-", "ment").includes("-"));
+});
+
+test("여러 모양의 붙임표를 모두 알아본다", () => {
+  // 소프트 하이픈은 눈에 보이지 않으면서 글자로는 있다. 빠뜨리면 공백이 낀다.
+  for (const hyphen of ["-", "‐", "‑", "­"]) {
+    assert.equal(
+      joinSelectedText(`develop${hyphen}`, "ment"),
+      `develop${hyphen}ment`,
+      JSON.stringify(hyphen),
+    );
+  }
+});
+
+test("잇기 전에 각 조각을 다듬는다", () => {
+  // PDF에서 온 글에는 줄바꿈과 이어진 공백이 섞여 있다.
+  assert.equal(
+    joinSelectedText("앞 조각\n입니다  ", "  뒤\n조각입니다"),
+    "앞 조각 입니다 뒤 조각입니다",
+  );
+});
+
+test("한쪽이 비면 나머지를 그대로 돌려준다", () => {
+  assert.equal(joinSelectedText("", "뒤 조각"), "뒤 조각");
+  assert.equal(joinSelectedText("앞 조각", ""), "앞 조각");
+  assert.equal(joinSelectedText("   ", "뒤 조각"), "뒤 조각");
+});
+
+test("세 조각을 차례로 이을 수 있다", () => {
+  // 문장이 세 쪽에 걸칠 수도 있다. 이어 붙이기를 두 번 누르는 경우다.
+  const first = joinSelectedText("한 문장이", "쪽을 두 번");
+
+  assert.equal(joinSelectedText(first, "넘어간다."), "한 문장이 쪽을 두 번 넘어간다.");
+});
+
+test("한 쪽에서 끝난 인용은 쪽 하나로 말한다", () => {
+  assert.equal(describeLocatorPages({ page: 9 }), "9쪽");
+  // endPage가 시작 쪽과 같아도 범위로 보이지 않는다.
+  assert.equal(describeLocatorPages({ page: 9, endPage: 9 }), "9쪽");
+});
+
+test("쪽을 넘어간 인용은 범위로 말한다", () => {
+  assert.equal(describeLocatorPages({ page: 9, endPage: 10 }), "9~10쪽");
+  assert.equal(describeLocatorPages({ page: 9, endPage: 11 }), "9~11쪽");
+});
+
+test("쪽을 넘어간 인용도 저장할 수 있는 모양이다", () => {
+  /*
+    endPage는 나중에 더한 칸이다. 예전에 저장한 기록에는 없다.
+    둘 다 통과해야 한다.
+  */
+  const base = {
+    kind: PDF_SELECTION_KIND,
+    sourceFileId: FILE_ID,
+    page: 9,
+    selectedText: "쪽을 넘어가는 문장이다.",
+    contextBefore: "",
+    contextAfter: "",
+    rects: [],
+    fileChecksum: null,
+  };
+
+  assert.ok(parsePdfSelectionLocator(base));
+  assert.ok(parsePdfSelectionLocator({ ...base, endPage: 10 }));
 });

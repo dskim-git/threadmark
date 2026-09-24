@@ -8,6 +8,7 @@ import {
   THEME_PALETTES,
 } from "@/lib/appearance/theme";
 import { AutoNotice } from "@/app/(app)/auto-notice";
+import { HelpButton } from "@/app/(app)/help-button";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { getDriveConnectionSummary } from "@/lib/drive/connection";
 
@@ -51,7 +52,10 @@ export default async function SettingsPage({
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-3xl text-black dark:text-zinc-50">설정</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl text-black dark:text-zinc-50">설정</h1>
+          <HelpButton topic="appearance" label="화면 색과 글꼴" />
+        </div>
         <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           계정과 연결을 확인합니다.
         </p>

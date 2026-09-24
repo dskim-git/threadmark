@@ -110,6 +110,42 @@ export type Database = {
           },
         ]
       }
+      capture_tags: {
+        Row: {
+          capture_id: string
+          created_at: string
+          owner_id: string
+          tag_id: string
+        }
+        Insert: {
+          capture_id: string
+          created_at?: string
+          owner_id?: string
+          tag_id: string
+        }
+        Update: {
+          capture_id?: string
+          created_at?: string
+          owner_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_tags_capture_id_fkey"
+            columns: ["capture_id"]
+            isOneToOne: false
+            referencedRelation: "captures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       captures: {
         Row: {
           ai_generated: boolean
@@ -736,6 +772,42 @@ export type Database = {
           },
         ]
       }
+      source_tags: {
+        Row: {
+          created_at: string
+          owner_id: string
+          source_id: string
+          tag_id: string
+        }
+        Insert: {
+          created_at?: string
+          owner_id?: string
+          source_id: string
+          tag_id: string
+        }
+        Update: {
+          created_at?: string
+          owner_id?: string
+          source_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_tags_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "source_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sources: {
         Row: {
           canonical_url: string | null
@@ -793,6 +865,33 @@ export type Database = {
         }
         Relationships: []
       }
+      tags: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id?: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           granted_at: string
@@ -829,6 +928,10 @@ export type Database = {
       }
       assert_source_owned: {
         Args: { p_owner_id: string; p_source_id: string }
+        Returns: undefined
+      }
+      assert_tag_owned: {
+        Args: { p_owner_id: string; p_tag_id: string }
         Returns: undefined
       }
       count_admins: { Args: never; Returns: number }
