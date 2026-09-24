@@ -11,6 +11,7 @@ import {
   getPaperUseStatusLabel,
 } from "@/lib/papers/project-use-fields";
 import { listProjectPaperUses } from "@/lib/papers/project-use-queries";
+import { listOutline } from "@/lib/projects/outline-queries";
 import {
   getProjectById,
   listProjectCaptures,
@@ -25,6 +26,7 @@ import {
   unlinkCaptureFromProject,
   unlinkSourceFromProject,
 } from "../actions";
+import { OutlinePanel } from "../outline-panel";
 
 export const metadata: Metadata = {
   title: "프로젝트 · ThreadMark",
@@ -44,12 +46,13 @@ export default async function ProjectDetailPage({
     notFound();
   }
 
-  const [linkedSources, linkedCaptures, paperUses, allSources, query] =
+  const [linkedSources, linkedCaptures, paperUses, allSources, outline, query] =
     await Promise.all([
       listProjectSources(project.id),
       listProjectCaptures(project.id),
       listProjectPaperUses(project.id),
       listSources(),
+      listOutline(project.id),
       searchParams,
     ]);
 
@@ -132,6 +135,15 @@ export default async function ProjectDetailPage({
           ) : null}
         </section>
       ) : null}
+
+      {/*
+        뼈대. 만드는 쪽이다. (설계 문서 7.1절, 7.3절)
+
+        **모아둔 재료보다 위에 둔다.** 프로젝트를 여는 이유는 "무엇이
+        모였나"가 아니라 "지금 어디까지 만들었나"이기 때문이다. 재료 목록이
+        먼저 나오면 프로젝트가 여전히 모아두는 곳으로 보인다.
+      */}
+      <OutlinePanel projectId={project.id} items={outline} />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-black dark:text-zinc-50">

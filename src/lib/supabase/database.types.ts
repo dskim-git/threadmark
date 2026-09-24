@@ -752,6 +752,57 @@ export type Database = {
         }
         Relationships: []
       }
+      project_outline_nodes: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          owner_id: string
+          parent_id: string | null
+          position: number
+          project_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          owner_id?: string
+          parent_id?: string | null
+          position?: number
+          project_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          owner_id?: string
+          parent_id?: string | null
+          position?: number
+          project_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_outline_nodes_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "project_outline_nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_outline_nodes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           color: string | null
@@ -1144,6 +1195,10 @@ export type Database = {
     Functions: {
       assert_capture_owned: {
         Args: { p_capture_id: string; p_owner_id: string }
+        Returns: undefined
+      }
+      assert_project_outline_owned: {
+        Args: { p_node_id: string; p_owner_id: string }
         Returns: undefined
       }
       assert_project_owned: {

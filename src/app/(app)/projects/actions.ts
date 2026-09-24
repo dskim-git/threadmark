@@ -6,12 +6,14 @@ import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
+import { seedOutline } from "@/lib/projects/outline-seed";
 import {
   firstIssueMessage,
   formValue,
   projectInputSchema,
   resolveColor,
 } from "@/lib/projects/schema";
+import { findProjectTemplate } from "@/lib/projects/templates";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -75,12 +77,29 @@ export async function createProject(formData: FormData): Promise<void> {
   const input = parsed.data;
   const supabase = await createClient();
 
+  /*
+    시작 서식. (설계 문서 7.3-1절)
+
+    **유형 칸이 비어 있을 때만** 서식 이름이 그리로 들어간다. 적어 넣은
+    값을 덮지 않는다. 지킬 것은 사용자가 적은 값이고 우리가 채운 값이
+    아니다. 음악에서 한 번 부딪힌 자리다. (AGENTS.md 2절)
+  */
+  const template = findProjectTemplate(formValue(formData.get("templateId")));
+
+  /*
+    비어 있는 유형은 `null`로 들어온다. 빈 글자가 아니다. 둘을 같게 보면
+    "적지 않았다"와 "빈칸을 적었다"가 구분되지 않는다.
+  */
+  const projectType =
+    input.projectType ??
+    (template && template.outline.length > 0 ? template.name : null);
+
   const { data, error } = await supabase
     .from("projects")
     .insert({
       // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
       name: input.name,
-      project_type: input.projectType,
+      project_type: projectType,
       description: input.description,
       research_question: input.researchQuestion,
       target_output: input.targetOutput,
@@ -98,7 +117,27 @@ export async function createProject(formData: FormData): Promise<void> {
     });
   }
 
+  /*
+    서식이 준 자리들을 심는다.
+
+    **실패해도 프로젝트는 살린다.** 뼈대를 못 만든 것은 프로젝트를 못 만들
+    이유가 아니다. 사용자가 손으로 자리를 만들면 된다. 다만 조용히 넘어가지
+    않는다. 서식을 골랐는데 빈 뼈대가 나오면 사용자는 자기가 잘못 골랐다고
+    생각한다.
+  */
+  const seeded =
+    template && template.outline.length > 0
+      ? await seedOutline(supabase, data.id, template.outline)
+      : true;
+
   revalidatePath("/projects");
+
+  if (!seeded) {
+    redirectWithQuery(`/projects/${data.id}`, {
+      error: "프로젝트는 만들었지만 서식의 자리들을 만들지 못했습니다. 아래에서 직접 만들 수 있습니다.",
+    });
+  }
+
   redirect(`/projects/${data.id}`);
 }
 

@@ -69,6 +69,7 @@ const PROTECTED_TABLES = [
   "music_profiles",
   "music_provider_links",
   "book_profiles",
+  "project_outline_nodes",
 ];
 
 /**

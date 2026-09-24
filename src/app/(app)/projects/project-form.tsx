@@ -7,6 +7,8 @@ import {
   MAX_TYPE_LENGTH,
 } from "@/lib/projects/schema";
 
+import { PROJECT_TEMPLATES } from "@/lib/projects/templates";
+
 import { ColorField } from "./color-field";
 import { DateField } from "./date-field";
 
@@ -34,12 +36,21 @@ export function ProjectForm({
   submitLabel,
   cancelHref,
   errorMessage,
+  showTemplates = false,
 }: {
   action: (formData: FormData) => Promise<void>;
   values: ProjectFormValues;
   submitLabel: string;
   cancelHref: string;
   errorMessage?: string;
+  /**
+   * 시작 서식을 고르는 칸을 보여줄지.
+   *
+   * **만들 때만 보여준다.** 이미 만든 프로젝트에 서식을 얹는 길은 두지
+   * 않았다. 있는 자리와 어떻게 섞을 것인가를 추측으로 정하게 된다.
+   * (설계 문서 7.3-1절)
+   */
+  showTemplates?: boolean;
 }) {
   return (
     <form action={action} className="flex flex-col gap-6">
@@ -66,10 +77,63 @@ export function ProjectForm({
         />
       </Field>
 
+      {/*
+        시작 서식.
+
+        고르면 자리 몇 개가 미리 만들어진다. **시작점이지 울타리가 아니다.**
+        만든 뒤에는 전부 고치고 지우고 더할 수 있고, 깊이에도 한계가 없다.
+
+        고른 서식의 이름은 아래 `유형` 칸이 비어 있을 때만 그리로 들어간다.
+        적어 넣은 값을 덮지 않는다. 그 판단은 서버가 한다.
+      */}
+      {showTemplates ? (
+        <fieldset className="flex flex-col gap-3 border-0 p-0">
+          <legend className="pb-1 text-sm font-medium text-black dark:text-zinc-50">
+            어떤 일인가요
+          </legend>
+          <p className="pb-2 text-xs leading-5 text-zinc-500">
+            고르면 뼈대의 첫 자리들을 만들어 둡니다. 나중에 얼마든지 고치고
+            더할 수 있습니다.
+          </p>
+
+          {PROJECT_TEMPLATES.map((template, index) => (
+            <label
+              key={template.id}
+              className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/[.08] px-4 py-3 transition-colors hover:border-black/20 has-checked:border-accent dark:border-white/[.145] dark:hover:border-white/30 dark:has-checked:border-accent-dark"
+            >
+              <input
+                type="radio"
+                name="templateId"
+                value={template.id}
+                defaultChecked={index === 0}
+                className="mt-1 accent-zinc-900 dark:accent-zinc-100"
+              />
+              <span className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="text-sm font-medium text-black dark:text-zinc-50">
+                  {template.name}
+                </span>
+                <span className="text-xs leading-5 text-zinc-500">
+                  {template.summary}
+                </span>
+                {template.outline.length > 0 ? (
+                  <span className="text-xs leading-5 text-zinc-500">
+                    {template.outline.map((seed) => seed.title).join(" · ")}
+                  </span>
+                ) : null}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+
       <Field
         label="유형"
         htmlFor="projectType"
-        hint="논문, 수업, 연수처럼 자유롭게 적습니다."
+        hint={
+          showTemplates
+            ? "비워 두면 위에서 고른 서식의 이름이 들어갑니다."
+            : "논문, 수업, 연수처럼 자유롭게 적습니다."
+        }
       >
         <input
           id="projectType"

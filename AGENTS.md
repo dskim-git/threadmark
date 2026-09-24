@@ -320,7 +320,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 741개
+npm test          # node --test, 770개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -332,7 +332,8 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 ## 4. 현재 상태
 
 전체 개발 순서 중 **15-A~15-G까지 완료**(15-E-2만 남음), MVP 목록을 모두 채웠다.
-이어서 **17단계(개인정보·계정 삭제)와 15-E-2a(책)까지 완료**했다.
+이어서 **17단계(개인정보·계정 삭제), 15-E-2a(책), 19-A(프로젝트 뼈대)까지 완료**했다.
+표의 **18단계는 번호가 아니라 자리다.** 무엇을 더 만들든 마지막에 온다.
 
 | 단계 | 블루프린트 23절 | 상태 |
 | --- | --- | --- |
@@ -371,7 +372,11 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17-A. 계정과 자료 지우기 (`/account/delete`) | | 완료 |
 | 17-B. 개인정보 처리방침·삭제 안내 화면 (`/privacy`, `/data-deletion`) | | 완료 |
-| 18. 최종 보안 점검과 배포 | | 예정 |
+| 19-A. 프로젝트 뼈대와 시작 서식 (7.3절) | | 완료 |
+| 19-B. 자리에 재료 놓기 (7.4절) | | 예정 |
+| 19-C. 조망과 거꾸로 보기 (7.5절) | | 예정 |
+| 19-D. 자리에 맞는 재료 AI 추천 | | 예정 |
+| 18. 최종 보안 점검과 배포 | | 늘 마지막 |
 
 ### 15단계가 A~E로 나뉜 이유 (2026-09-24)
 
@@ -991,11 +996,17 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 ### Next.js 16
 
-- **`"use server"` 파일은 async 함수만 내보낼 수 있다.** (17-A)
+- **`"use server"` 파일은 async 함수만 내보낼 수 있고, 내보낸 것은 전부
+  브라우저가 부를 수 있는 동작이 된다.** (17-A, 19-A에서 또 걸림)
   경로 상수 하나를 `export const`로 두었다가 빌드가 거기서 멈췄다. 더 헷갈리는
   것은 **뒤따라 나오는 오류**다. "그 파일에 export가 하나도 없다"며 실제 Server
   Action을 못 찾겠다고 한다. 없는 것은 함수가 아니라 상수 쪽 규칙이다.
   Server Action 파일에는 함수만 두고, 상수는 안에만 두거나 다른 파일로 뺀다.
+
+  19-A에서 같은 자리에 또 걸렸다. 이번에는 상수가 아니라 **서버끼리만 쓰는
+  도우미 함수**였다. async라서 빌드는 통과하지만, 내보내는 순간 브라우저가
+  부를 수 있는 길이 열린다. **"async면 된다"가 아니라 "브라우저가 불러도
+  되는 것인가"로 판단한다.** 아니면 `src/lib` 쪽으로 뺀다.
 - **버전에 맞는 문서가 `node_modules/next/dist/docs/`에 있다.** 이 버전은 API와
   규약이 예전과 다르다. 기억에 의존하지 말고 그 문서를 먼저 읽는다.
   `middleware.ts`가 `proxy.ts`로 바뀐 것이 그런 예다.
@@ -1009,7 +1020,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (741개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (770개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (71검사) |

@@ -54,6 +54,7 @@ export default async function NewProjectPage({
 
       <ProjectForm
         action={createProject}
+        showTemplates
         submitLabel="만들기"
         cancelHref="/projects"
         errorMessage={firstValue(query.error)}
