@@ -4832,6 +4832,277 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 87. 로그인한 사용자는 자기 Drive 연결조차 읽을 수 없다
+-- -----------------------------------------------------------------------------
+-- **이 표는 다른 표와 잠그는 방식이 다르다.**
+--
+-- 지금까지의 표는 "소유자에게만 보여준다"였다. 이 표는 담고 있는 것이
+-- 사용자의 자료가 아니라 **Google 계정에 접근할 수 있는 열쇠**다. 그래서
+-- 설계 문서 10.5절이 "클라이언트가 refresh token 표를 select할 수 없어야
+-- 한다"고 못 박았고, authenticated에는 권한 자체를 주지 않았다.
+--
+-- **본인조차 읽을 수 없다.** 읽을 이유가 없기 때문이다. 화면이 보여주는 것은
+-- 연결 상태뿐이고 그것은 서버가 골라 내려준다.
+--
+-- 막히는 방식까지 확인한다. 권한이 없어 막히는 것과 정책에 걸려 0건이
+-- 나오는 것은 **방어선이 한 겹 다르다.** 누군가 grant를 더하면 앞의 것이
+-- 뒤의 것으로 조용히 내려앉는데, 그때 알아야 한다.
+do $$
+declare
+  v_owner   uuid;
+  v_denied  boolean := false;
+  v_seen    integer := -1;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    select count(*) into v_seen
+    from public.google_drive_connections
+    where user_id = v_owner;
+  exception when insufficient_privilege then
+    v_denied := true;
+  when others then
+    v_denied := true;
+  end;
+
+  reset role;
+
+  if v_denied then
+    return;
+  end if;
+
+  if v_seen = 0 then
+    raise exception
+      '검사 87 실패: Drive 연결 표에 권한이 생겼습니다. 지금은 정책이 없어 0건이 나오지만, 정책이 하나라도 생기면 그대로 열립니다.';
+  end if;
+
+  raise exception
+    '검사 87 실패: 로그인한 사용자가 자기 Drive 연결을 %건 읽었습니다. 토큰이 담긴 표입니다.',
+    v_seen;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 88. 로그인한 사용자는 Drive 연결을 담거나 고치거나 지울 수 없다
+-- -----------------------------------------------------------------------------
+-- 읽기만 막으면 절반이다. 고칠 수 있으면 **남의 연결에 내 토큰을 밀어 넣거나**
+-- 남의 연결을 끊어버릴 수 있다. 지우는 것은 되돌릴 수 없다.
+do $$
+declare
+  v_owner    uuid;
+  v_inserted boolean := false;
+  v_updated  boolean := false;
+  v_deleted  boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.google_drive_connections
+      (user_id, encrypted_refresh_token, granted_scope)
+    values (v_owner, '검사용 가짜 토큰', 'https://www.googleapis.com/auth/drive.file');
+    v_inserted := true;
+  exception when others then
+    null;
+  end;
+
+  begin
+    update public.google_drive_connections
+    set status = 'revoked'::public.drive_connection_status;
+    v_updated := true;
+  exception when others then
+    null;
+  end;
+
+  begin
+    delete from public.google_drive_connections;
+    v_deleted := true;
+  exception when others then
+    null;
+  end;
+
+  reset role;
+
+  if v_inserted then
+    raise exception
+      '검사 88 실패: 로그인한 사용자가 Drive 연결을 담을 수 있었습니다.';
+  end if;
+
+  if v_updated then
+    raise exception
+      '검사 88 실패: 로그인한 사용자가 Drive 연결을 고칠 수 있었습니다.';
+  end if;
+
+  if v_deleted then
+    raise exception
+      '검사 88 실패: 로그인한 사용자가 Drive 연결을 지울 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 89. 로그인하지 않은 쪽은 Drive 연결에 닿을 수 없다
+-- -----------------------------------------------------------------------------
+-- anon은 로그인 화면과 사용법 화면이 쓰는 역할이다. 그쪽에서 이 표에 닿을
+-- 길이 있으면 로그인조차 필요 없어진다.
+do $$
+declare
+  v_denied boolean := false;
+  v_seen   integer := -1;
+begin
+  set local role anon;
+  perform set_config('request.jwt.claims', '{}', true);
+
+  begin
+    select count(*) into v_seen from public.google_drive_connections;
+  exception when others then
+    v_denied := true;
+  end;
+
+  reset role;
+
+  if not v_denied then
+    raise exception
+      '검사 89 실패: 로그인하지 않은 쪽에서 Drive 연결을 %건 읽었습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 90. 서버는 Drive 연결을 다룰 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **이것을 실제로 겪었다.** 표를 만들면서 anon과 authenticated의 권한만
+-- 회수하고 service_role에는 아무것도 주지 않았다. 새 표에 기본 권한이
+-- 자동으로 붙는다고 여겼기 때문이다. 그래서 서버조차 읽지 못했다.
+--
+--   permission denied for table google_drive_connections
+--
+-- 막는 것만 검사하면 이 고장을 잡지 못한다. 그리고 이 고장은 Drive 기능
+-- **전체**를 멈추게 한다. (보안 원칙 6)
+do $$
+declare
+  v_free   uuid;
+  v_seen   integer;
+  v_status public.drive_connection_status;
+begin
+  set local role service_role;
+
+  -- 읽을 수 있는가. 권한이 없으면 여기서 멈춘다.
+  select count(*) into v_seen from public.google_drive_connections;
+
+  reset role;
+
+  /*
+    담고 고치고 지울 수 있는가.
+
+    연결이 없는 계정을 골라 쓴다. user_id가 기본키라 이미 연결된 계정에
+    담으면 충돌이 나고, 그것은 권한 문제가 아니다. **검사가 엉뚱한 이유로
+    실패하면 다음부터 그 검사를 믿지 않게 된다.**
+  */
+  select p.id into v_free
+  from public.profiles p
+  where not exists (
+    select 1 from public.google_drive_connections c where c.user_id = p.id
+  )
+  limit 1;
+
+  if v_free is null then
+    raise warning
+      '검사 90 주의: 모든 계정에 Drive 연결이 있어 담기·고치기·지우기는 확인하지 못했습니다. 읽기만 확인했습니다.';
+    return;
+  end if;
+
+  set local role service_role;
+
+  insert into public.google_drive_connections
+    (user_id, encrypted_refresh_token, granted_scope)
+  values (v_free, '검사용 가짜 토큰', 'https://www.googleapis.com/auth/drive.file');
+
+  update public.google_drive_connections
+  set status = 'revoked'::public.drive_connection_status
+  where user_id = v_free;
+
+  select status into v_status
+  from public.google_drive_connections where user_id = v_free;
+
+  delete from public.google_drive_connections where user_id = v_free;
+
+  reset role;
+
+  if v_status is distinct from 'revoked'::public.drive_connection_status then
+    raise exception '검사 90 실패: 서버가 Drive 연결 상태를 고치지 못했습니다.';
+  end if;
+
+  if exists (
+    select 1 from public.google_drive_connections where user_id = v_free
+  ) then
+    raise exception '검사 90 실패: 서버가 Drive 연결을 지우지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 91. Drive 연결 표에는 정책이 하나도 없다
+-- -----------------------------------------------------------------------------
+-- 이 표의 방어선은 두 겹이다.
+--
+--   첫째 겹  authenticated에 권한이 없다. 닿을 수조차 없다. (87·88)
+--   둘째 겹  RLS가 켜져 있고 **정책이 하나도 없다.**
+--
+-- 둘째 겹이 있는 이유는, 나중에 누군가 실수로 grant를 더하더라도 정책이
+-- 없으면 여전히 한 행도 보이지 않기 때문이다. **실수 한 번으로 열리지
+-- 않게 하는 장치다.**
+--
+-- 정책을 하나 더하는 순간 그 장치가 사라진다. 그런데 정책을 더하는 일은
+-- "이 표도 다른 표처럼 만들자"는 선의로 일어나기 쉽다. 여기서 막는다.
+do $$
+declare
+  v_policies integer;
+  v_rls      boolean;
+begin
+  select count(*) into v_policies
+  from pg_policies
+  where schemaname = 'public' and tablename = 'google_drive_connections';
+
+  select c.relrowsecurity into v_rls
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relname = 'google_drive_connections';
+
+  if v_policies > 0 then
+    raise exception
+      '검사 91 실패: Drive 연결 표에 정책이 %개 생겼습니다. 권한을 잘못 주는 실수가 그대로 열리게 됩니다.',
+      v_policies;
+  end if;
+
+  if not coalesce(v_rls, false) then
+    raise exception
+      '검사 91 실패: Drive 연결 표의 RLS가 꺼져 있습니다. 두 번째 방어선이 없습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -4871,6 +5142,9 @@ select
   (select count(*) from public.project_outline_nodes
     where body is not null and pg_catalog.btrim(body) <> '')            as 글_쓴_자리,
   (select count(*) from public.project_node_items)                      as 놓인_재료,
+  (select count(*) from public.google_drive_connections)                as 드라이브_연결,
+  (select count(*) from public.google_drive_connections
+    where status <> 'connected'::public.drive_connection_status)        as 손본_연결,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

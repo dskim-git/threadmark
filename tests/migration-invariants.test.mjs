@@ -90,7 +90,6 @@ const PROTECTED_TABLES = [
  * `google_drive_connections`가 특히 급하다. 이 표는 Google 토큰을 담는다.
  */
 const TABLES_WITHOUT_ISOLATION_TEST = [
-  "google_drive_connections",
   "tags",
   "source_tags",
   "capture_tags",
