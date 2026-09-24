@@ -1,7 +1,10 @@
 # ThreadMark 개인정보 처리방침 및 데이터 삭제 안내 — 초안
 
 > 작성일: 2026-09-19  
-> 상태: 개발·내부 테스트용 초안 (9절 삭제 절차는 2026-09-24 구현 내용으로 갱신)  
+> 상태: 개발·내부 테스트용 초안  
+> **공개본은 `/privacy`와 `/data-deletion`이며 글의 원본은 `src/lib/legal/content.ts`다.**
+> 이 문서는 그 글의 근거와 아직 정하지 못한 것을 적어두는 곳으로 남긴다.
+> 두 곳에 같은 글을 두지 않는다. (2026-09-24, 17-B)  
 > 운영자 표시명: ThreadMark Admin  
 > 문의: daesobi1@gmail.com  
 > 서비스 주소: https://thread-mark.vercel.app
@@ -197,14 +200,22 @@ ThreadMark는 로그인 상태 유지와 보안을 위해 필수 인증 쿠키 �
 
 ## 15. 공개 전 필수 확인 목록
 
-- `/privacy` 페이지와 `/data-deletion` 또는 이에 준하는 삭제 안내 페이지 공개 (17-B)
-- 로그인·회원가입 화면에서 개인정보 처리방침 링크 제공 (17-B)
+- [완료] `/privacy`와 `/data-deletion` 공개 (17-B)
+- [완료] 로그인 화면에서 개인정보 처리방침과 삭제 안내 링크 제공 (17-B)
 - Google Drive 권한 요청 직전에 접근 데이터와 사용 목적을 별도 화면으로 고지하고 명시적 동의 획득
 - Google OAuth 동의 화면에 홈페이지, 개인정보 처리방침 및 삭제 안내 URL 등록
-- Supabase, Vercel, Google, Anthropic 등 국외 이전·위탁 세부사항 확정
-  (6절 표에 아직 사용하지 않는 Kakao·TMDB·YouTube가 적혀 있고, 실제로 사용 중인
-  Crossref·MusicBrainz·iTunes·Cover Art Archive가 빠져 있다. 17-B에서 바로잡는다.)
-- 로그 및 백업의 실제 보유 기간 확정
+  (등록할 주소가 준비되었다: `https://thread-mark.vercel.app/privacy`,
+  `https://thread-mark.vercel.app/data-deletion`)
+- Google 앱을 `테스트 중`에서 `프로덕션`으로 올리기. 지금은 테스터로 등록한
+  사람만 로그인할 수 있고, Drive 재연결 권한이 7일 만에 만료된다고 알려져 있다
+- Supabase, Vercel, Google, Anthropic 등 국외 이전·위탁 세부사항(이전 국가·시점·
+  방법·거부 방법) 확정. **어느 곳을 쓰는지 자체는 17-B에서 바로잡았다.**
+  공개본의 목록이 `src/lib/legal/content.ts`의 `EXTERNAL_PROCESSORS`이고,
+  `tests/legal-coverage.test.mjs`가 밖으로 요청을 보내는 곳과 맞춰 본다.
+  아래 6절 표는 초안 당시의 기록이며 공개본과 다르다.
+- **로그 및 백업의 실제 보유 기간 확정.** Vercel의 런타임 로그 보관 기간과
+  Supabase 요금제의 백업 정책을 대시보드에서 확인해야 한다. 공개본 5절은
+  지금 "저희가 정하는 값이 아니라 확인해서 적겠다"고 밝혀 두었다.
 - [구현 완료, 실제 확인 필요] 계정 삭제, Drive 연결 해제, token 폐기 및 부분 실패 복구 테스트
 - 관리자 승인 모드와 자동 승인 모드 모두에 대한 권한·RLS 테스트
 - 공개 대상에 미성년자가 포함될 경우 연령과 동의 절차 추가 검토

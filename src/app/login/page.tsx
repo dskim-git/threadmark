@@ -109,6 +109,31 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               사용법 보기
             </a>
           </p>
+
+          {/*
+            방침과 삭제 안내로 가는 길. (17-B)
+
+            **로그인 화면에 있어야 한다.** 가입을 망설이는 사람이 읽고 싶은
+            글이고, 로그인 뒤에 두면 그 사람은 읽지 못한다. Google OAuth
+            동의 화면에 등록하는 주소이기도 하다.
+
+            작게 둔다. 이 화면에서 할 일은 로그인이다.
+          */}
+          <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-500">
+            <a
+              href="/privacy"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              개인정보 처리방침
+            </a>
+            {" · "}
+            <a
+              href="/data-deletion"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              계정·자료 삭제 안내
+            </a>
+          </p>
         </div>
       </main>
     </div>

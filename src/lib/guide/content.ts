@@ -120,8 +120,9 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
         notes: [
           "승인을 기다리는 동안에도 이 사용법은 볼 수 있습니다.",
           "내 자료는 나만 봅니다. 다른 사람과 나누는 기능은 아직 없습니다.",
+          "로그인 화면 아래에 **개인정보 처리방침**과 **계정·자료 삭제 안내** 링크가 있습니다. 가입 전에도 읽을 수 있습니다.",
         ],
-        routes: ["/settings"],
+        routes: ["/settings", "/privacy", "/data-deletion"],
       },
     ],
   },
