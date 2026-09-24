@@ -291,14 +291,24 @@ export default async function LibraryPage({
             <ul className="grid gap-3 sm:grid-cols-2">
               {sources.map((source) => (
                 /*
-                  별 단추는 카드를 덮는 링크 **밖에** 둔다. form을 a 안에
-                  넣으면 올바른 HTML이 아니고, 별을 누르려던 손가락이 자료
-                  상세로 가버린다. 겹쳐 놓되 형제로 둔다.
+                  **카드는 li다. 링크가 아니다.**
+
+                  별 단추와 태그 꼬리표를 링크 안에 넣을 수 없다. form을 a
+                  안에 넣는 것은 올바른 HTML이 아니고, 링크 안에 링크를 넣을
+                  수도 없다. 그렇다고 링크에 카드 모양(테두리·바탕)을 주고
+                  나머지를 그 밖에 두면, 꼬리표가 카드 바깥으로 삐져나온다.
+                  실제로 그렇게 보였다.
+
+                  그래서 카드 모양을 li가 갖고, 링크는 그 안을 채우는 한
+                  조각이 된다. 별과 태그는 같은 카드 안의 형제다.
                 */
-                <li key={source.id} className="relative">
+                <li
+                  key={source.id}
+                  className="relative flex h-full flex-col rounded-2xl border border-black/[.08] bg-white transition-colors hover:border-black/20 dark:border-white/[.145] dark:bg-zinc-950 dark:hover:border-white/30"
+                >
                   <Link
                     href={`/sources/${source.id}`}
-                    className="flex h-full flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 transition-colors hover:border-black/20 dark:border-white/[.145] dark:bg-zinc-950 dark:hover:border-white/30"
+                    className="flex flex-1 flex-col gap-3 p-5"
                   >
                     {/* 오른쪽 위 별 자리를 비워둔다. 비우지 않으면 꼬리표가 별 밑으로 들어간다. */}
                     <div className="flex flex-wrap items-center gap-2 pr-10">
@@ -329,11 +339,14 @@ export default async function LibraryPage({
                   </Link>
 
                   {/*
-                    태그는 카드를 덮는 링크 밖에 둔다. 링크 안에 링크를 넣을
-                    수 없고, 눌렀을 때 그 태그로 걸러지는 편이 쓸모 있다.
+                    태그는 링크 밖, 카드 안이다. 링크 안에 링크를 넣을 수
+                    없고, 눌렀을 때 그 태그로 걸러지는 편이 쓸모 있다.
+
+                    위 여백을 주지 않는다. 링크의 아래 여백(p-5)에 바로
+                    이어 붙어 한 덩어리로 보인다.
                   */}
                   {(sourceTags[source.id] ?? []).length > 0 ? (
-                    <div className="px-5 pb-4">
+                    <div className="-mt-2 px-5 pb-5">
                       <TagChips
                         tags={sourceTags[source.id] ?? []}
                         hrefFor={(tag) => linkTo({ tag: tag.slug })}
