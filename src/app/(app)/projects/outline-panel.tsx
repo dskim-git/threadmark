@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { HelpButton } from "@/app/(app)/help-button";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
 import { indentSteps, type OutlineItem } from "@/lib/projects/outline";
@@ -22,7 +24,11 @@ import {
  * 프로젝트 뼈대. (설계 문서 7.3절)
  *
  * **재료를 모으는 쪽과 만드는 쪽 중 만드는 쪽이다.** 자리를 만들고 그 자리에
- * 쓸 글을 적는다. 자리마다 재료를 놓는 일은 19-B에서 붙인다.
+ * 쓸 글을 적고, 모아둔 재료를 그 자리에 놓는다. (19-B)
+ *
+ * **이 칸은 고치는 곳이다.** 그래서 자리가 접혀 있고, 펼치면 그 안이 통째로
+ * 고치는 칸이다. 대신 전체가 어떻게 이어지는지는 여기서 볼 수 없다.
+ * 그것은 조망이 한다. (`[id]/outline/page.tsx`, 19-C)
  *
  * **자바스크립트 없이 움직인다.** 자리 하나가 폼 하나이고, 단추는 전부
  * Server Action을 부른다. 접었다 펴는 것은 `details`가 한다.
@@ -92,6 +98,24 @@ export function OutlinePanel({
         <span className="text-xs text-zinc-500">
           {items.length > 0 ? `자리 ${items.length}개` : null}
         </span>
+
+        {/*
+          조망으로 가는 길. (19-C)
+
+          **자리가 있을 때만 보여준다.** 뼈대가 비어 있는데 "전체를 한눈에"를
+          누르면 빈 화면이 나오고, 그것은 고장처럼 보인다.
+
+          여기 두는 이유는 이 칸이 곧 조망이 보여줄 것이기 때문이다. 화면
+          맨 위에 두면 무엇을 조망하는 것인지가 흐려진다.
+        */}
+        {items.length > 0 ? (
+          <Link
+            href={`/projects/${projectId}/outline`}
+            className="ml-auto h-8 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-3 text-xs font-medium leading-8 text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+          >
+            조망 열기
+          </Link>
+        ) : null}
       </div>
 
       {items.length === 0 ? (
@@ -106,10 +130,21 @@ export function OutlinePanel({
             <li
               key={item.id}
               /*
+                조망에서 `고치기`로 돌아오는 자리. (19-C)
+
+                **어느 카드인지 찾지 않아도 된다.** 자리가 스물이면 그 찾는
+                일이 고치는 일보다 오래 걸린다. 카드가 접혀 있어 한 번 더
+                눌러야 펼쳐지는데, 그것까지 열어주려면 브라우저 쪽 코드가
+                필요하고 **이 칸은 자바스크립트 없이 움직여야 한다.**
+              */
+              id={`node-${item.id}`}
+              /*
                 들여쓰기를 여백으로 준다. 감싸는 칸을 겹치지 않는다.
                 겹치면 깊은 자리가 좁은 화면에서 글자 한 줄 너비가 된다.
               */
               style={{ marginLeft: `${indentSteps(item.depth) * 1.25}rem` }}
+              // 머리말에 가려 카드 위쪽이 잘리지 않게 자리를 띄워 멈춘다.
+              className="scroll-mt-24"
             >
               <details className="rounded-2xl border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950">
                 <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
@@ -178,7 +213,12 @@ export function OutlinePanel({
                         rows={8}
                         maxLength={50000}
                         defaultValue={item.body ?? ""}
-                        placeholder="이 자리에서 할 말을 적습니다. 모아둔 재료는 19-B에서 여기 붙입니다."
+                        /*
+                          단계 번호를 사용자에게 보이지 않는다. `19-B`는
+                          우리끼리 쓰는 말이고, 읽는 사람에게는 무슨 소린지
+                          알 수 없는 글자다. 이미 만든 기능이기도 하다.
+                        */
+                        placeholder="이 자리에서 할 말을 적습니다. 아래에서 모아둔 재료를 이 자리에 놓을 수 있습니다."
                         className="w-full rounded-lg border border-black/[.08] bg-white px-3 py-2 text-sm leading-7 text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
                       />
                     </label>
