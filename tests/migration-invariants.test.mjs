@@ -52,6 +52,23 @@ const PROTECTED_TABLES = [
   "paper_project_uses",
   "source_relations",
   "google_drive_connections",
+  /*
+    아래 일곱은 2026-09-24에 더했다. **이 목록이 뒤처져 있었다.**
+
+    태그·웹사이트·음악 표를 만들 때 이 목록에 넣는 것을 잊었고, 그동안
+    그 표들은 "RLS가 켜져 있는가"를 아무도 확인하지 않은 채 있었다.
+    실제로는 켜져 있었지만, 확인하지 않은 것과 켜져 있는 것은 다르다.
+
+    **표를 새로 만들면 여기에 이름을 더한다.** 이 줄을 읽고 있다면 그 일을
+    지금 한다.
+  */
+  "tags",
+  "source_tags",
+  "capture_tags",
+  "website_profiles",
+  "music_profiles",
+  "music_provider_links",
+  "book_profiles",
 ];
 
 /**

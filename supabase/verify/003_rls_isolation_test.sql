@@ -3639,6 +3639,154 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 69. 다른 사용자의 자료에 책 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키 제약은 RLS를 보지 않는다. 자료 id만 알면 남의 책에 내 읽기 기록을
+-- 붙일 수 있게 된다. set_book_profile_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'book'::public.source_type, 'RLS 격리 검사용 임시 책')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.book_profiles (source_id, publisher)
+    values (v_source, '남의 자료에 붙인 출판사');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.book_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 69 실패: 다른 사용자의 자료에 책 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 70. 소유자는 자기 책에 정보를 붙이고 읽을 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다. (보안 원칙 6)
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_read   text;
+  v_status public.book_reading_status;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'book'::public.source_type, 'RLS 격리 검사용 내 책')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.book_profiles (source_id, publisher, reading_status)
+  values (v_source, '내가 적은 출판사', 'reading'::public.book_reading_status);
+
+  select publisher, reading_status into v_read, v_status
+  from public.book_profiles where source_id = v_source;
+
+  reset role;
+
+  delete from public.book_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_read is distinct from '내가 적은 출판사' then
+    raise exception '검사 70 실패: 자기 책의 정보를 읽지 못했습니다.';
+  end if;
+
+  if v_status is distinct from 'reading'::public.book_reading_status then
+    raise exception '검사 70 실패: 읽기 상태가 저장되지 않았습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 71. 읽은 쪽이 전체 쪽수를 넘을 수 없다
+-- -----------------------------------------------------------------------------
+-- 넘는 값은 두 칸 중 하나를 잘못 적었다는 뜻이다. 조용히 받아두면 사용자가
+-- 고칠 기회를 잃는다. 화면도 막지만 데이터베이스에서도 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'book'::public.source_type, 'RLS 격리 검사용 쪽수 책')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.book_profiles (source_id, total_pages, current_page)
+    values (v_source, 300, 400);
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.book_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception '검사 71 실패: 읽은 쪽이 전체 쪽수를 넘을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -3671,6 +3819,9 @@ select
   (select count(*) from public.paper_project_uses
     where status = 'used'::public.paper_use_status)                     as 원고에_넣음,
   (select count(*) from public.source_relations)                        as 자료_관계,
+  (select count(*) from public.book_profiles)                           as 책_정보,
+  (select count(*) from public.book_profiles
+    where reading_status = 'finished'::public.book_reading_status)      as 다_읽은_책,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

@@ -70,8 +70,12 @@ export type ExternalProcessor = {
  * 지금 **실제로** 쓰는 곳만 적는다.
  *
  * 쓸 예정인 곳을 미리 적지 않는다. 적어두면 "이미 거기로 보내고 있나"를
- * 읽는 사람이 알 수 없게 된다. YouTube·TMDB·Kakao는 아직 쓰지 않으므로 없다.
+ * 읽는 사람이 알 수 없게 된다. YouTube와 TMDB는 아직 쓰지 않으므로 없다.
  * 쓰게 되는 단계에서 이 표에 줄을 더한다.
+ *
+ * Kakao는 15-E-2a(책)에서 더했다. **검사가 먼저 붙잡았다.** 헤더 묶음에
+ * `kakao`를 넣자마자 `npm test`가 "이 연동이 방침에 없다"며 실패했다.
+ * 만든 지 얼마 안 된 장치가 첫 실전에서 제 일을 했다.
  */
 export const EXTERNAL_PROCESSORS: readonly ExternalProcessor[] = [
   {
@@ -98,6 +102,12 @@ export const EXTERNAL_PROCESSORS: readonly ExternalProcessor[] = [
     name: "Crossref",
     role: "DOI나 제목으로 논문의 서지 정보를 가져옵니다.",
     data: "입력한 DOI 또는 논문 제목",
+  },
+  {
+    name: "Kakao",
+    role: "제목이나 ISBN으로 책 정보를 찾습니다.",
+    data: "찾으려는 책 제목 또는 ISBN",
+    headerSet: "kakao",
   },
   {
     name: "MusicBrainz",

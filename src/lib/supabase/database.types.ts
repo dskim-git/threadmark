@@ -74,6 +74,86 @@ export type Database = {
         }
         Relationships: []
       }
+      book_profiles: {
+        Row: {
+          authors: string[]
+          created_at: string
+          current_page: number | null
+          fetched_at: string | null
+          finished_on: string | null
+          holding: Database["public"]["Enums"]["book_holding"] | null
+          id: string
+          isbn10: string | null
+          isbn13: string | null
+          metadata_source: string | null
+          owner_id: string
+          published_on: string | null
+          publisher: string | null
+          reading_status: Database["public"]["Enums"]["book_reading_status"]
+          source_id: string
+          started_on: string | null
+          total_pages: number | null
+          translators: string[]
+          updated_at: string
+          verdict: string | null
+          why_chosen: string | null
+        }
+        Insert: {
+          authors?: string[]
+          created_at?: string
+          current_page?: number | null
+          fetched_at?: string | null
+          finished_on?: string | null
+          holding?: Database["public"]["Enums"]["book_holding"] | null
+          id?: string
+          isbn10?: string | null
+          isbn13?: string | null
+          metadata_source?: string | null
+          owner_id?: string
+          published_on?: string | null
+          publisher?: string | null
+          reading_status?: Database["public"]["Enums"]["book_reading_status"]
+          source_id: string
+          started_on?: string | null
+          total_pages?: number | null
+          translators?: string[]
+          updated_at?: string
+          verdict?: string | null
+          why_chosen?: string | null
+        }
+        Update: {
+          authors?: string[]
+          created_at?: string
+          current_page?: number | null
+          fetched_at?: string | null
+          finished_on?: string | null
+          holding?: Database["public"]["Enums"]["book_holding"] | null
+          id?: string
+          isbn10?: string | null
+          isbn13?: string | null
+          metadata_source?: string | null
+          owner_id?: string
+          published_on?: string | null
+          publisher?: string | null
+          reading_status?: Database["public"]["Enums"]["book_reading_status"]
+          source_id?: string
+          started_on?: string | null
+          total_pages?: number | null
+          translators?: string[]
+          updated_at?: string
+          verdict?: string | null
+          why_chosen?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "book_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       capture_projects: {
         Row: {
           capture_id: string
@@ -1078,6 +1158,7 @@ export type Database = {
         Args: { p_owner_id: string; p_tag_id: string }
         Returns: undefined
       }
+      book_names_valid: { Args: { value: string[] }; Returns: boolean }
       count_admins: { Args: never; Returns: number }
       is_active_user: { Args: { check_user_id?: string }; Returns: boolean }
       is_admin: { Args: { check_user_id?: string }; Returns: boolean }
@@ -1092,6 +1173,8 @@ export type Database = {
     }
     Enums: {
       app_role: "admin"
+      book_holding: "paper" | "ebook" | "borrowed"
+      book_reading_status: "unread" | "reading" | "finished"
       capture_type:
         | "quote"
         | "translation"
@@ -1267,6 +1350,8 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin"],
+      book_holding: ["paper", "ebook", "borrowed"],
+      book_reading_status: ["unread", "reading", "finished"],
       capture_type: [
         "quote",
         "translation",

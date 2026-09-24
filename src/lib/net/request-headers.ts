@@ -49,6 +49,23 @@ export const ITUNES_REQUEST_HEADERS: Record<string, string> = {
 };
 
 /**
+ * Kakao에 책을 물을 때. (설계 문서 12절)
+ *
+ * **열쇠는 여기 없다.** Kakao는 `Authorization: KakaoAK <키>`를 요구하는데,
+ * 그 값은 비밀이고 환경변수에서 읽어 부를 때 붙인다. 비밀값이 이 파일에
+ * 들어오면 검사가 훑는 목록에 비밀이 섞이고, 실수로 어딘가 찍히기 쉬워진다.
+ *
+ * 그래도 이 묶음을 여기 두는 이유가 있다. **비밀이 아닌 헤더도 ASCII 검사를
+ * 받아야 하고**, 개인정보 처리방침이 이 목록과 맞춰지기 때문이다.
+ * (`tests/legal-coverage.test.mjs`) 밖으로 요청을 보내는 곳을 늘리면서
+ * 방침에 적는 것을 잊지 않게 하는 장치다.
+ */
+export const KAKAO_REQUEST_HEADERS: Record<string, string> = {
+  "user-agent": USER_AGENT,
+  accept: "application/json",
+};
+
+/**
  * 검사가 훑는 목록.
  *
  * **새 헤더 묶음을 만들면 여기에도 넣는다.** 넣지 않으면 그것만 검사를
@@ -58,4 +75,5 @@ export const OUTGOING_HEADER_SETS: Record<string, Record<string, string>> = {
   website: WEBSITE_REQUEST_HEADERS,
   musicbrainz: MUSICBRAINZ_REQUEST_HEADERS,
   itunes: ITUNES_REQUEST_HEADERS,
+  kakao: KAKAO_REQUEST_HEADERS,
 };

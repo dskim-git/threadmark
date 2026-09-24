@@ -274,6 +274,29 @@ PDF worker와 논문 분석 서른 칸을 이미 그렇게 지키고 있다.
 값이 아니라서, 공개본에 "확인해서 적겠다"고 밝혀 두었다. 그럴듯한 숫자를 적는
 것이 가장 나쁘다.
 
+### 검사가 부르는 모듈은 잎사귀로 둔다 (2026-09-24, 17-B·15-E-2a)
+
+`npm test`는 `node --test`로 돈다. **`@/` 별칭도, 확장자 없는 상대 경로도
+풀지 못한다.** 그래서 단위 검사가 부르는 모듈은 **아무것도 import하지 않거나
+타입만 import해야** 한다.
+
+같은 자리에 두 번 걸렸다. 방침 글에서 헤더 묶음을 불러오려다 한 번,
+책 정보를 다듬는 함수를 Kakao 모듈에 두었다가 또 한 번이다.
+
+되돌리고 보니 그것이 원래 맞는 모양이었다. `request-headers.ts`가 "이 파일에
+다른 것을 import하지 않는다. 검사가 이 값만 따로 들여다볼 수 있어야 한다"고
+이미 적어두고 있었다.
+
+**맞춰 보는 일은 검사가 한다.** 규칙을 담은 잎사귀를 따로 두고, 두 잎사귀를
+견주는 것은 검사 파일이 맡는다. 밖에서 온 값을 다듬는 규칙(`books/metadata.ts`)을
+따로 뺀 것도 같은 이유다. 그 규칙이 문이고, 문은 떼어 볼 수 있어야 한다.
+
+### Supabase 조회에서 고르는 칸을 변수로 빼지 않는다 (2026-09-24, 15-E-2a)
+
+`select("a, b, c")`의 글자를 타입이 **그대로 읽어** 돌아올 모양을 정한다.
+상수에 담아 넘기면 그냥 `string`이 되고, 돌아온 값의 타입이 통째로 무너져
+`GenericStringError`가 줄줄이 난다. 길어도 그 자리에 적는다.
+
 ### 설계 문서에 값이 없을 때
 
 열거형 값이 정의되어 있지 않으면 **지금 쓰이는 값 하나만** 만들고 주석에 이유를 남긴다.
@@ -297,7 +320,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 715개
+npm test          # node --test, 741개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -309,7 +332,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 ## 4. 현재 상태
 
 전체 개발 순서 중 **15-A~15-G까지 완료**(15-E-2만 남음), MVP 목록을 모두 채웠다.
-이어서 **17단계(개인정보·계정 삭제)까지 완료**했다.
+이어서 **17단계(개인정보·계정 삭제)와 15-E-2a(책)까지 완료**했다.
 
 | 단계 | 블루프린트 23절 | 상태 |
 | --- | --- | --- |
@@ -342,7 +365,9 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 15-C. 웹사이트 자료 (11절) | MVP | 완료 |
 | 15-D. 음악 수동 등록 (13절) | MVP | 완료 |
 | 15-E. 음악 자동 메타데이터 (MusicBrainz·iTunes, 13.3절) | Phase 6 | 완료 |
-| 15-E-2. 그 밖의 자동 메타데이터 (YouTube·TMDB·Kakao) | Phase 6 | 예정 |
+| 15-E-2a. 책과 읽기 기록 (Kakao, 12절) | Phase 6 | 완료 |
+| 15-E-2b. YouTube 영상 (14절) | Phase 6 | 예정 |
+| 15-E-2c. 영화·드라마 (TMDB, 15절) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17-A. 계정과 자료 지우기 (`/account/delete`) | | 완료 |
 | 17-B. 개인정보 처리방침·삭제 안내 화면 (`/privacy`, `/data-deletion`) | | 완료 |
@@ -984,10 +1009,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (715개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (741개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (68검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (71검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 새 표를 만들면 여기에
 격리 검사를 추가하고, `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`에도
