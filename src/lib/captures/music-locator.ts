@@ -4,7 +4,7 @@ import { z } from "zod";
   상대 경로에 확장자를 붙인다. Node 테스트 러너는 `@/` 별칭을 모르고
   확장자도 요구한다. 순수 모듈끼리는 이렇게 잇는다. (AGENTS.md 6절)
 */
-import { MAX_POSITION_SECONDS, formatRange } from "../music/time.ts";
+import { MAX_POSITION_SECONDS, formatRange } from "../media/time.ts";
 
 /**
  * 음악 기록의 자리. (설계 문서 13.4절)

@@ -123,8 +123,10 @@ export const EXTERNAL_PROCESSORS: readonly ExternalProcessor[] = [
   },
   {
     name: "YouTube (Google)",
-    role: "영상 주소로 제목·채널·길이를 가져옵니다.",
-    data: "담으려는 영상의 번호. 계정 정보는 보내지 않습니다",
+    role:
+      "영상 주소로 제목·채널·길이를 가져오고, 담은 영상을 앱 안에서 재생합니다.",
+    data:
+      "담으려는 영상의 번호. 재생할 때는 브라우저가 YouTube에 직접 연결하므로 접속 기록이 YouTube에 남습니다. 쿠키를 덜 남기는 youtube-nocookie.com으로 연결합니다. 계정 정보는 보내지 않습니다",
     headerSet: "youtube",
   },
   {

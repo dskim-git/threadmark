@@ -10,7 +10,7 @@ import { MUSIC_TIME_KIND, MAX_MUSIC_LABEL_LENGTH } from "@/lib/captures/music-lo
 import { MAX_TEXT_LENGTH } from "@/lib/captures/schema";
 import { checkProviderLink } from "@/lib/music/providers";
 import { lookupMusic, type LookupResult } from "@/lib/music/lookup";
-import { MAX_POSITION_SECONDS, checkRange } from "@/lib/music/time";
+import { MAX_POSITION_SECONDS, checkRange } from "@/lib/media/time";
 import { MAX_TITLE_LENGTH, formValue } from "@/lib/sources/schema";
 import { createClient } from "@/lib/supabase/server";
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { HelpButton } from "@/app/(app)/help-button";
 import type { MusicCandidate } from "@/lib/music/candidates";
-import { formatPosition } from "@/lib/music/time";
+import { formatPosition } from "@/lib/media/time";
 import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 
 import {

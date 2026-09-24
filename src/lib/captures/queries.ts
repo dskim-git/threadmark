@@ -7,6 +7,10 @@ import {
 } from "./music-locator";
 import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
 import {
+  parseVideoTimeLocator,
+  type VideoTimeLocator,
+} from "./video-locator";
+import {
   isCaptureType,
   isVerificationStatus,
   type CaptureType,
@@ -50,6 +54,14 @@ export type Capture = {
    * 둘이 함께 있을 수는 없다. `kind`가 하나뿐이기 때문이다.
    */
   musicLocation: MusicTimeLocator | null;
+  /**
+   * 영상에서 온 기록의 자리. (설계 문서 6.3절, 14절)
+   *
+   * 음악과 같은 칸에서 읽지만 `kind`가 달라 섞이지 않는다. 나눠 둔 이유는
+   * 화면이 **무엇을 할지가 다르기** 때문이다. 영상은 눌러서 그 시점으로
+   * 건너뛸 수 있고 음악은 그렇지 않다. (video-locator.ts)
+   */
+  videoLocation: VideoTimeLocator | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -104,6 +116,7 @@ function toCapture(row: CaptureRow): Capture[] {
       // locator는 JSONB라 무엇이든 들어갈 수 있다. 읽는 쪽이 모양을 확인한다.
       pdfLocation: parsePdfLocator(row.locator),
       musicLocation: parseMusicTimeLocator(row.locator),
+      videoLocation: parseVideoTimeLocator(row.locator),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     },

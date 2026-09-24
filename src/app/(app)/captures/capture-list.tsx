@@ -6,6 +6,7 @@ import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { PlacedWhere } from "@/app/(app)/projects/placed-where";
 import type { Capture } from "@/lib/captures/queries";
 import { describeMusicTime } from "@/lib/captures/music-locator";
+import { VideoTimeChip } from "./video-time-chip";
 import { describeLocatorPages } from "@/lib/captures/pdf-locator";
 import { locatorIsStale } from "@/lib/drive/file-check";
 import {
@@ -42,6 +43,7 @@ export function CaptureList({
   fileChecksums,
   captureTags,
   allTags,
+  videoSeekable = false,
 }: {
   captures: Capture[];
   returnTo: string;
@@ -64,6 +66,14 @@ export function CaptureList({
   captureTags?: Record<string, Tag[]>;
   /** 내가 쓴 태그 전부. */
   allTags?: readonly Tag[];
+  /**
+   * 영상 시점을 눌러 이동할 수 있는가. (설계 문서 14절)
+   *
+   * 같은 화면에 재생기가 떠 있을 때만 참이다. **없는데 누를 수 있게 해두면
+   * 눌러야만 아무 일도 없다는 것을 알게 된다.** 음악의 시점 표시를 누를 수
+   * 없게 둔 것과 같은 판단이다.
+   */
+  videoSeekable?: boolean;
 }) {
   if (captures.length === 0) {
     return (
@@ -116,6 +126,18 @@ export function CaptureList({
                 <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
                   {describeMusicTime(capture.musicLocation)}
                 </span>
+              ) : null}
+
+              {/*
+                영상 시점. 음악과 달리 **누르면 그 시점으로 건너뛴다.**
+                우리가 틀 수 있는 재생기가 같은 화면에 있기 때문이다.
+                재생기가 없는 화면에서는 보여주기만 한다. (14절)
+              */}
+              {capture.videoLocation ? (
+                <VideoTimeChip
+                  location={capture.videoLocation}
+                  seekable={videoSeekable}
+                />
               ) : null}
 
               {/*

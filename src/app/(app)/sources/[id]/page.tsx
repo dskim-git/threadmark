@@ -69,6 +69,7 @@ import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
 import { BookPanel } from "../book-panel";
 import { YoutubePanel } from "../youtube-panel";
+import { YoutubePlayer } from "../youtube-player";
 import { MusicPanel } from "../music-panel";
 import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
@@ -535,6 +536,22 @@ export default async function SourceDetailPage({
       ) : null}
 
       {/*
+        재생기. 영상 정보를 담은 뒤에만 나온다. (설계 문서 14절)
+
+        **정보 칸보다 아래에 둔다.** 처음 담을 때는 주소를 넣는 일이 먼저고,
+        그 뒤로는 보는 일이 잦다. 다만 재생기를 위로 올리면 처음 온 사람이
+        빈 재생기부터 보게 되므로, 순서는 담는 흐름을 따른다.
+      */}
+      {source.type === "youtube" && youtubeProfile ? (
+        <YoutubePlayer
+          sourceId={source.id}
+          videoId={youtubeProfile.videoId}
+          embeddable={youtubeProfile.embeddable}
+          returnTo={returnTo}
+        />
+      ) : null}
+
+      {/*
         웹사이트 정보. 웹사이트 유형일 때만 보여준다. (설계 문서 11.1절)
 
         **언제 받아온 값인지 함께 적는다.** 웹페이지는 바뀐다. 그 말이 없으면
@@ -994,6 +1011,14 @@ export default async function SourceDetailPage({
           projects={allProjects}
           captureTags={captureTags}
           allTags={allTags}
+          /*
+            영상 시점을 눌러 이동할 수 있는 것은 **재생기가 떠 있을 때뿐이다.**
+            퍼가기가 막힌 영상에서는 누를 재생기가 없어서, 눌러야만 아무 일도
+            없다는 것을 알게 된다. (설계 문서 14절)
+          */
+          videoSeekable={
+            source.type === "youtube" && youtubeProfile?.embeddable === true
+          }
           /*
             기록에 적힌 checksum과 지금 파일의 checksum을 견주어
             "위치가 달라졌을 수 있음"을 표시한다. (설계 문서 9.2절)

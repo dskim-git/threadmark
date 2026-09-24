@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { VIDEO_TIME_KIND } from "@/lib/captures/video-locator";
+import { MAX_POSITION_SECONDS } from "@/lib/media/time";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
 import { MAX_TITLE_LENGTH, formValue } from "@/lib/sources/schema";
 import { createClient } from "@/lib/supabase/server";
@@ -205,4 +207,96 @@ export async function saveVideoProfile(formData: FormData): Promise<void> {
   revalidatePath("/library");
 
   redirectWithQuery(returnTo, { notice: "영상 정보를 저장했습니다." });
+}
+
+const momentSchema = z.object({
+  sourceId: z.string().uuid(),
+  /**
+   * 재생기가 잡아 준 시점(초).
+   *
+   * 사람이 치는 칸이 아니다. **그래도 믿지 않는다.** 브라우저에서 온 값은
+   * 브라우저에서 고칠 수 있다.
+   */
+  startSeconds: z
+    .string()
+    .trim()
+    .min(1, "먼저 `지금 시점 담기`를 눌러 주세요.")
+    .transform((value) => Number(value))
+    .refine(
+      (value) =>
+        Number.isInteger(value) && value >= 0 && value <= MAX_POSITION_SECONDS,
+      { message: "시점을 확인해 주세요." },
+    ),
+  content: z
+    .string()
+    .trim()
+    .min(1, "이 대목에 남길 말을 적어 주세요.")
+    .max(5000),
+  returnTo: z.string(),
+});
+
+/**
+ * 보던 시점에 기록을 남긴다. (설계 문서 14절)
+ *
+ * **여기가 이 기능의 값어치다.** 영상을 담아두기만 하는 것은 즐겨찾기와
+ * 다르지 않다. 보다가 "여기다" 싶은 순간에 그 자리에서 한 줄 남길 수
+ * 있어야 나중에 그 대목으로 돌아온다.
+ *
+ * 담는 곳은 `captures.locator`다. 새 표를 만들지 않는다. PDF의 자리와
+ * 음악의 시점이 이미 그 칸을 쓰고 있고, `kind`로 갈린다. (6.3절)
+ */
+export async function captureVideoMoment(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const parsed = momentSchema.safeParse({
+    sourceId: formValue(formData.get("sourceId")),
+    startSeconds: formValue(formData.get("startSeconds")),
+    content: formValue(formData.get("content")),
+    returnTo: formValue(formData.get("returnTo")),
+  });
+
+  if (!parsed.success) {
+    const fallback = sanitizeNextPath(formValue(formData.get("returnTo"))) ?? "/library";
+
+    redirectWithQuery(fallback, {
+      error: parsed.error.issues[0]?.message ?? "적어주신 내용을 확인해 주세요.",
+    });
+  }
+
+  const values = parsed.data;
+  const returnTo = sanitizeNextPath(values.returnTo) ?? "/library";
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    source_id: values.sourceId,
+    /*
+      영상을 보며 남기는 말은 **내가 쓴 글**이다. 원문을 옮긴 것이 아니다.
+      인용이 아니므로 `note`다. (설계 문서 2.4절)
+    */
+    capture_type: "note",
+    content: values.content,
+    locator: {
+      kind: VIDEO_TIME_KIND,
+      startSeconds: values.startSeconds,
+      /*
+        끝은 담지 않는다. 재생기를 보다가 누르는 것이 주된 쓰임이고, 그때
+        끝을 정하려면 끝날 때까지 기다려야 한다. 그 기다림이 기록을 남기지
+        않게 만든다. (video-locator.ts)
+      */
+      endSeconds: null,
+    },
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 영상 시점 기록 실패:", error.message);
+
+    redirectWithQuery(returnTo, {
+      error: "기록하지 못했습니다. 잠시 뒤에 다시 눌러 주세요.",
+    });
+  }
+
+  revalidatePath(returnTo.split(/[?#]/, 1)[0] || "/");
+
+  redirectWithQuery(returnTo, { notice: "그 시점에 기록을 남겼습니다." });
 }

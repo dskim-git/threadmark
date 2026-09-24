@@ -21,7 +21,7 @@ import {
   formatPosition,
   formatRange,
   parsePosition,
-} from "../src/lib/music/time.ts";
+} from "../src/lib/media/time.ts";
 
 // -----------------------------------------------------------------------------
 // 읽기
