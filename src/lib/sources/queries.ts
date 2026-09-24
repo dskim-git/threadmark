@@ -24,7 +24,7 @@ import {
  */
 
 const LIST_COLUMNS =
-  "id, type, status, starred, title, subtitle, original_url, created_at, updated_at";
+  "id, type, status, starred, title, subtitle, original_url, thumbnail_url, created_at, updated_at";
 
 const DETAIL_COLUMNS =
   "id, type, status, starred, title, subtitle, description, original_url, canonical_url, thumbnail_url, created_at, updated_at";
@@ -39,14 +39,19 @@ export type SourceListItem = {
   title: string;
   subtitle: string | null;
   originalUrl: string | null;
+  /**
+   * 대표 그림. 책 표지, 앨범 표지, 웹페이지의 대표 이미지가 여기 온다.
+   *
+   * 목록에서도 쓴다. 담아둔 것이 늘어나면 제목만으로는 눈에 걸리지 않는데,
+   * **표지는 글자보다 먼저 보인다.**
+   */
+  thumbnailUrl: string | null;
   createdAt: string;
 };
 
 export type SourceDetail = SourceListItem & {
   description: string | null;
   canonicalUrl: string | null;
-  /** 대표 그림. 웹사이트의 OG 이미지나 음악의 앨범 표지가 여기 온다. */
-  thumbnailUrl: string | null;
   updatedAt: string;
 };
 
@@ -120,6 +125,7 @@ export async function listSources(
             title: row.title,
             subtitle: row.subtitle,
             originalUrl: row.original_url,
+            thumbnailUrl: row.thumbnail_url,
             createdAt: row.created_at,
           },
         ]

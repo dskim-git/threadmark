@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { AutoNotice } from "@/app/(app)/auto-notice";
 import { HelpButton } from "@/app/(app)/help-button";
+import { SourceThumb } from "@/app/(app)/source-thumb";
 import { StarButton } from "@/app/(app)/star-button";
 import { TagChips } from "@/app/(app)/tag-editor";
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -318,35 +319,49 @@ export default async function LibraryPage({
                   key={source.id}
                   className="relative flex h-full flex-col rounded-2xl border border-black/[.08] bg-white transition-colors hover:border-black/20 dark:border-white/[.145] dark:bg-zinc-950 dark:hover:border-white/30"
                 >
+                  {/*
+                    표지가 있으면 왼쪽에 둔다.
+
+                    **글자보다 먼저 보인다.** 담아둔 것이 늘어나면 제목만으로는
+                    눈에 걸리지 않는데, 읽던 책의 표지는 한눈에 알아본다.
+
+                    없으면 자리를 만들지 않는다. 논문과 메모에는 표지라는
+                    것이 아예 없어서, 빈 상자를 늘어놓으면 그것이 곧 잡음이
+                    된다. 글이 그 자리를 그대로 쓴다. (source-thumb.tsx)
+                  */}
                   <Link
                     href={`/sources/${source.id}`}
-                    className="flex flex-1 flex-col gap-3 p-5"
+                    className="flex flex-1 gap-4 p-5"
                   >
-                    {/* 오른쪽 위 별 자리를 비워둔다. 비우지 않으면 꼬리표가 별 밑으로 들어간다. */}
-                    <div className="flex flex-wrap items-center gap-2 pr-10">
-                      <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
-                        {getSourceTypeLabel(source.type)}
+                    <SourceThumb url={source.thumbnailUrl} />
+
+                    <span className="flex min-w-0 flex-1 flex-col gap-3">
+                      {/* 오른쪽 위 별 자리를 비워둔다. 비우지 않으면 꼬리표가 별 밑으로 들어간다. */}
+                      <span className="flex flex-wrap items-center gap-2 pr-10">
+                        <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300">
+                          {getSourceTypeLabel(source.type)}
+                        </span>
+                        {isReadingCandidate(source.status) ? (
+                          <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
+                            읽을 후보
+                          </span>
+                        ) : null}
                       </span>
-                      {isReadingCandidate(source.status) ? (
-                        <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
-                          읽을 후보
+
+                      {/* 제목은 두 줄까지. 논문 제목은 길어서 자르지 않으면 칸이 들쭉날쭉해진다. */}
+                      <span className="line-clamp-2 text-base leading-7 text-black dark:text-zinc-50">
+                        {source.title}
+                      </span>
+
+                      {source.subtitle ? (
+                        <span className="line-clamp-1 text-sm text-zinc-600 dark:text-zinc-400">
+                          {source.subtitle}
                         </span>
                       ) : null}
-                    </div>
 
-                    {/* 제목은 두 줄까지. 논문 제목은 길어서 자르지 않으면 칸이 들쭉날쭉해진다. */}
-                    <span className="line-clamp-2 text-base leading-7 text-black dark:text-zinc-50">
-                      {source.title}
-                    </span>
-
-                    {source.subtitle ? (
-                      <span className="line-clamp-1 text-sm text-zinc-600 dark:text-zinc-400">
-                        {source.subtitle}
+                      <span className="mt-auto text-xs text-zinc-500">
+                        {formatDate(source.createdAt)}
                       </span>
-                    ) : null}
-
-                    <span className="mt-auto text-xs text-zinc-500">
-                      {formatDate(source.createdAt)}
                     </span>
                   </Link>
 
