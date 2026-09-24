@@ -1,16 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AutoNotice } from "@/app/(app)/auto-notice";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { listProjects } from "@/lib/projects/queries";
-
-import { createProject } from "./actions";
-import { ProjectForm } from "./project-form";
 
 export const metadata: Metadata = {
   title: "프로젝트 · ThreadMark",
   description: "자료를 활용하는 목적 단위를 관리합니다.",
 };
+
+/**
+ * 프로젝트 목록. (설계 문서 21절의 `/projects`)
+ *
+ * 만드는 폼은 이 화면에 두지 않는다. `/projects/new`가 맡는다.
+ * 여기 오는 일은 대부분 만들려고가 아니라 들어가려고이고, 늘 펼쳐진 폼이
+ * 그 목록을 화면 위쪽 한 조각으로 밀어내고 있었다.
+ */
 
 export default async function ProjectsPage({
   searchParams,
@@ -25,14 +31,27 @@ export default async function ProjectsPage({
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          프로젝트
-        </h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          같은 자료도 목적에 따라 다르게 쓰입니다. 논문, 수업, 연수처럼 쓰임새를
-          기준으로 묶습니다.
-        </p>
+      {/*
+        만드는 길은 목록 위, 오른쪽에 둔다. 내 자료 화면의 `자료 담기`와
+        같은 자리다. 화면마다 다른 곳에 있으면 그때마다 찾아야 한다.
+      */}
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            프로젝트
+          </h1>
+          <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            같은 자료도 목적에 따라 다르게 쓰입니다. 논문, 수업, 연수처럼
+            쓰임새를 기준으로 묶습니다.
+          </p>
+        </div>
+
+        <Link
+          href="/projects/new"
+          className="h-11 shrink-0 rounded-full bg-zinc-900 px-6 text-sm font-medium leading-[2.75rem] text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+        >
+          새 프로젝트 만들기
+        </Link>
       </header>
 
       {error ? (
@@ -45,12 +64,7 @@ export default async function ProjectsPage({
       ) : null}
 
       {notice ? (
-        <p
-          role="status"
-          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
-        >
-          {notice}
-        </p>
+        <AutoNotice>{notice}</AutoNotice>
       ) : null}
 
       <section className="flex flex-col gap-3">
@@ -93,30 +107,10 @@ export default async function ProjectsPage({
           </ul>
         ) : (
           <p className="rounded-2xl bg-zinc-50 px-6 py-8 text-center text-sm text-zinc-500 dark:bg-white/[.04]">
-            아직 프로젝트가 없습니다. 아래에서 하나 만들어 보세요.
+            아직 프로젝트가 없습니다. 오른쪽 위 새 프로젝트 만들기로 시작해
+            보세요.
           </p>
         )}
-      </section>
-
-      <section className="rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">
-        <h2 className="mb-4 text-sm font-medium text-black dark:text-zinc-50">
-          새 프로젝트
-        </h2>
-        <ProjectForm
-          action={createProject}
-          submitLabel="만들기"
-          cancelHref="/home"
-          values={{
-            name: "",
-            projectType: "",
-            description: "",
-            researchQuestion: "",
-            targetOutput: "",
-            startDate: "",
-            endDate: "",
-            color: "",
-          }}
-        />
       </section>
     </div>
   );

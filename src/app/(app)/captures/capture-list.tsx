@@ -13,7 +13,8 @@ import {
 } from "@/lib/translation/types";
 import type { ProjectChip } from "@/lib/projects/queries";
 
-import { deleteCapture } from "./actions";
+import { StarButton } from "../star-button";
+import { deleteCapture, toggleCaptureStar } from "./actions";
 
 /**
  * 기록 목록.
@@ -104,9 +105,23 @@ export function CaptureList({
               ) : null}
             </div>
 
-            <span className="text-xs text-zinc-500">
-              {formatDateTime(capture.createdAt)}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-zinc-500">
+                {formatDateTime(capture.createdAt)}
+              </span>
+              {/*
+                별은 날짜 옆에 둔다. 기록마다 같은 자리에 있어야 목록을
+                훑으며 여러 개에 달 때 눈이 그 자리를 찾아가지 않는다.
+              */}
+              <StarButton
+                action={toggleCaptureStar}
+                id={capture.id}
+                starred={capture.starred}
+                returnTo={returnTo}
+                title="이 기록"
+                className="-my-2 -mr-2"
+              />
+            </div>
           </div>
 
           {capture.originalText ? (

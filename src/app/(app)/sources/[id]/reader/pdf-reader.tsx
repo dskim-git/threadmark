@@ -27,6 +27,15 @@ const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 8;
 
+/**
+ * PDF 쪽 둘레의 여백. 바깥 스크롤 칸이 아니라 **안쪽 칸**이 갖는다.
+ *
+ * 값이 두 곳에서 쓰인다. 하나는 그 안쪽 칸의 `p-4`(=16px)이고, 다른 하나는
+ * `너비 맞춤`이 쓸 수 있는 너비를 잴 때다. 둘이 어긋나면 너비를 맞췄는데도
+ * 좌우로 조금 스크롤된다.
+ */
+const PAGE_PADDING = 16;
+
 /** 확대율을 고르지 않았을 때. 화면 너비에 맞춘다. */
 export const FIT_WIDTH = null;
 
@@ -349,9 +358,18 @@ export function PdfReader({
       return;
     }
 
-    // 확대율을 고르지 않았으면 화면 너비에 맞춘다.
+    /*
+      확대율을 고르지 않았으면 화면 너비에 맞춘다.
+
+      여백을 빼고 잰다. clientWidth는 스크롤 막대를 뺀 안쪽 너비인데, 쪽
+      둘레의 여백은 거기 포함되지 않는다. 빼지 않으면 딱 그만큼 넓게 그려
+      `너비 맞춤`인데도 좌우로 조금 스크롤된다.
+    */
     const base = target.getViewport({ scale: 1 });
-    const available = containerRef.current?.clientWidth ?? base.width;
+    const available = Math.max(
+      (containerRef.current?.clientWidth ?? base.width) - PAGE_PADDING * 2,
+      1,
+    );
     const scale = zoom ?? Math.max(available / base.width, MIN_ZOOM);
 
     const viewport = target.getViewport({ scale });
@@ -788,30 +806,50 @@ export function PdfReader({
       */}
       <div
         ref={containerRef}
-        className="flex min-h-0 flex-1 justify-center overflow-auto rounded-xl bg-zinc-100 p-4 max-lg:min-h-[60vh] dark:bg-white/[.04]"
+        className="min-h-0 flex-1 overflow-auto rounded-xl bg-zinc-100 max-lg:min-h-[60vh] dark:bg-white/[.04]"
       >
-        {state.phase === "loading" ? (
-          <p className="py-24 text-sm text-zinc-500">PDF를 여는 중…</p>
-        ) : null}
-
         {/*
-          hidden으로 감추고 자리를 잡아둔다. 여는 동안 요소를 아예 두지 않으면
-          그리려는 순간에 대상이 없어서 첫 쪽이 비어 보인다.
+          가운데 놓는 일을 **안쪽 칸이** 한다. 바깥 스크롤 칸에 직접
+          `justify-center`를 걸면 안 된다.
 
-          이 영역이 좌표의 기준이다. 캔버스와 글자 층을 같은 크기로 겹쳐 둔다.
-          (설계 문서 6.3절: 좌표는 0~1 비율)
+          확대해서 쪽이 칸보다 넓어졌을 때, 가운데 정렬은 내용을 양쪽으로
+          똑같이 밀어낸다. 그런데 스크롤은 시작점보다 앞으로는 갈 수 없어서
+          **왼쪽으로 밀려난 부분에는 닿을 방법이 없다.** 오른쪽은 스크롤되는데
+          왼쪽만 잘려 보이는 것이 그 때문이다.
+
+          안쪽 칸을 `w-max min-w-full`로 둔다.
+            쪽이 칸보다 넓으면  안쪽 칸이 쪽만큼 넓어진다. 가운데 정렬이
+                                밀어낼 여백이 없으니 잘릴 것도 없고,
+                                스크롤이 양쪽 끝까지 닿는다.
+            쪽이 칸보다 좁으면  안쪽 칸이 칸만큼 넓어져 쪽이 가운데 온다.
+
+          여백(p-4)도 여기로 옮긴다. 바깥에 두면 오른쪽 끝까지 스크롤했을 때
+          그쪽 여백이 사라진다.
         */}
-        <div
-          ref={pageRef}
-          hidden={state.phase !== "ready"}
-          className="relative shadow-sm"
-        >
-          <canvas ref={canvasRef} className="block" />
+        <div className="flex w-max min-w-full items-start justify-center p-4">
+          {state.phase === "loading" ? (
+            <p className="py-24 text-sm text-zinc-500">PDF를 여는 중…</p>
+          ) : null}
+
           {/*
-            보이지 않는 글자가 여기에 놓인다. 스타일은 text-layer.css에 있고
-            PDF.js 원본에서 옮겨 온 것이다. 단위 검사가 원본과 맞는지 지킨다.
+            hidden으로 감추고 자리를 잡아둔다. 여는 동안 요소를 아예 두지 않으면
+            그리려는 순간에 대상이 없어서 첫 쪽이 비어 보인다.
+
+            이 영역이 좌표의 기준이다. 캔버스와 글자 층을 같은 크기로 겹쳐 둔다.
+            (설계 문서 6.3절: 좌표는 0~1 비율)
           */}
-          <div ref={textLayerRef} className="textLayer" />
+          <div
+            ref={pageRef}
+            hidden={state.phase !== "ready"}
+            className="relative shadow-sm"
+          >
+            <canvas ref={canvasRef} className="block" />
+            {/*
+              보이지 않는 글자가 여기에 놓인다. 스타일은 text-layer.css에 있고
+              PDF.js 원본에서 옮겨 온 것이다. 단위 검사가 원본과 맞는지 지킨다.
+            */}
+            <div ref={textLayerRef} className="textLayer" />
+          </div>
         </div>
       </div>
 

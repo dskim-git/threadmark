@@ -24,16 +24,18 @@ import {
  */
 
 const LIST_COLUMNS =
-  "id, type, status, title, subtitle, original_url, created_at, updated_at";
+  "id, type, status, starred, title, subtitle, original_url, created_at, updated_at";
 
 const DETAIL_COLUMNS =
-  "id, type, status, title, subtitle, description, original_url, canonical_url, thumbnail_url, created_at, updated_at";
+  "id, type, status, starred, title, subtitle, description, original_url, canonical_url, thumbnail_url, created_at, updated_at";
 
 export type SourceListItem = {
   id: string;
   type: SourceType;
   /** 읽을 후보인지 손에 있는 자료인지. (설계 문서 8.4절) */
   status: SourceStatus;
+  /** 중요 표시(별). (설계 문서 5.2-1절) */
+  starred: boolean;
   title: string;
   subtitle: string | null;
   originalUrl: string | null;
@@ -55,10 +57,12 @@ export type SourceDetail = SourceListItem & {
  *
  * @param type 지정하면 해당 유형만 돌려준다.
  * @param sort 지정하지 않으면 최근에 담은 순이다.
+ * @param starredOnly 참이면 별을 단 자료만 돌려준다. (설계 문서 5.2-1절)
  */
 export async function listSources(
   type?: SourceType,
   sort: SourceSort = DEFAULT_SOURCE_SORT,
+  starredOnly = false,
 ): Promise<SourceListItem[]> {
   await requireActiveAccount();
 
@@ -73,6 +77,15 @@ export async function listSources(
 
   if (type) {
     query = query.eq("type", type);
+  }
+
+  /*
+    거르는 일을 데이터베이스에서 한다. 전부 받아와 브라우저 쪽에서 추리면
+    자료가 늘어날수록 쓰지도 않을 것을 실어 나르게 된다.
+    sources_owner_starred_created_idx가 이 조건을 받는다.
+  */
+  if (starredOnly) {
+    query = query.eq("starred", true);
   }
 
   const { data, error } = await query;
@@ -91,6 +104,7 @@ export async function listSources(
             type: row.type,
             // 모르는 상태는 보통의 자료로 본다. 목록에서 사라지게 두지 않는다.
             status: isSourceStatus(row.status) ? row.status : "active",
+            starred: row.starred,
             title: row.title,
             subtitle: row.subtitle,
             originalUrl: row.original_url,
@@ -133,6 +147,7 @@ export async function getSourceById(id: string): Promise<SourceDetail | null> {
     id: data.id,
     type: data.type,
     status: isSourceStatus(data.status) ? data.status : "active",
+    starred: data.starred,
     title: data.title,
     subtitle: data.subtitle,
     description: data.description,
@@ -143,28 +158,50 @@ export async function getSourceById(id: string): Promise<SourceDetail | null> {
   };
 }
 
-/** 유형별 보관 수. 목록 화면의 필터에 쓴다. */
-export async function countSourcesByType(): Promise<Record<string, number>> {
+export type SourceCounts = {
+  /** 유형별 보관 수. 목록 화면의 유형 고르는 줄에 쓴다. */
+  byType: Record<string, number>;
+  /** 전부 몇 건인지. */
+  total: number;
+  /** 별을 단 것이 몇 건인지. (설계 문서 5.2-1절) */
+  starred: number;
+};
+
+/**
+ * 목록 화면의 고르는 줄에 쓰는 수.
+ *
+ * 유형별 수와 별 수를 한 번에 센다. 따로 세면 왕복이 둘이 되는데,
+ * 어차피 같은 행들을 보고 세는 일이다.
+ *
+ * 걸러진 목록과 무관하게 **항상 전체**를 센다. 별만 보는 중에도 "전체
+ * 몇 건"이 보여야 돌아갈 곳이 있는지 알 수 있다.
+ */
+export async function countSources(): Promise<SourceCounts> {
   await requireActiveAccount();
 
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("sources")
-    .select("type")
+    .select("type, starred")
     .is("deleted_at", null);
 
   if (error) {
     console.error("[ThreadMark] 자료 수 조회 실패:", error.message);
 
-    return {};
+    return { byType: {}, total: 0, starred: 0 };
   }
 
-  const counts: Record<string, number> = {};
+  const byType: Record<string, number> = {};
+  let starred = 0;
 
   for (const row of data ?? []) {
-    counts[row.type] = (counts[row.type] ?? 0) + 1;
+    byType[row.type] = (byType[row.type] ?? 0) + 1;
+
+    if (row.starred) {
+      starred += 1;
+    }
   }
 
-  return counts;
+  return { byType, total: (data ?? []).length, starred };
 }

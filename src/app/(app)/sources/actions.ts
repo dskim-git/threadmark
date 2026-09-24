@@ -5,11 +5,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { sanitizeNextPath } from "@/lib/auth/request-url";
 import {
   firstIssueMessage,
   formValue,
   sourceInputSchema,
 } from "@/lib/sources/schema";
+import { readStarredInput } from "@/lib/stars";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -156,6 +158,57 @@ export async function updateSource(formData: FormData): Promise<void> {
   revalidatePath("/library");
   revalidatePath(`/sources/${id.data}`);
   redirect(`/sources/${id.data}`);
+}
+
+/**
+ * 자료에 별을 달거나 뗀다. (설계 문서 5.2-1절)
+ *
+ * **성공하면 아무 말도 하지 않는다.** 별은 눌렀는지가 별 모양으로 바로
+ * 보이는 일이라, "별을 달았습니다" 같은 알림이 뜨면 목록을 훑으며 여러 개에
+ * 달 때마다 알림 줄이 나타났다 사라져 화면이 들썩인다. 실패했을 때만 알린다.
+ *
+ * 돌아갈 곳으로 옮기지도 않는다. 그 자리에 그대로 두어야 방금 별을 단 줄이
+ * 눈앞에 남는다. 화면 갱신은 revalidatePath가 맡는다.
+ *
+ * 소유자와 승인 상태는 sources_update_own 정책이 건다. 별을 다는 갱신은
+ * 결과가 조회 정책을 벗어나지 않으므로 보통의 갱신으로 할 수 있다.
+ * 손댄 시각은 데이터베이스 가드가 그대로 둔다. (20260924120000)
+ */
+export async function toggleSourceStar(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const id = idSchema.safeParse(formValue(formData.get("id")));
+  const destination = sanitizeNextPath(formValue(formData.get("returnTo")));
+  const starred = readStarredInput(formValue(formData.get("starred")));
+
+  if (!id.success || starred === null) {
+    redirectWithQuery(destination, { error: "잘못된 요청입니다." });
+  }
+
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("sources")
+    .update({ starred })
+    .eq("id", id.data)
+    .is("deleted_at", null);
+
+  if (error) {
+    console.error("[ThreadMark] 자료 별 표시 실패:", error.message);
+    redirectWithQuery(destination, {
+      error: "중요 표시를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    });
+  }
+
+  // revalidatePath는 조회 문자열을 보지 않는다. 경로만 넘긴다.
+  revalidatePath(pathOnly(destination));
+  revalidatePath("/library");
+  revalidatePath(`/sources/${id.data}`);
+}
+
+/** 조회 문자열과 조각을 떼어낸 경로. revalidatePath에 넘길 값이다. */
+function pathOnly(value: string): string {
+  return value.split(/[?#]/, 1)[0] || "/";
 }
 
 /**

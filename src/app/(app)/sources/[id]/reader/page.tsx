@@ -3,14 +3,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CaptureList } from "@/app/(app)/captures/capture-list";
+import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
-import { listCapturesForSource } from "@/lib/captures/queries";
+import {
+  countCaptureStars,
+  listCapturesForSource,
+} from "@/lib/captures/queries";
 import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
 import { isReadable, listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
+import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import { isTranslationConfigured } from "@/lib/translation/anthropic";
 
 import { FileStatusNotice } from "./file-status-notice";
@@ -44,15 +49,22 @@ export default async function ReaderPage({
 
   const isPaper = source.type === "paper";
 
-  const [files, captures, analysis, projects, projectChips, query] =
+  /*
+    주소를 먼저 읽는다. 기록 탭을 별로 거를지가 여기서 정해지고,
+    그 값이 있어야 기록 조회를 시작할 수 있다. (설계 문서 6.2-1절)
+  */
+  const query = await searchParams;
+  const starredOnly = readStarredOnly(firstValue(query[STARRED_PARAM]));
+
+  const [files, captures, captureCounts, analysis, projects, projectChips] =
     await Promise.all([
       listSourceFiles(source.id),
-      listCapturesForSource(source.id),
+      listCapturesForSource(source.id, starredOnly),
+      countCaptureStars(source.id),
       // 논문이 아닌 자료에는 분석 탭이 없다. 있을 수 없는 행을 찾지 않는다.
       isPaper ? getPaperAnalysis(source.id) : null,
       isPaper ? listProjectsForSource(source.id) : [],
       listProjectChips(),
-      searchParams,
     ]);
 
   const readable = files.filter(isReadable);
@@ -191,15 +203,46 @@ export default async function ReaderPage({
                 Server Action을 품고 있어 브라우저 쪽에서 만들 수 없다.
               */
               capturesSlot={
-                <CaptureList
-                  captures={captures}
-                  returnTo={`/sources/${source.id}/reader?file=${selected.id}`}
-                  emptyText="아직 이 자료에 남긴 기록이 없습니다."
-                  projects={projectChips}
-                  fileChecksums={Object.fromEntries(
-                    files.map((file) => [file.id, file.checksum]),
-                  )}
-                />
+                <div className="flex flex-col gap-3">
+                  {/*
+                    별로 거르는 줄. (설계 문서 6.2-1절)
+
+                    주소에 담는다. 이 화면에서 주소가 바뀌어도 PDF는 다시
+                    열리지 않는다. 뷰어를 품은 ReaderView의 key가 그대로라
+                    React가 같은 것으로 보고, 바뀌는 것은 서버가 그려 보낸
+                    이 목록뿐이다. 기록을 저장한 뒤 화면을 새로 받아오는
+                    길(router.refresh)이 이미 같은 방식으로 돈다.
+
+                    `file`과 `page`를 함께 들고 간다. 빠뜨리면 별을 거르는
+                    순간 읽던 파일과 쪽이 처음으로 돌아간다.
+                  */}
+                  <StarFilter
+                    allHref={readerHref(source.id, selected.id, startPage, false)}
+                    starredHref={readerHref(source.id, selected.id, startPage, true)}
+                    total={captureCounts.total}
+                    starred={captureCounts.starred}
+                    starredOnly={starredOnly}
+                  />
+
+                  <CaptureList
+                    captures={captures}
+                    returnTo={readerHref(
+                      source.id,
+                      selected.id,
+                      startPage,
+                      starredOnly,
+                    )}
+                    emptyText={
+                      starredOnly
+                        ? "별을 단 기록이 없습니다."
+                        : "아직 이 자료에 남긴 기록이 없습니다."
+                    }
+                    projects={projectChips}
+                    fileChecksums={Object.fromEntries(
+                      files.map((file) => [file.id, file.checksum]),
+                    )}
+                  />
+                </div>
               }
             />
           )}
@@ -230,6 +273,31 @@ export default async function ReaderPage({
       )}
     </div>
   );
+}
+
+/**
+ * 이 화면의 주소. 읽던 파일과 쪽, 그리고 기록 탭을 그대로 들고 간다.
+ *
+ * `panel=captures`를 함께 넣는다. 별을 거르고 돌아왔는데 다른 탭이 열려
+ * 있으면, 방금 무엇을 눌렀는지 알 수 없게 된다.
+ */
+function readerHref(
+  sourceId: string,
+  fileId: string,
+  page: number,
+  starredOnly: boolean,
+): string {
+  const query = new URLSearchParams({
+    file: fileId,
+    page: String(page),
+    panel: "captures",
+  });
+
+  if (starredOnly) {
+    query.set(STARRED_PARAM, STARRED_ON);
+  }
+
+  return `/sources/${sourceId}/reader?${query.toString()}`;
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {

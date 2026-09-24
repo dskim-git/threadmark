@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AutoNotice } from "@/app/(app)/auto-notice";
 import { getApprovalSetting } from "@/lib/admin/settings";
 import { requireAdminAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
@@ -54,17 +55,21 @@ export default async function AdminSettingsPage({
         </p>
       </header>
 
+      {/*
+        오류는 그대로 두고, 잘 되었다는 안내만 스스로 사라진다.
+        못 본 오류는 "아무 일도 없었다"와 구분되지 않는다. (auto-notice.tsx)
+      */}
       {message ? (
-        <p
-          role="status"
-          className={
-            isError
-              ? "rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
-              : "rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
-          }
-        >
-          {message}
-        </p>
+        isError ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+          >
+            {message}
+          </p>
+        ) : (
+          <AutoNotice>{message}</AutoNotice>
+        )
       ) : null}
 
       {setting.unavailable ? (

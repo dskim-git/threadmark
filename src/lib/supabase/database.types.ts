@@ -122,6 +122,7 @@ export type Database = {
           original_text: string | null
           owner_id: string
           source_id: string | null
+          starred: boolean
           translated_at: string | null
           translated_text: string | null
           translation_language: string | null
@@ -141,6 +142,7 @@ export type Database = {
           original_text?: string | null
           owner_id?: string
           source_id?: string | null
+          starred?: boolean
           translated_at?: string | null
           translated_text?: string | null
           translation_language?: string | null
@@ -160,6 +162,7 @@ export type Database = {
           original_text?: string | null
           owner_id?: string
           source_id?: string | null
+          starred?: boolean
           translated_at?: string | null
           translated_text?: string | null
           translation_language?: string | null
@@ -743,6 +746,7 @@ export type Database = {
           metadata: Json
           original_url: string | null
           owner_id: string
+          starred: boolean
           status: Database["public"]["Enums"]["source_status"]
           subtitle: string | null
           thumbnail_url: string | null
@@ -760,6 +764,7 @@ export type Database = {
           metadata?: Json
           original_url?: string | null
           owner_id?: string
+          starred?: boolean
           status?: Database["public"]["Enums"]["source_status"]
           subtitle?: string | null
           thumbnail_url?: string | null
@@ -777,6 +782,7 @@ export type Database = {
           metadata?: Json
           original_url?: string | null
           owner_id?: string
+          starred?: boolean
           status?: Database["public"]["Enums"]["source_status"]
           subtitle?: string | null
           thumbnail_url?: string | null
@@ -832,6 +838,10 @@ export type Database = {
       soft_delete_capture: { Args: { capture_id: string }; Returns: boolean }
       soft_delete_project: { Args: { project_id: string }; Returns: boolean }
       soft_delete_source: { Args: { source_id: string }; Returns: boolean }
+      starred_only_change: {
+        Args: { new_row: Json; old_row: Json }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin"

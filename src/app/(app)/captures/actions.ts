@@ -16,6 +16,7 @@ import {
   formValue,
 } from "@/lib/captures/schema";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
+import { readStarredInput } from "@/lib/stars";
 import {
   ANTHROPIC_PROVIDER_NAME,
   getAnthropicModel,
@@ -417,6 +418,55 @@ export async function updateCapture(formData: FormData): Promise<void> {
 
   revalidatePath(destination);
   redirectWithQuery(destination, { notice: "기록을 수정했습니다." });
+}
+
+/**
+ * 기록에 별을 달거나 뗀다. (설계 문서 6.2-1절)
+ *
+ * 자료 쪽(toggleSourceStar)과 같은 규칙이다. 성공하면 아무 말도 하지 않고
+ * 화면도 옮기지 않는다. 별이 켜졌는지는 별 모양이 바로 보여준다.
+ *
+ * 되돌릴 곳을 함께 갱신한다. 같은 기록이 자료 상세와 읽기 화면 양쪽에
+ * 보이는데, 한 곳에서 별을 달고 다른 곳으로 가면 옛 모습이 남아 있으면 안 된다.
+ */
+export async function toggleCaptureStar(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const id = idSchema.safeParse(formValue(formData.get("id")));
+  const destination = sanitizeNextPath(formValue(formData.get("returnTo")));
+  const starred = readStarredInput(formValue(formData.get("starred")));
+
+  if (!id.success || starred === null) {
+    redirectWithQuery(destination, { error: "잘못된 요청입니다." });
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("captures")
+    .update({ starred })
+    .eq("id", id.data)
+    .is("deleted_at", null)
+    .select("source_id");
+
+  if (error) {
+    console.error("[ThreadMark] 기록 별 표시 실패:", error.message);
+    redirectWithQuery(destination, {
+      error: "중요 표시를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    });
+  }
+
+  // revalidatePath는 조회 문자열을 보지 않는다. 경로만 넘긴다.
+  revalidatePath(destination.split(/[?#]/, 1)[0] || "/");
+
+  const sourceId = data?.[0]?.source_id;
+
+  if (sourceId) {
+    revalidatePath(`/sources/${sourceId}`);
+    revalidatePath(`/sources/${sourceId}/reader`);
+  } else {
+    revalidatePath("/inbox");
+  }
 }
 
 /**

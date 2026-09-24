@@ -6,8 +6,14 @@ import { createCapture } from "@/app/(app)/captures/actions";
 import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projects/actions";
+import { AutoNotice } from "@/app/(app)/auto-notice";
+import { StarButton } from "@/app/(app)/star-button";
+import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
-import { listCapturesForSource } from "@/lib/captures/queries";
+import {
+  countCaptureStars,
+  listCapturesForSource,
+} from "@/lib/captures/queries";
 import { getDriveConnectionSummary } from "@/lib/drive/connection";
 import {
   ANALYSIS_FIELDS,
@@ -25,13 +31,18 @@ import {
   getSourceRelationLabel,
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
+import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import {
   getSourceStatusLabel,
   getSourceTypeLabel,
   isReadingCandidate,
 } from "@/lib/sources/types";
 
-import { deleteSource, promoteReadingCandidate } from "../actions";
+import {
+  deleteSource,
+  promoteReadingCandidate,
+  toggleSourceStar,
+} from "../actions";
 import {
   addReadingCandidate,
   linkSourceRelation,
@@ -62,8 +73,16 @@ export default async function SourceDetailPage({
     notFound();
   }
 
+  /*
+    주소를 먼저 읽는다. 기록 목록을 별로 거를지가 여기서 정해지고,
+    그 값이 있어야 조회를 시작할 수 있다. (설계 문서 6.2-1절)
+  */
+  const query = await searchParams;
+  const starredOnly = readStarredOnly(firstValue(query[STARRED_PARAM]));
+
   const [
     captures,
+    captureCounts,
     linkedProjects,
     allProjects,
     files,
@@ -73,9 +92,9 @@ export default async function SourceDetailPage({
     paperUses,
     relations,
     allSources,
-    query,
   ] = await Promise.all([
-    listCapturesForSource(source.id),
+    listCapturesForSource(source.id, starredOnly),
+    countCaptureStars(source.id),
     listProjectsForSource(source.id),
     listProjectChips(),
     listSourceFiles(source.id),
@@ -86,7 +105,6 @@ export default async function SourceDetailPage({
     source.type === "paper" ? listPaperProjectUses(source.id) : [],
     listSourceRelations(source.id),
     listSources(),
-    searchParams,
   ]);
 
   const citation =
@@ -99,7 +117,15 @@ export default async function SourceDetailPage({
 
   const error = firstValue(query.error);
   const notice = firstValue(query.notice);
-  const returnTo = `/sources/${source.id}`;
+  const detailPath = `/sources/${source.id}`;
+  const starredPath = `${detailPath}?${STARRED_PARAM}=${STARRED_ON}`;
+
+  /*
+    돌아올 자리. 별로 걸러 보는 중이면 그 상태를 지킨다.
+    별만 보다가 하나를 떼면 목록에서 빠지는데, 그때 필터까지 풀려버리면
+    어디를 보고 있었는지 잃는다.
+  */
+  const returnTo = starredOnly ? starredPath : detailPath;
 
   const linkedIds = new Set(linkedProjects.map((project) => project.id));
   const linkableProjects = allProjects.filter(
@@ -163,14 +189,7 @@ export default async function SourceDetailPage({
         </p>
       ) : null}
 
-      {notice ? (
-        <p
-          role="status"
-          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
-        >
-          {notice}
-        </p>
-      ) : null}
+      {notice ? <AutoNotice>{notice}</AutoNotice> : null}
 
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -212,12 +231,28 @@ export default async function SourceDetailPage({
             {source.title}
           </h1>
 
-          <Link
-            href={`/sources/${source.id}/edit`}
-            className="shrink-0 text-sm text-zinc-500 underline underline-offset-4 transition-colors hover:text-black dark:hover:text-zinc-50"
-          >
-            제목·설명 고치기
-          </Link>
+          <div className="flex shrink-0 items-center gap-3">
+            <Link
+              href={`/sources/${source.id}/edit`}
+              className="text-sm text-zinc-500 underline underline-offset-4 transition-colors hover:text-black dark:hover:text-zinc-50"
+            >
+              제목·설명 고치기
+            </Link>
+
+            {/*
+              자료의 별. 기록의 별과 다른 것이다. (설계 문서 6.2-1절)
+              이 논문 자체를 다시 봐야 한다는 표시이고, 안의 어느 문장이
+              중요했는지는 기록마다 따로 단다.
+            */}
+            <StarButton
+              action={toggleSourceStar}
+              id={source.id}
+              starred={source.starred}
+              returnTo={returnTo}
+              title="이 자료"
+              className="-my-2"
+            />
+          </div>
         </div>
 
         {source.subtitle ? (
@@ -694,9 +729,19 @@ export default async function SourceDetailPage({
       </section>
 
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
-        <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
-          기록 {captures.length}건
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
+            기록 {captureCounts.total}건
+          </h2>
+
+          <StarFilter
+            allHref={detailPath}
+            starredHref={starredPath}
+            total={captureCounts.total}
+            starred={captureCounts.starred}
+            starredOnly={starredOnly}
+          />
+        </div>
         <CaptureList
           captures={captures}
           returnTo={returnTo}
@@ -708,7 +753,11 @@ export default async function SourceDetailPage({
           fileChecksums={Object.fromEntries(
             files.map((file) => [file.id, file.checksum]),
           )}
-          emptyText="아직 이 자료에 남긴 기록이 없습니다."
+          emptyText={
+            starredOnly
+              ? "별을 단 기록이 없습니다."
+              : "아직 이 자료에 남긴 기록이 없습니다."
+          }
         />
       </section>
 
@@ -719,7 +768,11 @@ export default async function SourceDetailPage({
         <CaptureForm
           action={createCapture}
           submitLabel="기록하기"
-          returnTo={returnTo}
+          /*
+            새로 적은 기록에는 아직 별이 없다. 별만 보는 중에 적었다고
+            걸러진 자리로 돌려보내면 방금 적은 것이 보이지 않는다.
+          */
+          returnTo={detailPath}
           compact
           values={{
             sourceId: source.id,

@@ -54,13 +54,22 @@ function readInput(formData: FormData) {
   });
 }
 
+/**
+ * 프로젝트를 만든다. 폼은 `/projects/new`에 있다.
+ *
+ * 오류는 **그 화면으로** 돌려보낸다. 목록으로 보내면 무엇이 잘못됐는지 읽는
+ * 순간 고쳐 쓸 칸이 눈앞에 없다. 수정(updateProject)이 수정 화면으로
+ * 돌려보내는 것과 같은 이유다.
+ */
 export async function createProject(formData: FormData): Promise<void> {
-  await requireActiveAccount("/projects");
+  await requireActiveAccount("/projects/new");
 
   const parsed = readInput(formData);
 
   if (!parsed.success) {
-    redirectWithQuery("/projects", { error: firstIssueMessage(parsed.error) });
+    redirectWithQuery("/projects/new", {
+      error: firstIssueMessage(parsed.error),
+    });
   }
 
   const input = parsed.data;
@@ -84,7 +93,7 @@ export async function createProject(formData: FormData): Promise<void> {
 
   if (error || !data) {
     console.error("[ThreadMark] 프로젝트 생성 실패:", error?.message);
-    redirectWithQuery("/projects", {
+    redirectWithQuery("/projects/new", {
       error: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     });
   }

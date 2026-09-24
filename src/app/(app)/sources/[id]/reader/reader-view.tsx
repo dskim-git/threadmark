@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -15,6 +15,7 @@ import {
   type TranslationLanguageCode,
 } from "@/lib/translation/types";
 
+import { NOTICE_CLASS_NAME, NOTICE_HIDE_MS } from "../../../auto-notice";
 import { AnalysisForm } from "../../analysis-form";
 import { saveReadingPosition } from "../../file-actions";
 import { PageMemoPanel } from "./page-memo-panel";
@@ -109,6 +110,30 @@ export function ReaderView({
 
   /** 좁은 화면에서 PDF와 패널 중 무엇을 보여줄지. (9.1절) */
   const [mobileView, setMobileView] = useState<"pdf" | "panel">("pdf");
+
+  /*
+    잘 되었다는 안내는 잠깐 보이고 스스로 사라진다. (auto-notice.tsx)
+
+    이 화면에서는 특히 그래야 한다. 안내문 한 줄이 붙으면 작업대가 딱 그만큼
+    줄어든다. 창 높이를 재서 남는 만큼을 PDF에 주기 때문이다. (fill-viewport)
+    "9쪽에서 인용을 남겼습니다"는 읽고 나면 할 일이 끝나는 글인데, 그 글이
+    읽는 자리를 계속 가져가고 있었다.
+
+    오류(error)는 건드리지 않는다. 못 본 오류는 아무 일도 없었던 것과
+    구분되지 않는다.
+
+    다른 화면은 주소에서 지우는데 여기는 화면이 들고 있는 값이라 그냥 비운다.
+    사라진 뒤 FillViewport가 다시 재어 PDF가 그 한 줄을 되받는다.
+  */
+  useEffect(() => {
+    if (notice === null) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_HIDE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   // useCallback으로 감싸지 않으면 매번 새 함수가 되어, 뷰어 쪽의
   // "잠시 기다렸다 저장하기"가 계속 초기화된다.
@@ -291,10 +316,7 @@ export function ReaderView({
       ) : null}
 
       {notice ? (
-        <p
-          role="status"
-          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
-        >
+        <p role="status" className={NOTICE_CLASS_NAME}>
           {notice}
         </p>
       ) : null}
