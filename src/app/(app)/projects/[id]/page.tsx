@@ -232,7 +232,7 @@ export default async function ProjectDetailPage({
             <select
               id="targetId"
               name="targetId"
-              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-10 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             >
               {linkableSources.map((source) => (
                 <option key={source.id} value={source.id}>
@@ -316,8 +316,30 @@ export default async function ProjectDetailPage({
                 className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-black/[.08] bg-white px-4 py-3 dark:border-white/[.145] dark:bg-zinc-950"
               >
                 <div className="flex min-w-0 flex-col gap-1">
-                  <span className="text-xs text-zinc-500">
-                    {getCaptureTypeLabel(capture.captureType)}
+                  {/*
+                    **어느 자료에서 나온 기록인지 함께 적는다.**
+
+                    기록에는 제목이 없고, 인용은 여러 논문에서 비슷한 모양으로
+                    나온다. 종류만 적어두면 `직접 인용`이 네 줄 늘어서는데
+                    그중 어느 것이 무엇인지 알 수 없다. 사용자가 짚어준 것이다.
+                  */}
+                  <span className="flex flex-wrap items-baseline gap-x-2 text-xs text-zinc-500">
+                    <span>{getCaptureTypeLabel(capture.captureType)}</span>
+                    {capture.sourceTitle ? (
+                      <>
+                        <span aria-hidden="true" className="text-zinc-400">
+                          ·
+                        </span>
+                        <Link
+                          href={`/sources/${capture.sourceId}`}
+                          className="min-w-0 truncate underline-offset-2 transition-colors hover:text-accent hover:underline dark:hover:text-accent-dark"
+                        >
+                          {capture.sourceTitle}
+                        </Link>
+                      </>
+                    ) : (
+                      <span className="text-zinc-400">자료 없음</span>
+                    )}
                   </span>
                   <p className="line-clamp-2 text-sm text-zinc-800 dark:text-zinc-200">
                     {capture.content ?? capture.originalText}

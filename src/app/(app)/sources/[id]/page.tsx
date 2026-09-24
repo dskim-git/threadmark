@@ -34,6 +34,8 @@ import {
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getBookProfile } from "@/lib/books/queries";
+import { Panel, Reveal } from "@/app/(app)/panel";
+import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
 import { getMusicProfile, listProviderLinks } from "@/lib/music/queries";
 import { getWebsiteProfile } from "@/lib/websites/queries";
@@ -454,11 +456,36 @@ export default async function SourceDetailPage({
         놓인 데가 없으면 자리를 만들지 않는다. 빈 칸이 늘어나면 정작 있는
         것이 눈에 안 들어온다.
       */}
-      {placements.length > 0 ? (
-        <section className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-            이 자료가 쓰인 자리 {placements.length}곳
+      <section className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="min-w-0 flex-1 text-sm font-medium text-black dark:text-zinc-50">
+            {placements.length > 0
+              ? `이 자료가 쓰인 자리 ${placements.length}곳`
+              : "이 자료를 쓸 자리"}
           </h2>
+
+          {/*
+            자료 자체도 자리에 놓는다. (사용자 요청)
+
+            처음에는 기록에만 길을 냈는데, **자료를 통째로 `3장에 쓸 논문`으로
+            정해두는 일이 오히려 더 흔하다.** 아직 어느 문장을 뽑을지는
+            모르지만 이 논문이 3장에 들어간다는 것은 먼저 정해진다.
+          */}
+          <NodePicker
+            item={`source:${source.id}`}
+            returnTo={returnTo}
+            label="자리에 놓기 →"
+          />
+        </div>
+
+        {placements.length === 0 ? (
+          <p className="text-sm leading-6 text-zinc-500">
+            아직 어느 프로젝트의 자리에도 놓지 않았습니다.
+          </p>
+        ) : null}
+
+        {placements.length > 0 ? (
+          <>
           <ul className="flex flex-col gap-1.5">
             {placements.map((placement) => (
               <li key={`${placement.projectId}-${placement.nodeId}`}>
@@ -477,8 +504,9 @@ export default async function SourceDetailPage({
               </li>
             ))}
           </ul>
-        </section>
-      ) : null}
+          </>
+        ) : null}
+      </section>
 
       {/*
         책 칸. 책 유형일 때만 보여준다. (설계 문서 12절)
@@ -553,11 +581,7 @@ export default async function SourceDetailPage({
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-          프로젝트
-        </h2>
-
+      <Panel title="프로젝트">
         {linkedProjects.length > 0 ? (
           <ul className="flex flex-wrap gap-2">
             {linkedProjects.map((project) => (
@@ -597,10 +621,15 @@ export default async function SourceDetailPage({
           </p>
         )}
 
+        {/*
+          고르는 칸을 눌러야 나오게 한다. (사용자 요청)
+          자주 하는 일은 이어둔 것을 보는 일이지 새로 잇는 일이 아니다.
+        */}
         {linkableProjects.length > 0 ? (
+          <Reveal label="프로젝트에 잇기">
           <form
             action={linkSourceToProject}
-            className="flex flex-wrap items-center gap-2"
+            className="flex min-w-0 flex-wrap items-center gap-2"
           >
             <input type="hidden" name="targetId" value={source.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
@@ -610,7 +639,7 @@ export default async function SourceDetailPage({
             <select
               id="projectId"
               name="projectId"
-              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-10 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             >
               {linkableProjects.map((project) => (
                 <option key={project.id} value={project.id}>
@@ -625,8 +654,9 @@ export default async function SourceDetailPage({
               프로젝트에 추가
             </button>
           </form>
+          </Reveal>
         ) : null}
-      </section>
+      </Panel>
 
       {/*
         프로젝트별 활용 계획. 논문 유형일 때만 보여준다. (설계 문서 8.3절)
@@ -663,11 +693,7 @@ export default async function SourceDetailPage({
         어느 쪽에서 적었는지에 따라 같은 사실이 다른 말로 남는다.
         화살표가 없으면 목록에서 그 둘을 구별할 수 없다.
       */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-          관련 자료
-        </h2>
-
+      <Panel title="관련 자료">
         {relations.outgoing.length > 0 || relations.incoming.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {relations.outgoing.map((related) => (
@@ -757,9 +783,10 @@ export default async function SourceDetailPage({
         )}
 
         {relatableSources.length > 0 ? (
+          <Reveal label="다른 자료와 잇기">
           <form
             action={linkSourceRelation}
-            className="flex flex-wrap items-center gap-2"
+            className="flex min-w-0 flex-wrap items-center gap-2"
           >
             <input type="hidden" name="fromSourceId" value={source.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
@@ -774,7 +801,7 @@ export default async function SourceDetailPage({
             <select
               id="relationType"
               name="relationType"
-              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-10 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             >
               {SOURCE_RELATION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -789,7 +816,7 @@ export default async function SourceDetailPage({
             <select
               id="toSourceId"
               name="toSourceId"
-              className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-10 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             >
               {relatableSources.map((other) => (
                 <option key={other.id} value={other.id}>
@@ -805,6 +832,7 @@ export default async function SourceDetailPage({
               자료 잇기
             </button>
           </form>
+          </Reveal>
         ) : (
           <p className="text-xs leading-5 text-zinc-500">
             이을 다른 자료가 없습니다. 아래에서 제목만으로 담아둘 수 있습니다.
@@ -821,14 +849,10 @@ export default async function SourceDetailPage({
           담아두기와 잇기를 한 번에 한다. 어디서 봤는지가 곧 지금 읽고 있는
           이 자료이고, 나중에 그것이 그 논문을 찾은 유일한 단서가 된다.
         */}
-        <details className="rounded-2xl border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-black dark:text-zinc-50">
-            목록에 없는 논문 담아두기
-          </summary>
-
+        <Reveal label="목록에 없는 논문 담아두기">
           <form
             action={addReadingCandidate}
-            className="flex flex-col gap-4 border-t border-black/[.06] px-4 py-4 dark:border-white/[.1]"
+            className="flex flex-col gap-4 rounded-xl border border-black/[.06] px-4 py-4 dark:border-white/[.1]"
           >
             <input type="hidden" name="fromSourceId" value={source.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
@@ -876,7 +900,7 @@ export default async function SourceDetailPage({
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <label htmlFor="candidateRelation" className="sr-only">
                 관계
               </label>
@@ -884,7 +908,7 @@ export default async function SourceDetailPage({
                 id="candidateRelation"
                 name="relationType"
                 defaultValue="found_in_references"
-                className="h-10 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+                className="h-10 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
               >
                 {SOURCE_RELATION_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -901,8 +925,8 @@ export default async function SourceDetailPage({
               </button>
             </div>
           </form>
-        </details>
-      </section>
+        </Reveal>
+      </Panel>
 
       {/*
         파일 영역. 설계 문서 10.3절.
@@ -910,18 +934,12 @@ export default async function SourceDetailPage({
         Drive에 연결되지 않아도 이 자료의 나머지 기능은 그대로 쓸 수 있다.
         그래서 화면을 막지 않고 안내만 보여준다. (설계 문서 10.4절 마지막 줄)
       */}
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
-            파일
-          </h2>
-          <HelpButton topic="drive" label="파일 보관" />
-        </div>
-
+      <Panel title="파일" help="drive" helpLabel="파일 보관">
         <FileList sourceId={source.id} files={files} />
 
         {driveConnection?.status === "connected" ? (
-          <>
+          <Reveal label="파일 붙이기">
+            <div className="flex flex-col gap-3">
             <FileUpload sourceId={source.id} />
             {/*
               이미 Drive에 있는 파일을 붙이는 길. (설계 문서 10.2절)
@@ -929,7 +947,8 @@ export default async function SourceDetailPage({
               그 파일이 내 컴퓨터에 있느냐 Drive에 있느냐가 다를 뿐이다.
             */}
             <DrivePickerButton sourceId={source.id} />
-          </>
+            </div>
+          </Reveal>
         ) : (
           <p className="rounded-lg border border-black/[.08] bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700 dark:border-white/[.145] dark:bg-white/[.04] dark:text-zinc-300">
             {driveConnection
@@ -943,7 +962,7 @@ export default async function SourceDetailPage({
             </Link>
           </p>
         )}
-      </section>
+      </Panel>
 
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">

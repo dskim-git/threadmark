@@ -210,3 +210,59 @@ test("담긴 차례가 뒤섞여 있어도 이웃을 제대로 찾는다", () =>
 
   assert.equal(neighborToSwap(shuffled, "b", "up").id, "a");
 });
+
+// -----------------------------------------------------------------------------
+// 자리 고르는 창이 받는 모양 (사용자 확인 요청)
+// -----------------------------------------------------------------------------
+
+test("자리 고르는 창에 깊은 자리도 모두 올라온다", () => {
+  /*
+    사용자가 "1단계 깊이까지밖에 선택이 안 되는 것 같다"고 했다. (2026-09-24)
+
+    `listPlaceTargets`가 하는 일을 그대로 흉내 내어 확인한다. 데이터베이스에서
+    읽은 줄을 프로젝트별로 갈라 `buildOutline`에 넘기고, 나온 것을 그대로
+    화면에 늘어놓는 구조다. **거르는 곳이 없다.**
+
+    세 단짜리 뼈대를 넣으면 세 단이 다 나와야 한다.
+  */
+  const rows = [
+    { id: "a", project_id: "p1", parent_id: null, title: "단원 개관", position: 0 },
+    { id: "a1", project_id: "p1", parent_id: "a", title: "성취기준", position: 0 },
+    { id: "a1x", project_id: "p1", parent_id: "a1", title: "세 단째", position: 0 },
+    { id: "b", project_id: "p2", parent_id: null, title: "다른 프로젝트", position: 0 },
+  ];
+
+  const own = rows
+    .filter((row) => row.project_id === "p1")
+    .map((row) => ({
+      id: row.id,
+      parentId: row.parent_id,
+      title: row.title,
+      body: null,
+      position: row.position,
+    }));
+
+  const built = buildOutline(own).map((item) => ({
+    title: item.title,
+    number: item.number,
+    depth: item.depth,
+  }));
+
+  assert.deepEqual(built, [
+    { title: "단원 개관", number: "1", depth: 0 },
+    { title: "성취기준", number: "1.1", depth: 1 },
+    { title: "세 단째", number: "1.1.1", depth: 2 },
+  ]);
+});
+
+test("다른 프로젝트의 자리가 섞이지 않는다", () => {
+  // 번호와 깊이는 그 프로젝트 안에서만 뜻이 있다.
+  const own = [
+    { id: "b", parentId: null, title: "다른 프로젝트", body: null, position: 0 },
+  ];
+
+  assert.deepEqual(
+    buildOutline(own).map((item) => item.number),
+    ["1"],
+  );
+});

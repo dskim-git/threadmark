@@ -426,7 +426,7 @@ export function PaperForm({
             name="originalLanguage"
             value={values.originalLanguage}
             onChange={(event) => set("originalLanguage", event.target.value)}
-            className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
           >
             <option value="">고르지 않음</option>
             {PAPER_LANGUAGES.map((language) => (
@@ -452,7 +452,7 @@ export function PaperForm({
               max={MAX_PUBLICATION_YEAR}
               value={values.publicationYear}
               onChange={(event) => set("publicationYear", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
 
@@ -464,7 +464,7 @@ export function PaperForm({
               maxLength={MAX_JOURNAL_NAME_LENGTH}
               value={values.journalName}
               onChange={(event) => set("journalName", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
         </div>
@@ -478,7 +478,7 @@ export function PaperForm({
               maxLength={50}
               value={values.volume}
               onChange={(event) => set("volume", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
 
@@ -490,7 +490,7 @@ export function PaperForm({
               maxLength={50}
               value={values.issue}
               onChange={(event) => set("issue", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
 
@@ -502,7 +502,7 @@ export function PaperForm({
               maxLength={50}
               value={values.pageRange}
               onChange={(event) => set("pageRange", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
         </div>
@@ -521,7 +521,7 @@ export function PaperForm({
               placeholder="10.1234/abcd"
               value={values.doi}
               onChange={(event) => set("doi", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
 
@@ -533,7 +533,7 @@ export function PaperForm({
               maxLength={20}
               value={values.issn}
               onChange={(event) => set("issn", event.target.value)}
-              className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+              className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
           </Field>
         </div>
@@ -549,7 +549,7 @@ export function PaperForm({
             type="text"
             value={values.keywords}
             onChange={(event) => set("keywords", event.target.value)}
-            className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
           />
         </Field>
 

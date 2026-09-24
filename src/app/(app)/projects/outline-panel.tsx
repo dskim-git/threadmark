@@ -423,6 +423,19 @@ function PlacedList({
             </span>
 
             {/*
+              **어느 자료에서 나온 기록인지 함께 적는다.**
+
+              한 자리에 인용이 여럿 놓이면 `직접 인용`만으로는 어느 논문의
+              말인지 알 수 없다. 글을 쓰면서 근거를 대는 자리라 **출처가
+              바로 보여야 한다.** 사용자가 짚어준 것이다.
+            */}
+            {item.kind === "capture" && item.sourceTitle ? (
+              <span className="max-w-[10rem] shrink-0 truncate text-[11px] text-zinc-500">
+                {item.sourceTitle}
+              </span>
+            ) : null}
+
+            {/*
               재료를 누르면 그 재료로 간다. 옆에 두고 보면서 쓰는 중이라
               원문을 확인하러 가는 일이 잦다.
             */}

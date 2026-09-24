@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { sanitizeNextPath } from "@/lib/auth/request-url";
+import { buildOutline } from "@/lib/projects/outline";
+import { listPlacementsOfCapture } from "@/lib/projects/placement-queries";
 import { formValue } from "@/lib/projects/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -46,7 +49,16 @@ export async function placeItem(formData: FormData): Promise<void> {
     redirect("/projects");
   }
 
-  const path = `/projects/${projectId.data}`;
+  /*
+    돌아갈 곳을 폼이 정한다.
+
+    프로젝트 화면에서 놓으면 거기 그대로 있어야 하고, 기록 카드에서 놓으면
+    **보던 목록으로 돌아가야 한다.** 놓자고 화면이 바뀌면 하던 일을 잃는다.
+    적히지 않았으면 프로젝트 화면으로 간다.
+  */
+  const raw = formValue(formData.get("returnTo"));
+  const path =
+    raw.length > 0 ? sanitizeNextPath(raw) : `/projects/${projectId.data}`;
 
   /*
     무엇을 놓는지는 `자료:<id>` 또는 `기록:<id>` 한 값으로 온다.
@@ -60,7 +72,29 @@ export async function placeItem(formData: FormData): Promise<void> {
   const itemId = idSchema.safeParse(rawId ?? "");
 
   if ((kind !== "source" && kind !== "capture") || !itemId.success) {
-    redirectWithQuery(path, { error: "놓을 것을 골라 주세요." });
+    /*
+      **무엇이 잘못됐는지 갈라서 남긴다.**
+
+      "골라 주세요" 하나로 뭉뚱그렸더니 값이 아예 안 온 것인지 모양이 다른
+      것인지 알 수 없었다. 둘은 고칠 곳이 다르다. 값이 안 오면 화면 쪽이고,
+      모양이 다르면 만드는 쪽이다.
+
+      값 자체는 남기지 않는다. 무엇을 다루는 중인지가 기록에 쌓이면 그것도
+      남의 자료가 된다. 길이와 모양만 남긴다.
+    */
+    console.error(
+      "[ThreadMark] 놓을 것을 읽지 못했습니다:",
+      picked.length === 0
+        ? "item 칸이 비어 있습니다"
+        : `item 칸의 모양이 다릅니다 (종류=${kind === "source" || kind === "capture" ? kind : "알 수 없음"}, id 길이=${(rawId ?? "").length})`,
+    );
+
+    redirectWithQuery(path, {
+      error:
+        picked.length === 0
+          ? "놓을 것이 전해지지 않았습니다. 창을 닫고 다시 열어 주세요."
+          : "놓을 것을 알아보지 못했습니다.",
+    });
   }
 
   const note = formValue(formData.get("note")).trim();
@@ -209,4 +243,108 @@ export async function removePlacement(formData: FormData): Promise<void> {
 
   revalidatePath(path);
   redirectWithQuery(path, { notice: "자리에서 뺐습니다. 재료는 그대로 있습니다." });
+}
+
+/**
+ * 기록을 놓을 수 있는 자리들. (19-B 뒤, 사용자 요청)
+ *
+ * 프로젝트마다 그 뼈대를 함께 준다. 기록 쪽에서 "이걸 어디에 쓸까"를 고를
+ * 때 쓴다. 프로젝트 이름만으로는 고를 수 없다. **자리가 곧 쓰임새다.**
+ *
+ * **창을 열 때 가져온다.** 기록 카드는 받은함·자료 화면·읽기 화면 세 곳에
+ * 나오는데, 그 화면들이 열릴 때마다 모든 프로젝트의 뼈대를 실어 나를 이유가
+ * 없다. 자리를 고르는 일은 가끔 있는 일이다.
+ */
+export type PlaceTargetNode = {
+  id: string;
+  title: string;
+  /** `1`, `1.2`. 담기지 않고 세어진 값이다. */
+  number: string;
+  depth: number;
+};
+
+export type PlaceTargetProject = {
+  id: string;
+  name: string;
+  nodes: PlaceTargetNode[];
+};
+
+export async function listPlaceTargets(): Promise<PlaceTargetProject[]> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const [projects, nodes] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("id, name")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("project_outline_nodes")
+      .select("id, project_id, parent_id, title, position")
+      .order("position", { ascending: true }),
+  ]);
+
+  if (projects.error) {
+    console.error("[ThreadMark] 프로젝트 조회 실패:", projects.error.message);
+
+    return [];
+  }
+
+  if (nodes.error) {
+    console.error("[ThreadMark] 뼈대 조회 실패:", nodes.error.message);
+  }
+
+  const byProject = new Map<string, PlaceTargetNode[]>();
+
+  for (const project of projects.data ?? []) {
+    /*
+      프로젝트마다 따로 세운다. 번호와 깊이는 그 프로젝트 안에서만 뜻이
+      있고, 섞어서 세우면 `1.2`가 어느 프로젝트의 것인지 알 수 없다.
+    */
+    const own = (nodes.data ?? [])
+      .filter((row) => row.project_id === project.id)
+      .map((row) => ({
+        id: row.id,
+        parentId: row.parent_id,
+        title: row.title,
+        body: null,
+        position: row.position,
+      }));
+
+    byProject.set(
+      project.id,
+      buildOutline(own).map((item) => ({
+        id: item.id,
+        title: item.title,
+        number: item.number,
+        depth: item.depth,
+      })),
+    );
+  }
+
+  return (projects.data ?? []).map((project) => ({
+    id: project.id,
+    name: project.name,
+    nodes: byProject.get(project.id) ?? [],
+  }));
+}
+
+/**
+ * 이 기록이 놓인 자리들. 창을 열 때 가져온다. (사용자 요청)
+ *
+ * 기록 카드는 세 화면에 나온다. 카드마다 미리 물어보면 카드 수만큼 왕복이
+ * 늘고, 대부분은 열어보지 않는다. 누를 때 묻는다.
+ */
+export async function findPlacementsOfCapture(captureId: string) {
+  await requireActiveAccount();
+
+  const parsed = idSchema.safeParse(captureId);
+
+  if (!parsed.success) {
+    return [];
+  }
+
+  return listPlacementsOfCapture(parsed.data);
 }

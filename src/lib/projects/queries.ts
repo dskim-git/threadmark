@@ -39,6 +39,14 @@ export type LinkedCapture = {
   content: string | null;
   originalText: string | null;
   sourceId: string | null;
+  /**
+   * 이 기록이 달린 자료의 이름.
+   *
+   * **기록만 보면 어느 자료에서 나온 것인지 알 수 없다.** 기록에는 제목이
+   * 없고, 인용은 여러 논문에서 비슷한 모양으로 나온다. 사용자가 짚어준
+   * 것이다. 자료 없이 남긴 빠른 기록이면 비어 있다.
+   */
+  sourceTitle: string | null;
 };
 
 /** 프로젝트 이름과 색만 담은 요약. 자료 화면의 연결 표시에 쓴다. */
@@ -161,7 +169,9 @@ export async function listProjectCaptures(
 
   const { data, error } = await supabase
     .from("capture_projects")
-    .select("captures (id, capture_type, content, original_text, source_id, deleted_at)")
+    .select(
+      "captures (id, capture_type, content, original_text, source_id, deleted_at, sources (title, deleted_at))",
+    )
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
@@ -189,6 +199,14 @@ export async function listProjectCaptures(
         content: capture.content,
         originalText: capture.original_text,
         sourceId: capture.source_id,
+        /*
+          지운 자료의 이름은 보여주지 않는다. 기록은 남아 있을 수 있지만,
+          지운 자료가 이름으로 되살아나면 지운 것이 아니게 된다.
+        */
+        sourceTitle:
+          capture.sources && capture.sources.deleted_at === null
+            ? capture.sources.title
+            : null,
       },
     ];
   });

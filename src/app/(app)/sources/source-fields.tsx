@@ -45,7 +45,7 @@ export function SourceFields({
           name="type"
           defaultValue={values.type}
           disabled={disabled}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+          className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
         >
           {SOURCE_TYPES.map((type) => (
             <option key={type} value={type}>
@@ -64,7 +64,7 @@ export function SourceFields({
           maxLength={MAX_TITLE_LENGTH}
           defaultValue={values.title}
           disabled={disabled}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+          className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
         />
       </Field>
 
@@ -76,7 +76,7 @@ export function SourceFields({
           maxLength={MAX_SUBTITLE_LENGTH}
           defaultValue={values.subtitle}
           disabled={disabled}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+          className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
         />
       </Field>
 
@@ -94,7 +94,7 @@ export function SourceFields({
           placeholder="https://"
           defaultValue={values.originalUrl}
           disabled={disabled}
-          className="h-11 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+          className="h-11 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
         />
       </Field>
 

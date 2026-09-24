@@ -48,6 +48,20 @@ export function PlacedPeek({ item }: { item: PlacedItem }) {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          {/*
+            어느 자료에서 나온 말인지 맨 위에 적는다. 원문을 읽기 전에
+            출처를 아는 편이 낫다. 같은 주제의 논문 여럿에서 고른 문장들은
+            서로 닮아서, 출처를 모르면 어느 쪽 주장인지 헷갈린다.
+          */}
+          {item.sourceTitle ? (
+            <Link
+              href={`/sources/${item.sourceId}`}
+              className="truncate text-xs text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+            >
+              {item.sourceTitle}
+            </Link>
+          ) : null}
+
           {item.originalText ? (
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-zinc-500">원문</span>

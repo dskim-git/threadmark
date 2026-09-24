@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { linkCaptureToProject } from "@/app/(app)/projects/actions";
+import { NodePicker } from "@/app/(app)/projects/node-picker";
+import { PlacedWhere } from "@/app/(app)/projects/placed-where";
 import type { Capture } from "@/lib/captures/queries";
 import { describeMusicTime } from "@/lib/captures/music-locator";
 import { describeLocatorPages } from "@/lib/captures/pdf-locator";
@@ -226,10 +228,22 @@ export function CaptureList({
             />
           ) : null}
 
-          <div className="flex items-center gap-3 border-t border-black/[.06] pt-3 dark:border-white/[.1]">
+          {/*
+            단추 줄.
+
+            **좁은 칸에서 글자가 세로로 서지 않게 한다.** 읽기 화면에서
+            왼쪽 논문을 넓히면 이 칸이 좁아지는데, 줄바꿈을 막지 않으면
+            `수정`이 `수`/`정` 두 줄로 쪼개진다. 글자 수가 적을수록 더
+            그렇다. 한 낱말은 붙어 있어야 읽힌다.
+
+            `ml-auto`로 오른쪽 끝에 미는 것도 그만둔다. 좁아지면 밀 자리가
+            없는데 밀어붙이느라 그 칸이 한 글자 너비까지 줄어든다.
+            좁으면 **줄을 바꿔 아래로 내려가는 편**이 낫다.
+          */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-black/[.06] pt-3 dark:border-white/[.1]">
             <Link
               href={`/captures/${capture.id}/edit`}
-              className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+              className="whitespace-nowrap text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
             >
               수정
             </Link>
@@ -239,16 +253,32 @@ export function CaptureList({
               <input type="hidden" name="returnTo" value={returnTo} />
               <button
                 type="submit"
-                className="text-sm font-medium text-red-700 transition-colors hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                className="whitespace-nowrap text-sm font-medium text-red-700 transition-colors hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
               >
                 삭제
               </button>
             </form>
 
+            {/*
+              **자리에 놓기.** (19-B 뒤)
+
+              프로젝트에 잇기만 하면 "이 프로젝트에 쓸 것"까지고, 자리에
+              놓아야 "어디에 쓸 것"이 된다. **적어둔 직후가 그 판단이 가장
+              또렷한 때다.** 나중에 프로젝트 화면에서 찾으려면 무엇을
+              적었는지부터 다시 떠올려야 한다.
+
+              프로젝트에 잇기도 그대로 둔다. 아직 뼈대를 만들지 않았거나,
+              쓸 곳은 정했는데 어느 자리인지는 아직 모를 때가 있다.
+            */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <PlacedWhere captureId={capture.id} />
+              <NodePicker item={`capture:${capture.id}`} returnTo={returnTo} />
+            </div>
+
             {projects.length > 0 ? (
               <form
                 action={linkCaptureToProject}
-                className="ml-auto flex items-center gap-2"
+                className="flex min-w-0 flex-wrap items-center gap-2"
               >
                 <input type="hidden" name="targetId" value={capture.id} />
                 <input type="hidden" name="returnTo" value={returnTo} />
@@ -258,7 +288,12 @@ export function CaptureList({
                 <select
                   id={`project-${capture.id}`}
                   name="projectId"
-                  className="h-9 rounded-lg border border-black/[.08] bg-white px-2 text-xs text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+                  /*
+                    고르는 칸은 안에 든 이름만큼 넓어진다. 프로젝트 이름이
+                    길면 칸 밖으로 삐져나간다. `min-w-0`과 `max-w-full`로
+                    감싸는 칸 안에 머물게 한다.
+                  */
+                  className="h-9 min-w-0 max-w-full rounded-lg border border-black/[.08] bg-white px-2 text-xs text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
                 >
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
@@ -268,7 +303,7 @@ export function CaptureList({
                 </select>
                 <button
                   type="submit"
-                  className="text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+                  className="whitespace-nowrap text-sm font-medium text-zinc-600 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
                 >
                   프로젝트에 추가
                 </button>

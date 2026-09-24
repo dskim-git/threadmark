@@ -31,6 +31,9 @@ export type PlacedItem = {
       /** 기록의 본문. 목록에서는 화면이 줄여 보여준다. */
       content: string | null;
       originalText: string | null;
+      /** 이 기록이 달린 자료. 어디서 나온 말인지 알아야 쓸 수 있다. */
+      sourceId: string | null;
+      sourceTitle: string | null;
     }
 );
 
@@ -65,7 +68,7 @@ export async function listPlacements(
       15-E-2a에서 변수로 뺐다가 같은 일을 겪었다. (AGENTS.md 6절)
     */
     .select(
-      "id, node_id, note, position, project_outline_nodes!inner (project_id), sources (id, type, title, deleted_at), captures (id, capture_type, content, original_text, deleted_at)",
+      "id, node_id, note, position, project_outline_nodes!inner (project_id), sources (id, type, title, deleted_at), captures (id, capture_type, content, original_text, source_id, deleted_at, sources (title, deleted_at))",
     )
     .eq("project_outline_nodes.project_id", projectId)
     .order("position", { ascending: true });
@@ -120,6 +123,15 @@ export async function listPlacements(
           captureType: capture.capture_type,
           content: capture.content,
           originalText: capture.original_text,
+          sourceId: capture.source_id,
+          /*
+            지운 자료의 이름은 보여주지 않는다. 지운 것이 이름으로
+            되살아나면 지운 것이 아니게 된다.
+          */
+          sourceTitle:
+            capture.sources && capture.sources.deleted_at === null
+              ? capture.sources.title
+              : null,
         },
       ];
     }
@@ -371,4 +383,50 @@ export async function listPickerTree(): Promise<PickerTree> {
   }
 
   return tree;
+}
+
+/**
+ * 이 기록이 어느 프로젝트의 어느 자리에 놓여 있는가. (사용자 요청)
+ *
+ * 자료 쪽의 `listPlacementsOfSource`와 같은 일을 기록에 한다. 기록은 자료와
+ * 달리 제목이 없어 목록에서 스쳐 지나가기 쉬운데, **그래서 더 필요하다.**
+ * "이 메모 어디에 썼더라"를 물을 데가 없으면 같은 것을 두 번 적게 된다.
+ */
+export async function listPlacementsOfCapture(
+  captureId: string,
+): Promise<readonly PlacementOfSource[]> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("project_node_items")
+    .select(
+      "node_id, project_outline_nodes!inner (id, title, projects!inner (id, name, deleted_at))",
+    )
+    .eq("capture_id", captureId);
+
+  if (error) {
+    console.error("[ThreadMark] 기록이 놓인 자리 조회 실패:", error.message);
+
+    return [];
+  }
+
+  return (data ?? []).flatMap((row): PlacementOfSource[] => {
+    const node = row.project_outline_nodes;
+    const project = node?.projects;
+
+    if (!node || !project || project.deleted_at !== null) {
+      return [];
+    }
+
+    return [
+      {
+        projectId: project.id,
+        projectName: project.name,
+        nodeId: node.id,
+        nodeTitle: node.title,
+      },
+    ];
+  });
 }

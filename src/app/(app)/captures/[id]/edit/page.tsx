@@ -6,6 +6,9 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { getCaptureById } from "@/lib/captures/queries";
 
 import { updateCapture } from "../../actions";
+import { NodePicker } from "@/app/(app)/projects/node-picker";
+import { PlacedWhere } from "@/app/(app)/projects/placed-where";
+
 import { CaptureForm } from "../../capture-form";
 
 export const metadata: Metadata = {
@@ -65,6 +68,28 @@ export default async function EditCapturePage({
           translationLanguage: capture.translationLanguage ?? "",
         }}
       />
+
+      {/*
+        이 기록을 프로젝트의 어느 자리에 놓을지. (19-B 뒤)
+
+        고치는 화면에 두는 이유는, **글을 다듬는 동안이 "이걸 어디에 쓸까"가
+        떠오르는 때**이기 때문이다. 목록에서도 놓을 수 있지만 거기서는 글
+        전체가 보이지 않는다.
+
+        폼 밖에 둔다. 폼 안에 두면 자리를 고르는 단추가 기록 저장으로
+        읽힐 수 있고, 아직 저장하지 않은 글이 사라진다.
+      */}
+      <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-black/[.12] px-5 py-4 dark:border-white/[.18]">
+        <p className="min-w-0 flex-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          이 기록을 프로젝트의 어느 자리에 쓸지 정해둘 수 있습니다.
+        </p>
+        <PlacedWhere captureId={capture.id} />
+        <NodePicker
+          item={`capture:${capture.id}`}
+          returnTo={`/captures/${capture.id}/edit`}
+          label="자리에 놓기 →"
+        />
+      </section>
     </div>
   );
 }
