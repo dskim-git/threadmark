@@ -72,6 +72,7 @@ const PROTECTED_TABLES = [
   "project_outline_nodes",
   "project_node_items",
   "youtube_profiles",
+  "media_profiles",
 ];
 
 /**

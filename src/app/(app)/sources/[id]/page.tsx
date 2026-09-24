@@ -35,6 +35,7 @@ import {
 import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getBookProfile } from "@/lib/books/queries";
 import { getYoutubeProfile } from "@/lib/youtube/queries";
+import { getMediaProfile } from "@/lib/media/queries";
 import { Panel, Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
@@ -70,6 +71,7 @@ import { FileUpload } from "../file-upload";
 import { BookPanel } from "../book-panel";
 import { YoutubePanel } from "../youtube-panel";
 import { YoutubePlayer } from "../youtube-player";
+import { MediaPanel } from "../media-panel";
 import { MusicPanel } from "../music-panel";
 import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
@@ -125,6 +127,7 @@ export default async function SourceDetailPage({
     providerLinks,
     bookProfile,
     youtubeProfile,
+    mediaProfile,
     placements,
     relations,
     allSources,
@@ -148,6 +151,7 @@ export default async function SourceDetailPage({
     source.type === "music" ? listProviderLinks(source.id) : [],
     source.type === "book" ? getBookProfile(source.id) : null,
     source.type === "youtube" ? getYoutubeProfile(source.id) : null,
+    source.type === "media" ? getMediaProfile(source.id) : null,
     listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
@@ -531,6 +535,20 @@ export default async function SourceDetailPage({
           sourceId={source.id}
           sourceTitle={source.title}
           profile={youtubeProfile}
+          returnTo={returnTo}
+        />
+      ) : null}
+
+      {/*
+        작품 칸. 영화·드라마 유형일 때만 보여준다. (설계 문서 15절)
+      */}
+      {source.type === "media" ? (
+        <MediaPanel
+          sourceId={source.id}
+          sourceTitle={source.title}
+          description={source.description}
+          thumbnailUrl={source.thumbnailUrl}
+          profile={mediaProfile}
           returnTo={returnTo}
         />
       ) : null}

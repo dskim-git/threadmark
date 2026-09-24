@@ -133,6 +133,19 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             >
               계정·자료 삭제 안내
             </a>
+            {" · "}
+            {/*
+              출처 표기. (설계 문서 15.1절)
+
+              **표기는 누구에게나 보여야 한다.** 회원에게만 보이는 자리에
+              두면 표기하지 않은 것과 같다. 방침과 같은 줄에 둔다.
+            */}
+            <a
+              href="/credits"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              출처 표기
+            </a>
           </p>
         </div>
       </main>

@@ -339,6 +339,68 @@ export type Database = {
         }
         Relationships: []
       }
+      media_profiles: {
+        Row: {
+          cast_names: string[]
+          created_at: string
+          episode_count: number | null
+          fetched_at: string | null
+          genres: string[]
+          id: string
+          media_kind: Database["public"]["Enums"]["media_kind"]
+          original_title: string | null
+          owner_id: string
+          released_on: string | null
+          runtime_minutes: number | null
+          season_count: number | null
+          source_id: string
+          tmdb_id: number
+          updated_at: string
+        }
+        Insert: {
+          cast_names?: string[]
+          created_at?: string
+          episode_count?: number | null
+          fetched_at?: string | null
+          genres?: string[]
+          id?: string
+          media_kind: Database["public"]["Enums"]["media_kind"]
+          original_title?: string | null
+          owner_id?: string
+          released_on?: string | null
+          runtime_minutes?: number | null
+          season_count?: number | null
+          source_id: string
+          tmdb_id: number
+          updated_at?: string
+        }
+        Update: {
+          cast_names?: string[]
+          created_at?: string
+          episode_count?: number | null
+          fetched_at?: string | null
+          genres?: string[]
+          id?: string
+          media_kind?: Database["public"]["Enums"]["media_kind"]
+          original_title?: string | null
+          owner_id?: string
+          released_on?: string | null
+          runtime_minutes?: number | null
+          season_count?: number | null
+          source_id?: string
+          tmdb_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       music_profiles: {
         Row: {
           album_artist: string | null
@@ -1356,6 +1418,7 @@ export type Database = {
         | "machine_generated"
         | "user_edited"
       drive_connection_status: "connected" | "revoked" | "error"
+      media_kind: "movie" | "tv"
       paper_use_status: "planned" | "used"
       project_status: "active"
       project_visibility: "private"
@@ -1535,6 +1598,7 @@ export const Constants = {
         "user_edited",
       ],
       drive_connection_status: ["connected", "revoked", "error"],
+      media_kind: ["movie", "tv"],
       paper_use_status: ["planned", "used"],
       project_status: ["active"],
       project_visibility: ["private"],

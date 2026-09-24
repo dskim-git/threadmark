@@ -6311,6 +6311,243 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 110. 다른 사용자의 자료에 작품 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. set_media_profile_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 남의 영화')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.media_profiles (source_id, tmdb_id, media_kind)
+    values (v_source, 550, 'movie'::public.media_kind);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.media_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 110 실패: 다른 사용자의 자료에 작품 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 111. 소유자는 작품 정보를 붙이고 읽고 다른 작품으로 바꿀 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **다른 작품을 골라 다시 담는 길이 열려 있어야 한다.** 같은 이름의 다른
+-- 작품을 잘못 고르는 일이 흔하고, 그때 자료를 지우고 다시 만들게 하면
+-- 적어둔 메모가 함께 사라진다.
+--
+-- 15-E에서 음악으로 겪은 고장과 같은 자리다. 잠겨도 오류가 나지 않고 그냥
+-- 값이 안 바뀔 뿐이라, 쓰다가 부딪히기 전에는 모른다. (AGENTS.md 2절)
+do $$
+declare
+  v_owner    uuid;
+  v_source   uuid;
+  v_tmdb     integer;
+  v_kind     public.media_kind;
+  v_genres   text[];
+  v_cast     text[];
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 내 영화')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.media_profiles
+    (source_id, tmdb_id, media_kind, original_title, released_on,
+     genres, cast_names, runtime_minutes, fetched_at)
+  values
+    (v_source, 550, 'movie'::public.media_kind, 'Fight Club', '1999-10-15',
+     array['드라마'], array['에드워드 노튼'], 139, pg_catalog.now());
+
+  -- 잘못 골랐다. 드라마로 바꾼다. 갈래까지 바뀐다.
+  update public.media_profiles
+  set tmdb_id = 1396,
+      media_kind = 'tv'::public.media_kind,
+      original_title = 'Breaking Bad',
+      genres = array['범죄', '드라마'],
+      cast_names = array['브라이언 크랜스턴', '애런 폴'],
+      season_count = 5,
+      episode_count = 62,
+      runtime_minutes = 49
+  where source_id = v_source;
+
+  select tmdb_id, media_kind, genres, cast_names
+  into v_tmdb, v_kind, v_genres, v_cast
+  from public.media_profiles where source_id = v_source;
+
+  reset role;
+
+  delete from public.media_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_tmdb is distinct from 1396 then
+    raise exception
+      '검사 111 실패: 다른 작품으로 바꾸지 못했습니다. 잘못 고른 뒤 고칠 수 없게 됩니다.';
+  end if;
+
+  if v_kind is distinct from 'tv'::public.media_kind then
+    raise exception '검사 111 실패: 영화에서 드라마로 갈래를 바꾸지 못했습니다.';
+  end if;
+
+  if pg_catalog.array_length(v_genres, 1) is distinct from 2 then
+    raise exception '검사 111 실패: 장르 목록을 담지 못했습니다.';
+  end if;
+
+  if pg_catalog.array_length(v_cast, 1) is distinct from 2 then
+    raise exception '검사 111 실패: 출연진 목록을 담지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 112. 영화에는 시즌이 없고, 모양이 깨진 값은 담기지 않는다
+-- -----------------------------------------------------------------------------
+-- 네 가지를 본다.
+--
+--   붙은 자료 바꾸기   가 작품의 정보가 나 자료에 붙는다 (검사 51·102·109)
+--   영화에 시즌        화면이 영화에 `시즌 1`을 보여주게 된다
+--   0분짜리 길이       TMDB가 모르는 값을 0으로 줄 때가 있다
+--   빈 장르 이름       화면에 `액션, , 드라마`로 보인다
+--
+-- **모양으로 막을 수 있는 것은 모양으로 막는다.** 화면도 막지만 마지막
+-- 보장은 제약조건이다.
+do $$
+declare
+  v_owner    uuid;
+  v_source_a uuid;
+  v_source_b uuid;
+  v_profile  uuid;
+  v_moved    boolean := false;
+  v_season   boolean := false;
+  v_zero     boolean := false;
+  v_blank    boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 작품 가')
+  returning id into v_source_a;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 작품 나')
+  returning id into v_source_b;
+
+  insert into public.media_profiles (owner_id, source_id, tmdb_id, media_kind)
+  values (v_owner, v_source_a, 550, 'movie'::public.media_kind)
+  returning id into v_profile;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.media_profiles
+    set source_id = v_source_b where id = v_profile;
+  exception when others then
+    v_moved := true;
+  end;
+
+  begin
+    update public.media_profiles
+    set season_count = 3 where id = v_profile;
+  exception when others then
+    v_season := true;
+  end;
+
+  begin
+    update public.media_profiles
+    set runtime_minutes = 0 where id = v_profile;
+  exception when others then
+    v_zero := true;
+  end;
+
+  begin
+    update public.media_profiles
+    set genres = array['액션', '  ', '드라마'] where id = v_profile;
+  exception when others then
+    v_blank := true;
+  end;
+
+  reset role;
+
+  delete from public.media_profiles where id = v_profile;
+  delete from public.sources where id in (v_source_a, v_source_b);
+
+  if not v_moved then
+    raise exception
+      '검사 112 실패: 작품 정보가 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+
+  if not v_season then
+    raise exception
+      '검사 112 실패: 영화에 시즌 수가 담겼습니다. 화면이 영화에 시즌을 보여주게 됩니다.';
+  end if;
+
+  if not v_zero then
+    raise exception
+      '검사 112 실패: 0분짜리 길이가 담겼습니다. 화면에 0분이 떠서 잘못 담긴 것처럼 보입니다.';
+  end if;
+
+  if not v_blank then
+    raise exception
+      '검사 112 실패: 빈 장르 이름이 담겼습니다. 화면에 `액션, , 드라마`로 보입니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -6364,6 +6601,10 @@ select
   (select count(*) from public.youtube_profiles)                        as 영상_정보,
   (select count(*) from public.youtube_profiles
     where embeddable is false)                                          as 퍼가기_막힌_영상,
+  (select count(*) from public.media_profiles
+    where media_kind = 'movie'::public.media_kind)                      as 영화,
+  (select count(*) from public.media_profiles
+    where media_kind = 'tv'::public.media_kind)                         as 드라마,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

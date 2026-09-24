@@ -130,6 +130,12 @@ export const EXTERNAL_PROCESSORS: readonly ExternalProcessor[] = [
     headerSet: "youtube",
   },
   {
+    name: "TMDB",
+    role: "영화·드라마의 정보와 포스터를 찾습니다.",
+    data: "찾으려는 작품 제목, 또는 고른 작품의 TMDB 번호",
+    headerSet: "tmdb",
+  },
+  {
     name: "직접 입력한 웹사이트",
     role: "웹사이트를 자료로 담을 때 제목과 설명을 읽어 옵니다.",
     data: "그 주소. 우리 서버가 그 사이트에 요청을 보냅니다",

@@ -302,6 +302,31 @@ export default async function SettingsPage({
           description="계정과 담아둔 자료를 모두 지웁니다. 되돌릴 수 없습니다."
         />
       </section>
+
+      {/*
+        앱 밖의 글로 가는 길.
+
+        **출처 표기는 우리가 지키기로 한 약속이다.** (설계 문서 15.1절)
+        로그인 화면에도 두었지만, 쓰는 동안에도 닿을 수 있어야 한다.
+        로그인한 뒤에는 그 화면에 갈 일이 없기 때문이다.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+          이 앱에 대하여
+        </h2>
+
+        <SettingsLink
+          href="/credits"
+          title="출처 표기"
+          description="자료의 정보를 가져오는 곳과 그 표기입니다."
+        />
+
+        <SettingsLink
+          href="/privacy"
+          title="개인정보 처리방침"
+          description="무엇을 담고 어디로 보내는지 적어 두었습니다."
+        />
+      </section>
     </div>
   );
 }

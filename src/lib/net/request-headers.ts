@@ -77,6 +77,18 @@ export const YOUTUBE_REQUEST_HEADERS: Record<string, string> = {
 };
 
 /**
+ * TMDB에 영화·드라마를 물을 때. (설계 문서 15절)
+ *
+ * **열쇠는 여기 없다.** TMDB v4 토큰은 `Authorization: Bearer <토큰>`으로
+ * 보내는데 그 값은 비밀이라 환경변수에서 읽어 부를 때 붙인다. Kakao와
+ * 같은 판단이다.
+ */
+export const TMDB_REQUEST_HEADERS: Record<string, string> = {
+  "user-agent": USER_AGENT,
+  accept: "application/json",
+};
+
+/**
  * 검사가 훑는 목록.
  *
  * **새 헤더 묶음을 만들면 여기에도 넣는다.** 넣지 않으면 그것만 검사를
@@ -88,4 +100,5 @@ export const OUTGOING_HEADER_SETS: Record<string, Record<string, string>> = {
   itunes: ITUNES_REQUEST_HEADERS,
   kakao: KAKAO_REQUEST_HEADERS,
   youtube: YOUTUBE_REQUEST_HEADERS,
+  tmdb: TMDB_REQUEST_HEADERS,
 };
