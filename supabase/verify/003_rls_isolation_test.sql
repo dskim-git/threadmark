@@ -5103,6 +5103,991 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 92. 다른 사용자의 태그를 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 태그 이름은 그 사람이 무엇을 어떤 말로 나누고 있는지를 그대로 드러낸다.
+-- 자료 제목을 몰라도 `교원평가`·`이직` 같은 이름 몇 개면 짐작이 간다.
+do $$
+declare
+  v_owner uuid;
+  v_other uuid;
+  v_tag   uuid;
+  v_seen  integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.tags (owner_id, name, slug)
+  values (v_owner, 'RLS격리검사용남의태그', 'rls격리검사용남의태그')
+  returning id into v_tag;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen from public.tags where id = v_tag;
+
+  reset role;
+
+  delete from public.tags where id = v_tag;
+
+  if v_seen <> 0 then
+    raise exception '검사 92 실패: 다른 사용자의 태그가 %건 보였습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 93. 소유자는 태그를 만들고 읽고 이름을 고칠 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 이름을 고치는 길이 막히면 오타 하나에 태그를 지우고 다시 만들어야 하고,
+-- 그러면 달아둔 자료에서 전부 떨어진다.
+--
+-- owner_id를 보내지 않고 넣어 트리거가 채우는지도 함께 본다. (보안 원칙 2)
+do $$
+declare
+  v_owner   uuid;
+  v_tag     uuid;
+  v_written uuid;
+  v_name    text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.tags (name, slug)
+  values ('RLS격리검사용내태그', 'rls격리검사용내태그')
+  returning id, owner_id into v_tag, v_written;
+
+  update public.tags
+  set name = 'RLS격리검사용고친태그', slug = 'rls격리검사용고친태그'
+  where id = v_tag;
+
+  select name into v_name from public.tags where id = v_tag;
+
+  reset role;
+
+  delete from public.tags where id = v_tag;
+
+  if v_tag is null then
+    raise exception '검사 93 실패: 소유자가 태그를 만들지 못했습니다.';
+  end if;
+
+  if v_written is distinct from v_owner then
+    raise exception
+      '검사 93 실패: owner_id가 트리거로 채워지지 않았습니다. (%)', v_written;
+  end if;
+
+  if v_name is distinct from 'RLS격리검사용고친태그' then
+    raise exception '검사 93 실패: 태그 이름을 고치지 못했습니다. (지금 %)', v_name;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 94. 같은 태그를 두 번 만들거나 모양이 깨진 이름을 담을 수 없다
+-- -----------------------------------------------------------------------------
+-- 같은 이름이 둘이면 **눈에는 같은 태그인데 달린 자료가 갈린다.** 하나를
+-- 눌러 걸러보면 다른 쪽에 달린 것이 빠진 채로 나오고, 빠졌다는 사실조차
+-- 보이지 않는다.
+--
+-- 쉼표와 앞뒤 공백도 같은 이유로 막는다. 쉼표는 여러 개를 가르는 글자라
+-- 이름에 들어가면 가를 수 없고, 앞뒤 공백은 눈에 같은 태그를 둘로 만든다.
+--
+-- 겹침은 **한 사람 안에서만** 막는다. 남과 같은 이름은 얼마든지 쓸 수 있어야
+-- 하며, 그것까지 막으면 먼저 온 사람이 흔한 낱말을 선점하게 된다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_tag     uuid;
+  v_twice   boolean := false;
+  v_comma   boolean := false;
+  v_spaced  boolean := false;
+  v_theirs  uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.tags (name, slug)
+  values ('RLS격리검사용겹침', 'rls격리검사용겹침')
+  returning id into v_tag;
+
+  begin
+    insert into public.tags (name, slug)
+    values ('RLS격리검사용겹침', 'rls격리검사용겹침');
+  exception when others then
+    v_twice := true;
+  end;
+
+  begin
+    insert into public.tags (name, slug)
+    values ('쉼표,든이름', '쉼표,든이름');
+  exception when others then
+    v_comma := true;
+  end;
+
+  begin
+    insert into public.tags (name, slug)
+    values (' 앞뒤공백 ', ' 앞뒤공백 ');
+  exception when others then
+    v_spaced := true;
+  end;
+
+  reset role;
+
+  -- 다른 사람은 같은 이름을 쓸 수 있어야 한다.
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.tags (name, slug)
+    values ('RLS격리검사용겹침', 'rls격리검사용겹침')
+    returning id into v_theirs;
+  exception when others then
+    v_theirs := null;
+  end;
+
+  reset role;
+
+  delete from public.tags
+  where id = v_tag or id = v_theirs
+     or slug in ('쉼표,든이름', ' 앞뒤공백 ');
+
+  if not v_twice then
+    raise exception '검사 94 실패: 같은 태그를 두 번 만들 수 있었습니다.';
+  end if;
+
+  if not v_comma then
+    raise exception '검사 94 실패: 쉼표가 든 태그 이름이 저장되었습니다.';
+  end if;
+
+  if not v_spaced then
+    raise exception '검사 94 실패: 앞뒤 공백이 남은 태그 이름이 저장되었습니다.';
+  end if;
+
+  if v_theirs is null then
+    raise exception
+      '검사 94 실패: 다른 사용자가 같은 이름의 태그를 만들지 못했습니다. 겹침은 한 사람 안에서만 막아야 합니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 95. 다른 사용자의 태그를 내 자료에 달 수 없다
+-- -----------------------------------------------------------------------------
+-- 연결 표는 두 곳을 가리키므로 양쪽을 따로 확인해야 한다. 이것이 태그 쪽이다.
+-- 내 자료 + 남의 태그. 막지 않으면 남의 태그에 내 자료가 매달리고,
+-- 그 사람이 그 태그로 걸러볼 때 내 자료가 섞여 나온다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_tag     uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.tags (owner_id, name, slug)
+  values (v_owner, 'RLS격리검사용남의것', 'rls격리검사용남의것')
+  returning id into v_tag;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_other, 'note'::public.source_type, 'RLS 격리 검사용 내 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_tags (source_id, tag_id)
+    values (v_source, v_tag);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_tags where tag_id = v_tag;
+  delete from public.sources where id = v_source;
+  delete from public.tags where id = v_tag;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 95 실패: 다른 사용자의 태그를 내 자료에 달 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 96. 내 태그를 다른 사용자의 자료에 달 수 없다
+-- -----------------------------------------------------------------------------
+-- 95번의 반대 방향이다. 태그는 내 것이고 **자료만 남의 것**이다.
+-- 태그만 확인하는 가드는 이쪽을 그냥 통과시킨다. assert_source_owned가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_tag     uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.tags (owner_id, name, slug)
+  values (v_other, 'RLS격리검사용내것', 'rls격리검사용내것')
+  returning id into v_tag;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 남의 자료')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.source_tags (source_id, tag_id)
+    values (v_source, v_tag);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.source_tags where tag_id = v_tag;
+  delete from public.sources where id = v_source;
+  delete from public.tags where id = v_tag;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 96 실패: 내 태그를 다른 사용자의 자료에 달 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 97. 기록에 다는 태그도 양쪽을 확인한다
+-- -----------------------------------------------------------------------------
+-- `capture_tags`는 `source_tags`와 같은 모양이지만 **다른 트리거**가 지킨다.
+-- 한쪽만 고치고 다른 쪽을 잊는 일이 실제로 일어나는 자리라 따로 확인한다.
+-- 두 방향을 한 검사에서 본다.
+do $$
+declare
+  v_owner    uuid;
+  v_other    uuid;
+  v_tag      uuid;
+  v_capture  uuid;
+  v_tag_side boolean := false;
+  v_cap_side boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 남의 태그 + 내 기록.
+  insert into public.tags (owner_id, name, slug)
+  values (v_owner, 'RLS격리검사용기록태그', 'rls격리검사용기록태그')
+  returning id into v_tag;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_other, 'note'::public.capture_type, 'RLS 격리 검사용 내 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.capture_tags (capture_id, tag_id)
+    values (v_capture, v_tag);
+  exception when others then
+    v_tag_side := true;
+  end;
+
+  reset role;
+
+  delete from public.capture_tags where tag_id = v_tag;
+  delete from public.captures where id = v_capture;
+  delete from public.tags where id = v_tag;
+
+  -- 내 태그 + 남의 기록.
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.tags (owner_id, name, slug)
+  values (v_other, 'RLS격리검사용기록태그2', 'rls격리검사용기록태그2')
+  returning id into v_tag;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 남의 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.capture_tags (capture_id, tag_id)
+    values (v_capture, v_tag);
+  exception when others then
+    v_cap_side := true;
+  end;
+
+  reset role;
+
+  delete from public.capture_tags where tag_id = v_tag;
+  delete from public.captures where id = v_capture;
+  delete from public.tags where id = v_tag;
+
+  if not v_tag_side then
+    raise exception
+      '검사 97 실패: 다른 사용자의 태그를 내 기록에 달 수 있었습니다.';
+  end if;
+
+  if not v_cap_side then
+    raise exception
+      '검사 97 실패: 내 태그를 다른 사용자의 기록에 달 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 98. 다른 사용자가 달아둔 태그 연결을 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 태그 자체가 안 보여도 연결 표가 새면 **무엇에 몇 개를 달았는지**가 드러난다.
+-- 태그 id와 자료 id의 짝만으로도 어떤 자료들이 한 주제로 묶여 있는지 보인다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_tag    uuid;
+  v_source uuid;
+  v_seen   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.tags (owner_id, name, slug)
+  values (v_owner, 'RLS격리검사용연결', 'rls격리검사용연결')
+  returning id into v_tag;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 태그 단 자료')
+  returning id into v_source;
+
+  insert into public.source_tags (owner_id, source_id, tag_id)
+  values (v_owner, v_source, v_tag);
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.source_tags where tag_id = v_tag;
+
+  reset role;
+
+  delete from public.source_tags where tag_id = v_tag;
+  delete from public.sources where id = v_source;
+  delete from public.tags where id = v_tag;
+
+  if v_seen <> 0 then
+    raise exception
+      '검사 98 실패: 다른 사용자가 달아둔 태그 연결이 %건 보였습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 99. 소유자는 자기 자료와 기록에 자기 태그를 달고 뗄 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 양쪽을 확인하는 트리거가 지나치면 자기 것끼리도 막히고, 그러면 태그 기능이
+-- 성립하지 않는다. (보안 원칙 6)
+--
+-- **떼는 것까지 확인한다.** 연결 표에는 고치는 길이 없으므로, 잘못 달았을 때
+-- 되돌릴 방법은 떼기 하나뿐이다. 그것이 막혀 있으면 잘못 단 태그가 영영 남는다.
+do $$
+declare
+  v_owner   uuid;
+  v_tag     uuid;
+  v_source  uuid;
+  v_capture uuid;
+  v_seen    integer;
+  v_left    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 격리 검사용 내 자료')
+  returning id into v_source;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 내 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.tags (name, slug)
+  values ('RLS격리검사용달기', 'rls격리검사용달기')
+  returning id into v_tag;
+
+  -- 자료와 기록이 **같은 태그 목록을 나눠 쓴다.** (설계 문서 20-1절)
+  insert into public.source_tags (source_id, tag_id) values (v_source, v_tag);
+  insert into public.capture_tags (capture_id, tag_id) values (v_capture, v_tag);
+
+  select
+    (select count(*) from public.source_tags where tag_id = v_tag)
+    + (select count(*) from public.capture_tags where tag_id = v_tag)
+  into v_seen;
+
+  delete from public.source_tags where source_id = v_source and tag_id = v_tag;
+
+  select count(*) into v_left
+  from public.source_tags where source_id = v_source and tag_id = v_tag;
+
+  reset role;
+
+  delete from public.source_tags where tag_id = v_tag;
+  delete from public.capture_tags where tag_id = v_tag;
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+  delete from public.tags where id = v_tag;
+
+  if v_seen <> 2 then
+    raise exception
+      '검사 99 실패: 자기 자료와 기록에 단 태그가 %건 읽혔습니다. 2건이어야 합니다.', v_seen;
+  end if;
+
+  if v_left <> 0 then
+    raise exception '검사 99 실패: 달아둔 태그를 떼지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 100. 다른 사용자의 자료에 웹사이트 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. 자료 id만 알면 남의 자료에 내 정보를 붙일 수
+-- 있게 된다. set_website_profile_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'website'::public.source_type, 'RLS 격리 검사용 남의 웹사이트')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.website_profiles (source_id, site_name)
+    values (v_source, '남의 자료에 붙인 사이트 이름');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.website_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 100 실패: 다른 사용자의 자료에 웹사이트 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 101. 소유자는 웹사이트 정보를 붙이고 읽고 다시 받아올 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 웹페이지는 바뀐다. 제목이 달라지고 글쓴이가 붙기도 한다. 그래서 다시
+-- 받아와 덮어쓰는 길이 열려 있어야 한다. 막히면 한 번 받아온 값이 영영 남는다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_name   text;
+  v_when   timestamptz;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'website'::public.source_type, 'RLS 격리 검사용 내 웹사이트')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.website_profiles
+    (source_id, site_name, author, favicon_url, fetched_at)
+  values
+    (v_source, '처음 받아온 이름', '김대수',
+     'https://example.com/favicon.ico', pg_catalog.now());
+
+  -- 페이지가 바뀌어 다시 받아온다.
+  update public.website_profiles
+  set site_name = '다시 받아온 이름', fetched_at = pg_catalog.now()
+  where source_id = v_source;
+
+  select site_name, fetched_at into v_name, v_when
+  from public.website_profiles where source_id = v_source;
+
+  reset role;
+
+  delete from public.website_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_name is distinct from '다시 받아온 이름' then
+    raise exception
+      '검사 101 실패: 웹사이트 정보를 다시 받아와 덮어쓰지 못했습니다. (지금 %)', v_name;
+  end if;
+
+  if v_when is null then
+    raise exception '검사 101 실패: 언제 받아왔는지가 담기지 않았습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 102. 웹사이트 정보가 붙은 자료는 바꿀 수 없고 주소 자리에는 http만 담긴다
+-- -----------------------------------------------------------------------------
+-- 두 가지를 한 검사에서 본다.
+--
+-- 붙은 자료를 바꿀 수 있으면 A 페이지의 정보가 B 자료에 붙는다. 검사 51·56과
+-- 같은 이유이며 자기 자료끼리라도 막는다.
+--
+-- **주소 자리는 더 무겁다.** `javascript:`로 시작하는 값이 화면의 링크에
+-- 들어가면 **누르는 순간 실행된다.** 밖에서 받아온 값이 그대로 들어오는
+-- 자리라 화면만 믿지 않는다. (보안 원칙 10과 같은 생각이다)
+do $$
+declare
+  v_owner    uuid;
+  v_source_a uuid;
+  v_source_b uuid;
+  v_profile  uuid;
+  v_moved    boolean := false;
+  v_script   boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'website'::public.source_type, 'RLS 격리 검사용 웹사이트 가')
+  returning id into v_source_a;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'website'::public.source_type, 'RLS 격리 검사용 웹사이트 나')
+  returning id into v_source_b;
+
+  insert into public.website_profiles (owner_id, source_id, site_name)
+  values (v_owner, v_source_a, '옮겨볼 사이트')
+  returning id into v_profile;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.website_profiles
+    set source_id = v_source_b where id = v_profile;
+  exception when others then
+    v_moved := true;
+  end;
+
+  begin
+    update public.website_profiles
+    set favicon_url = 'javascript:alert(1)' where id = v_profile;
+  exception when others then
+    v_script := true;
+  end;
+
+  reset role;
+
+  delete from public.website_profiles where id = v_profile;
+  delete from public.sources where id in (v_source_a, v_source_b);
+
+  if not v_moved then
+    raise exception
+      '검사 102 실패: 웹사이트 정보가 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+
+  if not v_script then
+    raise exception
+      '검사 102 실패: javascript: 주소가 저장되었습니다. 화면의 링크에 들어가면 누르는 순간 실행됩니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 103. 다른 사용자의 자료에 음악 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. set_music_profile_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'music'::public.source_type, 'RLS 격리 검사용 남의 곡')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.music_profiles (source_id, artist)
+    values (v_source, '남의 자료에 붙인 가수');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.music_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 103 실패: 다른 사용자의 자료에 음악 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 104. 다른 사용자의 자료에 들을 곳 링크를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 음악 정보와 **다른 표**다. 한쪽 가드만 만들고 다른 쪽을 잊기 쉬운 자리다.
+-- 막지 않으면 남의 음악 화면에 내가 고른 링크가 뜬다. 그 사람이 누를 링크를
+-- 내가 정하는 셈이다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'music'::public.source_type, 'RLS 격리 검사용 남의 곡')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.music_provider_links (source_id, url)
+    values (v_source, 'https://example.com/남의자료에붙인링크');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.music_provider_links where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 104 실패: 다른 사용자의 자료에 들을 곳 링크를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 105. 소유자는 음악 정보와 들을 곳 링크를 붙이고 읽고 뗄 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 밖에서 찾아온 값을 사용자가 고르면 그 값으로 덮어쓴다. 그것이 "이것이
+-- 맞다"는 뜻이기 때문이다. (AGENTS.md 2절) 덮어쓰는 길이 막히면 한 곡을
+-- 채운 뒤 다른 곡으로 바꿀 수 없다. 실제로 겪은 고장이다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_artist text;
+  v_links  integer;
+  v_left   integer;
+  v_link   uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'music'::public.source_type, 'RLS 격리 검사용 내 곡')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.music_profiles (source_id, artist, album_name)
+  values (v_source, '처음 고른 가수', '처음 고른 앨범');
+
+  -- 다른 후보를 눌러 바꾼다.
+  update public.music_profiles
+  set artist = '다시 고른 가수'
+  where source_id = v_source;
+
+  insert into public.music_provider_links (source_id, url)
+  values (v_source, 'https://example.com/들을곳')
+  returning id into v_link;
+
+  select artist into v_artist
+  from public.music_profiles where source_id = v_source;
+
+  select count(*) into v_links
+  from public.music_provider_links where source_id = v_source;
+
+  delete from public.music_provider_links where id = v_link;
+
+  select count(*) into v_left
+  from public.music_provider_links where id = v_link;
+
+  reset role;
+
+  delete from public.music_provider_links where source_id = v_source;
+  delete from public.music_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_artist is distinct from '다시 고른 가수' then
+    raise exception
+      '검사 105 실패: 고른 값으로 덮어쓰지 못했습니다. 한 곡을 채운 뒤 다른 곡으로 바꿀 수 없게 됩니다. (지금 %)',
+      v_artist;
+  end if;
+
+  if v_links <> 1 then
+    raise exception '검사 105 실패: 들을 곳 링크를 붙이지 못했습니다.';
+  end if;
+
+  if v_left <> 0 then
+    raise exception '검사 105 실패: 붙인 링크를 떼지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 106. 들을 곳 링크는 http만 담기고 같은 주소를 두 번 담지 않는다
+-- -----------------------------------------------------------------------------
+-- 주소 자리의 위험은 검사 102와 같다. `javascript:`가 화면의 링크에 들어가면
+-- 누르는 순간 실행된다. 이쪽은 **사용자가 직접 붙여넣는 자리**라 더 잦다.
+--
+-- 같은 주소를 두 번 담으면 화면에 같은 줄이 둘 보이고, 어느 것을 지울지
+-- 가릴 수 없다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_script  boolean := false;
+  v_twice   boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'music'::public.source_type, 'RLS 격리 검사용 링크 곡')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.music_provider_links (source_id, url)
+    values (v_source, 'javascript:alert(1)');
+  exception when others then
+    v_script := true;
+  end;
+
+  insert into public.music_provider_links (source_id, url)
+  values (v_source, 'https://example.com/같은주소');
+
+  begin
+    insert into public.music_provider_links (source_id, url)
+    values (v_source, 'https://example.com/같은주소');
+  exception when others then
+    v_twice := true;
+  end;
+
+  reset role;
+
+  delete from public.music_provider_links where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_script then
+    raise exception
+      '검사 106 실패: javascript: 링크가 저장되었습니다. 누르는 순간 실행됩니다.';
+  end if;
+
+  if not v_twice then
+    raise exception
+      '검사 106 실패: 같은 주소를 두 번 담을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -5147,6 +6132,12 @@ select
   (select count(*) from public.google_drive_connections)                as 드라이브_연결,
   (select count(*) from public.google_drive_connections
     where status <> 'connected'::public.drive_connection_status)        as 손본_연결,
+  (select count(*) from public.tags)                                    as 태그,
+  (select count(*) from public.source_tags)
+    + (select count(*) from public.capture_tags)                        as 달린_태그,
+  (select count(*) from public.website_profiles)                        as 웹사이트_정보,
+  (select count(*) from public.music_profiles)                          as 음악_정보,
+  (select count(*) from public.music_provider_links)                    as 들을_곳,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

@@ -87,15 +87,13 @@ const PROTECTED_TABLES = [
  * **줄어들기만 해야 한다.** 새 표를 만들면서 여기에 이름을 더하지 않는다.
  * 미루더라도 `docs/VERIFICATION.md` 5절에 왜 미뤘는지를 함께 적는다.
  *
- * `google_drive_connections`가 특히 급하다. 이 표는 Google 토큰을 담는다.
+ * **2026-09-25에 비었다.** 앱의 모든 표가 003에서 실제로 눌러본 검사를
+ * 가지게 되었다. 이 자리를 지우지 않고 남겨두는 것은, 다음에 표를 만들 때
+ * 여기에 이름을 더하고 싶어지는 순간이 오면 **그것이 빚이라는 것을 먼저
+ * 읽게 하기 위해서다.** 빈 목록은 그 자체로 지켜야 할 상태다.
  */
 const TABLES_WITHOUT_ISOLATION_TEST = [
-  "tags",
-  "source_tags",
-  "capture_tags",
-  "website_profiles",
-  "music_profiles",
-  "music_provider_links",
+  // 비어 있다. 앱의 모든 표가 003에서 실제로 눌러본 검사를 가지고 있다.
 ];
 
 /**
