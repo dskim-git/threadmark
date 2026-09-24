@@ -6088,6 +6088,229 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 107. 다른 사용자의 자료에 영상 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. set_youtube_profile_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'youtube'::public.source_type, 'RLS 격리 검사용 남의 영상')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.youtube_profiles (source_id, video_id, channel_name)
+    values (v_source, 'dQw4w9WgXcQ', '남의 자료에 붙인 채널');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.youtube_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 107 실패: 다른 사용자의 자료에 영상 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 108. 소유자는 영상 정보를 붙이고 읽고 다시 찾아올 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **영상 번호를 바꾸는 길이 열려 있어야 한다.** 다른 주소를 넣어 다시
+-- 찾아오는 것은 정상적인 일이다.
+--
+-- 15-E에서 겪은 고장이다. "적어둔 것을 덮지 않는다"를 뭉뚱그려 걸었더니
+-- 한 곡을 채운 뒤 다른 곡으로 바꿀 수 없었다. 잠겨도 오류가 나지 않고
+-- 그냥 값이 안 바뀔 뿐이라, 쓰다가 부딪히기 전에는 모른다. (AGENTS.md 2절)
+do $$
+declare
+  v_owner    uuid;
+  v_source   uuid;
+  v_video    text;
+  v_channel  text;
+  v_seconds  integer;
+  v_embed    boolean;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'youtube'::public.source_type, 'RLS 격리 검사용 내 영상')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.youtube_profiles
+    (source_id, video_id, channel_name, published_at,
+     duration_seconds, embeddable, fetched_at)
+  values
+    (v_source, 'dQw4w9WgXcQ', '처음 받아온 채널',
+     '2009-10-25T06:57:33Z'::timestamptz, 213, true, pg_catalog.now());
+
+  -- 다른 주소를 넣어 다시 찾아온다.
+  update public.youtube_profiles
+  set video_id = 'aqz-KE-bpKQ',
+      channel_name = '다시 받아온 채널',
+      duration_seconds = 634,
+      embeddable = false,
+      fetched_at = pg_catalog.now()
+  where source_id = v_source;
+
+  select video_id, channel_name, duration_seconds, embeddable
+  into v_video, v_channel, v_seconds, v_embed
+  from public.youtube_profiles where source_id = v_source;
+
+  reset role;
+
+  delete from public.youtube_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_video is distinct from 'aqz-KE-bpKQ' then
+    raise exception
+      '검사 108 실패: 다른 영상으로 바꾸지 못했습니다. 한 영상을 담은 뒤 다른 것으로 고칠 수 없게 됩니다. (지금 %)',
+      v_video;
+  end if;
+
+  if v_channel is distinct from '다시 받아온 채널' then
+    raise exception '검사 108 실패: 채널 이름을 다시 받아와 덮어쓰지 못했습니다.';
+  end if;
+
+  if v_seconds is distinct from 634 then
+    raise exception '검사 108 실패: 길이를 고치지 못했습니다.';
+  end if;
+
+  if v_embed is distinct from false then
+    raise exception
+      '검사 108 실패: 앱 안에서 틀 수 있는지를 고치지 못했습니다. 퍼가기가 막힌 영상에서 검은 화면이 뜨게 됩니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 109. 영상 정보가 붙은 자료는 바꿀 수 없고 모양이 깨진 값은 담기지 않는다
+-- -----------------------------------------------------------------------------
+-- 붙은 자료를 바꿀 수 있으면 가 영상의 정보가 나 자료에 붙는다. 자기
+-- 자료끼리라도 막는다. 검사 51·56·102와 같은 이유다.
+--
+-- 영상 번호의 모양도 본다. **모양이 깨진 번호가 담기면 화면의 플레이어가
+-- 검은 상자가 된다.** 오류도 나지 않고 그냥 아무것도 안 나오므로, 사용자는
+-- 영상이 지워진 줄 안다.
+--
+-- 길이 0초도 막는다. `P0D`(라이브)를 0으로 읽었다는 뜻이고, 그러면 화면에
+-- `0:00`이 떠서 영상이 빈 것처럼 보인다.
+do $$
+declare
+  v_owner    uuid;
+  v_source_a uuid;
+  v_source_b uuid;
+  v_profile  uuid;
+  v_moved    boolean := false;
+  v_shape    boolean := false;
+  v_zero     boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'youtube'::public.source_type, 'RLS 격리 검사용 영상 가')
+  returning id into v_source_a;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'youtube'::public.source_type, 'RLS 격리 검사용 영상 나')
+  returning id into v_source_b;
+
+  insert into public.youtube_profiles (owner_id, source_id, video_id)
+  values (v_owner, v_source_a, 'dQw4w9WgXcQ')
+  returning id into v_profile;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.youtube_profiles
+    set source_id = v_source_b where id = v_profile;
+  exception when others then
+    v_moved := true;
+  end;
+
+  begin
+    update public.youtube_profiles
+    set video_id = 'not a video id' where id = v_profile;
+  exception when others then
+    v_shape := true;
+  end;
+
+  begin
+    update public.youtube_profiles
+    set duration_seconds = 0 where id = v_profile;
+  exception when others then
+    v_zero := true;
+  end;
+
+  reset role;
+
+  delete from public.youtube_profiles where id = v_profile;
+  delete from public.sources where id in (v_source_a, v_source_b);
+
+  if not v_moved then
+    raise exception
+      '검사 109 실패: 영상 정보가 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+
+  if not v_shape then
+    raise exception
+      '검사 109 실패: 모양이 깨진 영상 번호가 저장되었습니다. 화면의 플레이어가 검은 상자가 됩니다.';
+  end if;
+
+  if not v_zero then
+    raise exception
+      '검사 109 실패: 0초짜리 길이가 저장되었습니다. 화면에 0:00이 떠서 영상이 빈 것처럼 보입니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -6138,6 +6361,9 @@ select
   (select count(*) from public.website_profiles)                        as 웹사이트_정보,
   (select count(*) from public.music_profiles)                          as 음악_정보,
   (select count(*) from public.music_provider_links)                    as 들을_곳,
+  (select count(*) from public.youtube_profiles)                        as 영상_정보,
+  (select count(*) from public.youtube_profiles
+    where embeddable is false)                                          as 퍼가기_막힌_영상,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

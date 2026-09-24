@@ -1246,6 +1246,56 @@ export type Database = {
           },
         ]
       }
+      youtube_profiles: {
+        Row: {
+          channel_name: string | null
+          created_at: string
+          duration_seconds: number | null
+          embeddable: boolean | null
+          fetched_at: string | null
+          id: string
+          owner_id: string
+          published_at: string | null
+          source_id: string
+          updated_at: string
+          video_id: string
+        }
+        Insert: {
+          channel_name?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          embeddable?: boolean | null
+          fetched_at?: string | null
+          id?: string
+          owner_id?: string
+          published_at?: string | null
+          source_id: string
+          updated_at?: string
+          video_id: string
+        }
+        Update: {
+          channel_name?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          embeddable?: boolean | null
+          fetched_at?: string | null
+          id?: string
+          owner_id?: string
+          published_at?: string | null
+          source_id?: string
+          updated_at?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "youtube_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

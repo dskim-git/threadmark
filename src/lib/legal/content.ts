@@ -122,6 +122,12 @@ export const EXTERNAL_PROCESSORS: readonly ExternalProcessor[] = [
     headerSet: "itunes",
   },
   {
+    name: "YouTube (Google)",
+    role: "영상 주소로 제목·채널·길이를 가져옵니다.",
+    data: "담으려는 영상의 번호. 계정 정보는 보내지 않습니다",
+    headerSet: "youtube",
+  },
+  {
     name: "직접 입력한 웹사이트",
     role: "웹사이트를 자료로 담을 때 제목과 설명을 읽어 옵니다.",
     data: "그 주소. 우리 서버가 그 사이트에 요청을 보냅니다",

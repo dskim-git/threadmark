@@ -34,6 +34,7 @@ import {
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getBookProfile } from "@/lib/books/queries";
+import { getYoutubeProfile } from "@/lib/youtube/queries";
 import { Panel, Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
@@ -67,6 +68,7 @@ import { DrivePickerButton } from "../drive-picker-button";
 import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
 import { BookPanel } from "../book-panel";
+import { YoutubePanel } from "../youtube-panel";
 import { MusicPanel } from "../music-panel";
 import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
@@ -121,6 +123,7 @@ export default async function SourceDetailPage({
     musicProfile,
     providerLinks,
     bookProfile,
+    youtubeProfile,
     placements,
     relations,
     allSources,
@@ -143,6 +146,7 @@ export default async function SourceDetailPage({
     source.type === "music" ? getMusicProfile(source.id) : null,
     source.type === "music" ? listProviderLinks(source.id) : [],
     source.type === "book" ? getBookProfile(source.id) : null,
+    source.type === "youtube" ? getYoutubeProfile(source.id) : null,
     listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
@@ -513,6 +517,19 @@ export default async function SourceDetailPage({
           description={source.description}
           thumbnailUrl={source.thumbnailUrl}
           profile={bookProfile}
+          returnTo={returnTo}
+        />
+      ) : null}
+
+      {/*
+        영상 칸. YouTube 유형일 때만 보여준다. (설계 문서 14절)
+        다른 유형에서는 자리조차 만들지 않는다. 논문·음악·책과 같은 판단이다.
+      */}
+      {source.type === "youtube" ? (
+        <YoutubePanel
+          sourceId={source.id}
+          sourceTitle={source.title}
+          profile={youtubeProfile}
           returnTo={returnTo}
         />
       ) : null}
