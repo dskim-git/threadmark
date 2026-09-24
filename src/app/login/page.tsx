@@ -27,6 +27,18 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 const FALLBACK_ERROR_MESSAGE = "로그인에 실패했습니다. 다시 시도해 주세요.";
 
+/**
+ * 오류가 아니라 "그 일이 끝났다"를 알리는 문구.
+ *
+ * 계정을 지우면 갈 수 있는 화면이 로그인뿐이다. 아무 말 없이 로그인 화면이
+ * 뜨면 지워진 것인지 그냥 튕긴 것인지 알 수 없다. **되돌릴 수 없는 일일수록
+ * 끝났다는 말을 들어야 한다.**
+ */
+const NOTICE_MESSAGES: Record<string, string> = {
+  account_deleted:
+    "계정을 지웠습니다. 담아두신 자료도 함께 지워졌습니다. 그동안 고맙습니다.",
+};
+
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams;
 
@@ -34,6 +46,10 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const errorMessage = errorCode
     ? (ERROR_MESSAGES[errorCode] ?? FALLBACK_ERROR_MESSAGE)
     : null;
+
+  // 아는 코드만 문구가 된다. 주소창에 적어 넣은 글이 화면에 나오지 않는다.
+  const noticeCode = firstValue(params.notice);
+  const noticeMessage = noticeCode ? (NOTICE_MESSAGES[noticeCode] ?? null) : null;
 
   const next = sanitizeNextPath(firstValue(params.next));
 
@@ -56,6 +72,15 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
             >
               {errorMessage}
+            </p>
+          ) : null}
+
+          {noticeMessage ? (
+            <p
+              role="status"
+              className="rounded-lg border border-black/[.08] bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700 dark:border-white/[.145] dark:bg-white/[.04] dark:text-zinc-300"
+            >
+              {noticeMessage}
             </p>
           ) : null}
 

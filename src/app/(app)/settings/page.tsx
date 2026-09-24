@@ -282,6 +282,26 @@ export default async function SettingsPage({
           />
         </section>
       ) : null}
+
+      {/*
+        나가는 길. (17-A)
+
+        맨 아래에 둔다. 자주 누를 것이 아니고, 로그아웃 바로 옆에 두면 둘을
+        헷갈릴 자리가 생긴다. 그렇다고 감추지는 않는다. **나갈 수 있는지를
+        찾아 헤매게 만드는 앱은 들어오기도 꺼려진다.** 실제로 지우는 일은
+        저 화면에서 메일 주소를 적어야 시작된다.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+          계정 정리
+        </h2>
+
+        <SettingsLink
+          href="/account/delete"
+          title="계정 지우기"
+          description="계정과 담아둔 자료를 모두 지웁니다. 되돌릴 수 없습니다."
+        />
+      </section>
     </div>
   );
 }

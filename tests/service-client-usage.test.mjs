@@ -28,6 +28,10 @@ const ALLOWED = [
   "src/lib/supabase/service.ts",
   // Drive 연결 정보는 authenticated 역할에게 권한이 없어 여기서만 다룰 수 있다.
   "src/lib/drive/connection.ts",
+  // 계정 삭제는 사용자 권한으로 할 수 있는 일이 아니다. auth.users 행을 지우는
+  // 일이고, 그 한 줄이 사라지면 cascade로 그 사람의 자료가 함께 사라진다.
+  // 다루는 대상은 받은 userId 하나뿐이고, 본인 확인은 부르는 쪽이 끝낸 뒤다.
+  "src/lib/account/deletion.ts",
 ];
 
 const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs"];

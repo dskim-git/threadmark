@@ -86,6 +86,28 @@ export default async function PendingPage() {
               로그아웃
             </button>
           </form>
+
+          {/*
+            나가는 길. (17-A)
+
+            **여기에도 있어야 한다.** 승인을 기다리거나 거절·정지된 사람은
+            앱 화면에 들어갈 수 없어서 설정에 있는 길에 닿지 못한다. 쓰지도
+            못하고 지우지도 못하는 상태에 갇히는 셈이다. 개인정보 초안 7절이
+            승인 대기·거절 상태에서도 계정을 지울 수 있어야 한다고 적었다.
+
+            작게 둔다. 지금 이 사람이 기다리러 온 것이지 나가러 온 것은
+            아니기 때문이다.
+          */}
+          <p className="text-center text-xs leading-5 text-zinc-500">
+            기다리지 않고 나가시려면{" "}
+            <a
+              href="/account/delete"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              계정을 지울 수 있습니다
+            </a>
+            .
+          </p>
         </div>
       </main>
     </div>
