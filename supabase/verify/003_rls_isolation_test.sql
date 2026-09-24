@@ -3787,6 +3787,1051 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 72. 다른 사용자의 뼈대 자리를 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 자리에는 `여기에 쓸 글`이 함께 담긴다. 목차가 아니라 **원고**가 새는 것이다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 뼈대 프로젝트')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title, body)
+  values (v_owner, v_project, '서론', '남이 보면 안 되는 원고')
+  returning id into v_node;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.project_outline_nodes where id = v_node;
+
+  reset role;
+
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 0 then
+    raise exception
+      '검사 72 실패: 다른 사용자의 뼈대 자리가 %건 보였습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 73. 다른 사용자의 프로젝트에 자리를 만들 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. 프로젝트 id만 알면 남의 뼈대에 자리를 끼워
+-- 넣을 수 있게 된다. set_project_outline_node_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 남의 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_outline_nodes (project_id, title)
+    values (v_project, '남의 프로젝트에 끼워 넣은 자리');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 73 실패: 다른 사용자의 프로젝트에 자리를 만들 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 74. 다른 사용자의 자리 아래에 자리를 만들 수 없다
+-- -----------------------------------------------------------------------------
+-- 73번과 다른 길이다. 내 프로젝트를 대고 **위 자리만 남의 것**으로 적으면,
+-- 프로젝트 확인만으로는 통과한다. assert_project_outline_owned가 막는다.
+do $$
+declare
+  v_owner    uuid;
+  v_other    uuid;
+  v_project  uuid;
+  v_mine     uuid;
+  v_node     uuid;
+  v_blocked  boolean := false;
+  v_added    integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 남의 뼈대')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '남의 자리')
+  returning id into v_node;
+
+  insert into public.projects (owner_id, name)
+  values (v_other, 'RLS 격리 검사용 내 프로젝트')
+  returning id into v_mine;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_outline_nodes (project_id, parent_id, title)
+    values (v_mine, v_node, '남의 자리 밑에 붙인 자리');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_outline_nodes
+  where project_id in (v_project, v_mine);
+  delete from public.projects where id in (v_project, v_mine);
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 74 실패: 다른 사용자의 자리 아래에 자리를 만들 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 75. 자기 것이라도 다른 프로젝트의 자리 아래에 둘 수 없다
+-- -----------------------------------------------------------------------------
+-- 소유자만 보면 **내 다른 프로젝트의 자리 밑에 붙일 수 있다.** 그러면 그 자리가
+-- 두 프로젝트에 걸치고, 어느 쪽 화면에 보이는지가 질의에 따라 달라진다.
+-- 자기 것끼리라도 막는다. source_relations와 같은 판단이다.
+do $$
+declare
+  v_owner    uuid;
+  v_projectA uuid;
+  v_projectB uuid;
+  v_node     uuid;
+  v_blocked  boolean := false;
+  v_added    integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 프로젝트 가')
+  returning id into v_projectA;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 프로젝트 나')
+  returning id into v_projectB;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_projectA, '가의 자리')
+  returning id into v_node;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_outline_nodes (project_id, parent_id, title)
+    values (v_projectB, v_node, '나에 있으면서 가에 붙은 자리');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_outline_nodes
+  where project_id in (v_projectA, v_projectB);
+  delete from public.projects where id in (v_projectA, v_projectB);
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 75 실패: 다른 프로젝트의 자리 아래에 자리를 둘 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 76. 소유자는 자리를 만들고 읽고 고치고 옮길 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 확인하면 과하게 잠근 경우를 놓친다. (보안 원칙 6)
+-- 특히 **옮기기**가 중요하다. 막아버리면 뼈대를 고칠 수 없는데, 위의 74~78이
+-- 전부 옮기기를 막는 검사라 한쪽으로 기울기 쉽다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_top     uuid;
+  v_second  uuid;
+  v_child   uuid;
+  v_body    text;
+  v_parent  uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 내 뼈대')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_outline_nodes (project_id, title)
+  values (v_project, '서론')
+  returning id into v_top;
+
+  insert into public.project_outline_nodes (project_id, title, position)
+  values (v_project, '이론적 배경', 1)
+  returning id into v_second;
+
+  -- 아래에 자리를 더한다.
+  insert into public.project_outline_nodes (project_id, parent_id, title)
+  values (v_project, v_top, '연구의 필요성')
+  returning id into v_child;
+
+  -- 글을 적는다. 이 칸이 뼈대를 목차가 아니게 만든다. (설계 문서 7.3절)
+  update public.project_outline_nodes
+  set body = '이 연구는'
+  where id = v_child;
+
+  -- 다른 자리 밑으로 옮긴다. 화면의 `한 단 들이기`가 하는 일이다.
+  update public.project_outline_nodes
+  set parent_id = v_second
+  where id = v_child;
+
+  select body, parent_id into v_body, v_parent
+  from public.project_outline_nodes where id = v_child;
+
+  reset role;
+
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_body is distinct from '이 연구는' then
+    raise exception '검사 76 실패: 자기 자리에 쓴 글을 읽지 못했습니다.';
+  end if;
+
+  if v_parent is distinct from v_second then
+    raise exception '검사 76 실패: 자기 자리를 옮기지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 77. 자기 아래에 있는 자리로 옮길 수 없다
+-- -----------------------------------------------------------------------------
+-- 옮기기를 열어두면 반드시 부딪히는 고리다. 걸리면 그 가지가 **화면에서
+-- 통째로 사라진다.** 깊이를 담지 않으므로 트리거가 부모를 따라 위로
+-- 거슬러 올라가며 확인한다. (설계 문서 7.3절)
+--
+-- 손자까지 내려가 확인하는 이유는, 바로 아래만 보는 검사로는 이 고리를
+-- 잡지 못하기 때문이다. 거슬러 올라가는 고리가 정말 도는지를 본다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_top     uuid;
+  v_child   uuid;
+  v_grand   uuid;
+  v_blocked boolean := false;
+  v_parent  uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 고리 뼈대')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '할아버지')
+  returning id into v_top;
+
+  insert into public.project_outline_nodes (owner_id, project_id, parent_id, title)
+  values (v_owner, v_project, v_top, '아버지')
+  returning id into v_child;
+
+  insert into public.project_outline_nodes (owner_id, project_id, parent_id, title)
+  values (v_owner, v_project, v_child, '손자')
+  returning id into v_grand;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.project_outline_nodes
+    set parent_id = v_grand
+    where id = v_top;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  select parent_id into v_parent
+  from public.project_outline_nodes where id = v_top;
+
+  reset role;
+
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_parent is not null then
+    raise exception
+      '검사 77 실패: 자기 손자 밑으로 옮길 수 있었습니다. 뼈대에 고리가 생깁니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 78. 자리의 프로젝트는 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- 바꿀 수 있으면 자리 하나만 다른 뼈대로 넘어간다. 그 자리에 적어둔 글과
+-- 놓아둔 재료가 함께 따라가고, 아래 자리들은 원래 프로젝트에 남아 떠돈다.
+do $$
+declare
+  v_owner    uuid;
+  v_projectA uuid;
+  v_projectB uuid;
+  v_node     uuid;
+  v_blocked  boolean := false;
+  v_where    uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 원래 프로젝트')
+  returning id into v_projectA;
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 옮길 프로젝트')
+  returning id into v_projectB;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_projectA, '옮겨지면 안 되는 자리')
+  returning id into v_node;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.project_outline_nodes
+    set project_id = v_projectB
+    where id = v_node;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  select project_id into v_where
+  from public.project_outline_nodes where id = v_node;
+
+  reset role;
+
+  delete from public.project_outline_nodes
+  where project_id in (v_projectA, v_projectB);
+  delete from public.projects where id in (v_projectA, v_projectB);
+
+  if not v_blocked or v_where is distinct from v_projectA then
+    raise exception
+      '검사 78 실패: 자리를 다른 프로젝트로 옮길 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 79. 다른 사용자가 놓아둔 재료를 볼 수 없다
+-- -----------------------------------------------------------------------------
+-- 놓인 재료에는 `이걸로 여기서 할 말`이 함께 담긴다. 남의 생각이다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_source  uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 놓인 재료')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '서론')
+  returning id into v_node;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 임시 논문')
+  returning id into v_source;
+
+  insert into public.project_node_items (owner_id, node_id, source_id, note)
+  values (v_owner, v_node, v_source, '남이 보면 안 되는 생각');
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.project_node_items where node_id = v_node;
+
+  reset role;
+
+  delete from public.project_node_items where node_id = v_node;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 0 then
+    raise exception
+      '검사 79 실패: 다른 사용자가 놓아둔 재료가 %건 보였습니다.', v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 80. 다른 사용자의 자리에 내 재료를 놓을 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. 자리 id만 알면 남의 원고에 내 것을 끼워 넣을
+-- 수 있게 된다. set_project_node_item_owner가 자리·자료·기록 셋을 함께 본다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 남의 자리')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '남의 서론')
+  returning id into v_node;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_other, 'paper'::public.source_type, 'RLS 격리 검사용 내 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_node_items (node_id, source_id, note)
+    values (v_node, v_source, '남의 자리에 끼워 넣은 것');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_node_items where node_id = v_node;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 80 실패: 다른 사용자의 자리에 재료를 놓을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 81. 내 자리에 다른 사용자의 재료를 놓을 수 없다
+-- -----------------------------------------------------------------------------
+-- 80번의 반대 방향이다. 자리는 내 것이고 **놓는 것만 남의 것**이다.
+-- 자리만 확인하는 가드는 이쪽을 그냥 통과시킨다. assert_source_owned가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 남의 논문')
+  returning id into v_source;
+
+  insert into public.projects (owner_id, name)
+  values (v_other, 'RLS 격리 검사용 내 프로젝트')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_other, v_project, '내 서론')
+  returning id into v_node;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_node_items (node_id, source_id, note)
+    values (v_node, v_source, '남의 자료를 내 자리에');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_node_items where node_id = v_node;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 81 실패: 다른 사용자의 자료를 내 자리에 놓을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 82. 소유자는 자기 자리에 자기 재료를 놓고 할 말을 고칠 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 자료와 기록을 모두 놓아본다. 한 자리에 둘이 섞여 있는 것이 그 자리의 모습이다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_source  uuid;
+  v_capture uuid;
+  v_item    uuid;
+  v_note    text;
+  v_count   integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 놓기 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 놓을 논문')
+  returning id into v_source;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 놓을 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_outline_nodes (project_id, title)
+  values (v_project, '서론')
+  returning id into v_node;
+
+  insert into public.project_node_items (node_id, source_id)
+  values (v_node, v_source)
+  returning id into v_item;
+
+  insert into public.project_node_items (node_id, capture_id, position)
+  values (v_node, v_capture, 1);
+
+  -- 놓은 뒤에 `이걸로 여기서 할 말`을 적는다. 이 칸만은 고칠 수 있어야 한다.
+  update public.project_node_items
+  set note = '표본 설계의 근거로 쓴다'
+  where id = v_item;
+
+  select note into v_note
+  from public.project_node_items where id = v_item;
+
+  select count(*) into v_count
+  from public.project_node_items where node_id = v_node;
+
+  reset role;
+
+  delete from public.project_node_items where node_id = v_node;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_count <> 2 then
+    raise exception
+      '검사 82 실패: 한 자리에 놓은 것이 %건입니다. 2건이어야 합니다.', v_count;
+  end if;
+
+  if v_note is distinct from '표본 설계의 근거로 쓴다' then
+    raise exception '검사 82 실패: 놓은 재료에 할 말을 적지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 83. 같은 자리에 같은 것을 두 번 놓을 수 없다
+-- -----------------------------------------------------------------------------
+-- 화면에 같은 줄이 둘 보이는 것은 실수이지 뜻이 아니다.
+--
+-- 한 색인에 자료와 기록 두 칸을 함께 걸면 안 된다. PostgreSQL에서 NULL은
+-- 자기 자신과도 같지 않아서 `자리+자료+NULL`이 서로 다른 값으로 취급되고,
+-- 막으려던 중복이 그대로 들어온다. 그래서 부분 색인을 따로 건다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 두 번 놓기')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '서론')
+  returning id into v_node;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 두 번 놓을 논문')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_node_items (node_id, source_id)
+  values (v_node, v_source);
+
+  begin
+    insert into public.project_node_items (node_id, source_id, position)
+    values (v_node, v_source, 1);
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_node_items where node_id = v_node;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked then
+    raise exception
+      '검사 83 실패: 같은 자리에 같은 자료를 두 번 놓을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 84. 자료와 기록 중 정확히 하나만 놓을 수 있다
+-- -----------------------------------------------------------------------------
+-- 둘 다 비면 무엇을 놓았는지 알 수 없고, 둘 다 차면 어느 쪽을 보여줄지
+-- **화면이 정하게 된다.** 화면이 정하면 그 판단이 코드 여기저기로 번진다.
+do $$
+declare
+  v_owner    uuid;
+  v_project  uuid;
+  v_node     uuid;
+  v_source   uuid;
+  v_capture  uuid;
+  v_both     boolean := false;
+  v_neither  boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 둘 중 하나')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '서론')
+  returning id into v_node;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 논문')
+  returning id into v_source;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_node_items (node_id, source_id, capture_id)
+    values (v_node, v_source, v_capture);
+  exception when others then
+    v_both := true;
+  end;
+
+  begin
+    insert into public.project_node_items (node_id, note)
+    values (v_node, '아무것도 놓지 않았다');
+  exception when others then
+    v_neither := true;
+  end;
+
+  reset role;
+
+  delete from public.project_node_items where node_id = v_node;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not v_both then
+    raise exception '검사 84 실패: 자료와 기록을 함께 놓을 수 있었습니다.';
+  end if;
+
+  if not v_neither then
+    raise exception '검사 84 실패: 아무것도 놓지 않은 줄을 담을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 85. 무엇을 어디에 놓았는지는 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- 바꿀 수 있으면 가 재료를 두고 적은 `여기서 할 말`이 나 재료의 것이 된다.
+-- 옮기려면 빼고 다시 놓는다. 그때 무슨 말을 적을지 다시 생각하게 되는 편이 맞다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_node    uuid;
+  v_other   uuid;
+  v_sourceA uuid;
+  v_sourceB uuid;
+  v_item    uuid;
+  v_moved   boolean := false;
+  v_swapped boolean := false;
+  v_at      uuid;
+  v_what    uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 바꿔치기')
+  returning id into v_project;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title)
+  values (v_owner, v_project, '서론')
+  returning id into v_node;
+
+  insert into public.project_outline_nodes (owner_id, project_id, title, position)
+  values (v_owner, v_project, '결론', 1)
+  returning id into v_other;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 논문 가')
+  returning id into v_sourceA;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 논문 나')
+  returning id into v_sourceB;
+
+  insert into public.project_node_items (owner_id, node_id, source_id, note)
+  values (v_owner, v_node, v_sourceA, '가로 할 말')
+  returning id into v_item;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.project_node_items set node_id = v_other where id = v_item;
+  exception when others then
+    v_moved := true;
+  end;
+
+  begin
+    update public.project_node_items set source_id = v_sourceB where id = v_item;
+  exception when others then
+    v_swapped := true;
+  end;
+
+  select node_id, source_id into v_at, v_what
+  from public.project_node_items where id = v_item;
+
+  reset role;
+
+  delete from public.project_node_items where node_id in (v_node, v_other);
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.sources where id in (v_sourceA, v_sourceB);
+  delete from public.projects where id = v_project;
+
+  if not v_moved or v_at is distinct from v_node then
+    raise exception '검사 85 실패: 놓인 재료를 다른 자리로 옮길 수 있었습니다.';
+  end if;
+
+  if not v_swapped or v_what is distinct from v_sourceA then
+    raise exception
+      '검사 85 실패: 놓인 것을 다른 재료로 바꿀 수 있었습니다. 적어둔 말이 남의 것이 됩니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 86. 자리를 지우면 그 아래와 놓인 자리는 사라지고 재료는 남는다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 설계 문서 7.3절의 약속이다. 사라지는 것은 **어디에 놓았는가**뿐이고,
+-- 자료와 기록은 프로젝트에 그대로 남아 `자리 못 찾은 것`으로 간다.
+--
+-- 이것이 어긋나면 자리 하나를 지울 때 모아둔 것까지 함께 사라진다. 사용자가
+-- 되돌릴 방법이 없고, 지운 뒤에야 알게 된다. 설계상 그렇게 되어 있지만
+-- **눈으로 본 적이 없어서** 여기서 확인한다.
+do $$
+declare
+  v_owner    uuid;
+  v_project  uuid;
+  v_top      uuid;
+  v_child    uuid;
+  v_source   uuid;
+  v_capture  uuid;
+  v_nodes    integer;
+  v_items    integer;
+  v_sources  integer;
+  v_captures integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 격리 검사용 지우기')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 격리 검사용 남아야 할 논문')
+  returning id into v_source;
+
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, 'RLS 격리 검사용 남아야 할 기록')
+  returning id into v_capture;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_outline_nodes (project_id, title)
+  values (v_project, '지울 자리')
+  returning id into v_top;
+
+  insert into public.project_outline_nodes (project_id, parent_id, title)
+  values (v_project, v_top, '함께 사라질 아래 자리')
+  returning id into v_child;
+
+  insert into public.project_node_items (node_id, source_id)
+  values (v_top, v_source);
+
+  insert into public.project_node_items (node_id, capture_id)
+  values (v_child, v_capture);
+
+  -- 위 자리 하나만 지운다. 아래 자리는 딸려 사라져야 한다.
+  delete from public.project_outline_nodes where id = v_top;
+
+  select count(*) into v_nodes
+  from public.project_outline_nodes where project_id = v_project;
+
+  select count(*) into v_items
+  from public.project_node_items where node_id in (v_top, v_child);
+
+  select count(*) into v_sources
+  from public.sources where id = v_source and deleted_at is null;
+
+  select count(*) into v_captures
+  from public.captures where id = v_capture and deleted_at is null;
+
+  reset role;
+
+  delete from public.project_node_items where node_id in (v_top, v_child);
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.captures where id = v_capture;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_nodes <> 0 then
+    raise exception
+      '검사 86 실패: 아래 자리가 %건 남았습니다. 함께 사라져야 합니다.', v_nodes;
+  end if;
+
+  if v_items <> 0 then
+    raise exception
+      '검사 86 실패: 놓인 기록이 %건 남았습니다. 자리가 없는데 남아 떠돕니다.', v_items;
+  end if;
+
+  if v_sources <> 1 then
+    raise exception
+      '검사 86 실패: 자료가 함께 사라졌습니다. 자리를 지워도 재료는 남아야 합니다.';
+  end if;
+
+  if v_captures <> 1 then
+    raise exception
+      '검사 86 실패: 기록이 함께 사라졌습니다. 자리를 지워도 재료는 남아야 합니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -3822,6 +4867,10 @@ select
   (select count(*) from public.book_profiles)                           as 책_정보,
   (select count(*) from public.book_profiles
     where reading_status = 'finished'::public.book_reading_status)      as 다_읽은_책,
+  (select count(*) from public.project_outline_nodes)                   as 뼈대_자리,
+  (select count(*) from public.project_outline_nodes
+    where body is not null and pg_catalog.btrim(body) <> '')            as 글_쓴_자리,
+  (select count(*) from public.project_node_items)                      as 놓인_재료,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

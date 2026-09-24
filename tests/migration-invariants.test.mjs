@@ -74,6 +74,32 @@ const PROTECTED_TABLES = [
 ];
 
 /**
+ * 아직 격리 검사를 쓰지 못한 표. **이 목록은 빚이지 면제가 아니다.**
+ *
+ * `003_rls_isolation_test.sql`은 실제 사용자 역할로 전환해 "막히는가"를
+ * 확인하는 유일한 자산이다. 여기 이름이 있다는 것은 그 표의 RLS와 정책이
+ * **걸려 있다고 적혀만 있고 막히는 것을 본 적은 없다**는 뜻이다.
+ *
+ * 위의 정적 검사는 `enable row level security`라는 글자가 있는지만 본다.
+ * 글자가 있는 것과 실제로 막히는 것은 다르다. 정책의 `using` 절이 틀려
+ * 남의 행이 보이더라도 이 파일의 검사는 전부 통과한다.
+ *
+ * **줄어들기만 해야 한다.** 새 표를 만들면서 여기에 이름을 더하지 않는다.
+ * 미루더라도 `docs/VERIFICATION.md` 5절에 왜 미뤘는지를 함께 적는다.
+ *
+ * `google_drive_connections`가 특히 급하다. 이 표는 Google 토큰을 담는다.
+ */
+const TABLES_WITHOUT_ISOLATION_TEST = [
+  "google_drive_connections",
+  "tags",
+  "source_tags",
+  "capture_tags",
+  "website_profiles",
+  "music_profiles",
+  "music_provider_links",
+];
+
+/**
  * 조회 정책을 일부러 두지 않는 테이블.
  *
  * google_drive_connections가 그렇다. refresh token이 들어 있어 본인조차
@@ -362,5 +388,62 @@ test("관리자 이메일이 소스 코드와 마이그레이션에 들어있지
     offenders,
     [],
     `관리자 이메일이 포함된 파일이 있다: ${offenders.join(", ")}`,
+  );
+});
+
+/**
+ * 격리 검사 목록이 표를 따라오는가.
+ *
+ * **이 저장소가 같은 함정에 두 번 빠진 자리다.** 표를 새로 만들면서 검사
+ * 목록에 넣는 것을 잊었고, 그동안 그 표들은 아무도 확인하지 않은 채 있었다.
+ * 09-24에 `PROTECTED_TABLES`가 그랬고(VERIFICATION 4-25절),
+ * `003_rls_isolation_test.sql`도 같은 상태로 뒤처져 있었다.
+ *
+ * **말로 적은 약속은 잊히고 검사로 적은 약속은 잊히지 않는다.** 두 번
+ * 잊었으면 세 번째도 잊는다. 여기서 붙잡는다.
+ *
+ * 다만 **이 검사가 확인하는 것은 "검사가 있는가"뿐이다.** 그 검사가 옳은지,
+ * 실제로 도는지는 확인하지 않는다. 003은 Supabase SQL Editor에서 사람이
+ * 돌려야 알 수 있다. 빠뜨림을 막는 것이지 검증을 대신하지 않는다.
+ */
+test("격리 검사가 모든 앱 테이블을 다룬다", () => {
+  const isolation = readFileSync(
+    path.join(repoRoot, "supabase", "verify", "003_rls_isolation_test.sql"),
+    "utf8",
+  );
+
+  const missing = PROTECTED_TABLES.filter(
+    (table) =>
+      !TABLES_WITHOUT_ISOLATION_TEST.includes(table) &&
+      !isolation.includes(`public.${table}`),
+  );
+
+  assert.deepEqual(
+    missing,
+    [],
+    `이 표의 격리 검사가 003_rls_isolation_test.sql에 없다: ${missing.join(", ")}`,
+  );
+});
+
+test("격리 검사를 미룬 목록에 이미 검사가 있는 표를 두지 않는다", () => {
+  /*
+    빚을 갚고 나서 목록에서 빼는 것을 잊으면, 그 표는 **다시 검사 밖으로
+    나간다.** 나중에 그 표에 새 가드를 더해도 아무도 말해주지 않는다.
+
+    미룬 목록은 줄어들기만 해야 한다. 양쪽에서 조여야 그렇게 된다.
+  */
+  const isolation = readFileSync(
+    path.join(repoRoot, "supabase", "verify", "003_rls_isolation_test.sql"),
+    "utf8",
+  );
+
+  const stale = TABLES_WITHOUT_ISOLATION_TEST.filter((table) =>
+    isolation.includes(`public.${table}`),
+  );
+
+  assert.deepEqual(
+    stale,
+    [],
+    `이 표는 이미 격리 검사가 있다. TABLES_WITHOUT_ISOLATION_TEST에서 뺀다: ${stale.join(", ")}`,
   );
 });
