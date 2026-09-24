@@ -5140,8 +5140,10 @@ select
     where reading_status = 'finished'::public.book_reading_status)      as 다_읽은_책,
   (select count(*) from public.project_outline_nodes)                   as 뼈대_자리,
   (select count(*) from public.project_outline_nodes
-    where body is not null and pg_catalog.btrim(body) <> '')            as 글_쓴_자리,
+    where body is not null and pg_catalog.btrim(body) <> '')            as 원고_쓴_자리,
   (select count(*) from public.project_node_items)                      as 놓인_재료,
+  (select count(*) from public.project_node_items
+    where note is not null and pg_catalog.btrim(note) <> '')            as 할_말_적은_재료,
   (select count(*) from public.google_drive_connections)                as 드라이브_연결,
   (select count(*) from public.google_drive_connections
     where status <> 'connected'::public.drive_connection_status)        as 손본_연결,
