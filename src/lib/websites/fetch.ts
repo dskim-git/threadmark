@@ -6,7 +6,7 @@ import {
   isBlockedAddress,
 } from "./safe-url";
 import { readWebsiteMetadata, type WebsiteMetadata } from "./metadata";
-import { WEBSITE_REQUEST_HEADERS } from "./request";
+import { WEBSITE_REQUEST_HEADERS } from "@/lib/net/request-headers";
 
 /**
  * 웹페이지의 공개 메타데이터를 받아온다. (설계 문서 11.2절, 11.3절)

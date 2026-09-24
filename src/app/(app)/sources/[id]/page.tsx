@@ -33,6 +33,7 @@ import {
   getSourceRelationLabel,
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
+import { getMusicProfile, listProviderLinks } from "@/lib/music/queries";
 import { getWebsiteProfile } from "@/lib/websites/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import {
@@ -61,6 +62,7 @@ import {
 import { DrivePickerButton } from "../drive-picker-button";
 import { FileList } from "../file-list";
 import { FileUpload } from "../file-upload";
+import { MusicPanel } from "../music-panel";
 import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
 
@@ -111,6 +113,8 @@ export default async function SourceDetailPage({
     paperAnalysis,
     paperUses,
     websiteProfile,
+    musicProfile,
+    providerLinks,
     relations,
     allSources,
     sourceTags,
@@ -128,6 +132,9 @@ export default async function SourceDetailPage({
     source.type === "paper" ? listPaperProjectUses(source.id) : [],
     // 웹사이트가 아닌 자료에는 조회하지 않는다. 있을 수 없는 행을 찾는 왕복이 된다.
     source.type === "website" ? getWebsiteProfile(source.id) : null,
+    // 음악이 아닌 자료에는 조회하지 않는다.
+    source.type === "music" ? getMusicProfile(source.id) : null,
+    source.type === "music" ? listProviderLinks(source.id) : [],
     listSourceRelations(source.id),
     listSources(),
     listTagsForSource(source.id),
@@ -411,6 +418,21 @@ export default async function SourceDetailPage({
           citation={citation}
           analysisFilled={countFilled(paperAnalysis?.values ?? {})}
           analysisTotal={ANALYSIS_FIELDS.length}
+        />
+      ) : null}
+
+      {/*
+        음악 칸. 음악 유형일 때만 보여준다. (설계 문서 13장)
+        다른 유형에서는 자리조차 만들지 않는다. 논문 정보와 같은 판단이다.
+      */}
+      {source.type === "music" ? (
+        <MusicPanel
+          sourceId={source.id}
+          sourceTitle={source.title}
+          thumbnailUrl={source.thumbnailUrl}
+          profile={musicProfile}
+          links={providerLinks}
+          returnTo={returnTo}
         />
       ) : null}
 

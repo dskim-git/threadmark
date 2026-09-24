@@ -259,6 +259,103 @@ export type Database = {
         }
         Relationships: []
       }
+      music_profiles: {
+        Row: {
+          album_artist: string | null
+          album_name: string | null
+          arranger: string | null
+          artist: string | null
+          composer: string | null
+          created_at: string
+          duration_seconds: number | null
+          genre: string | null
+          id: string
+          language: string | null
+          lyricist: string | null
+          owner_id: string
+          released_on: string | null
+          source_id: string
+          track_number: number | null
+          updated_at: string
+        }
+        Insert: {
+          album_artist?: string | null
+          album_name?: string | null
+          arranger?: string | null
+          artist?: string | null
+          composer?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          genre?: string | null
+          id?: string
+          language?: string | null
+          lyricist?: string | null
+          owner_id?: string
+          released_on?: string | null
+          source_id: string
+          track_number?: number | null
+          updated_at?: string
+        }
+        Update: {
+          album_artist?: string | null
+          album_name?: string | null
+          arranger?: string | null
+          artist?: string | null
+          composer?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          genre?: string | null
+          id?: string
+          language?: string | null
+          lyricist?: string | null
+          owner_id?: string
+          released_on?: string | null
+          source_id?: string
+          track_number?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "music_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      music_provider_links: {
+        Row: {
+          created_at: string
+          id: string
+          owner_id: string
+          source_id: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          source_id: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          source_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "music_provider_links_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       paper_analyses: {
         Row: {
           agreements_objections: string | null

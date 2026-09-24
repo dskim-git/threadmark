@@ -1,6 +1,10 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
+import {
+  parseMusicTimeLocator,
+  type MusicTimeLocator,
+} from "./music-locator";
 import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
 import {
   isCaptureType,
@@ -39,6 +43,13 @@ export type Capture = {
   starred: boolean;
   /** PDF에서 온 기록의 자리. 고른 문장이거나, 쪽만 가리키거나. 아니면 null. */
   pdfLocation: PdfLocator | null;
+  /**
+   * 음악에서 온 기록의 자리. 재생 시점이거나 구간이다. (설계 문서 13.4절)
+   *
+   * pdfLocation과 같은 칸(locator)에서 읽는다. 둘 다 null일 수 있고,
+   * 둘이 함께 있을 수는 없다. `kind`가 하나뿐이기 때문이다.
+   */
+  musicLocation: MusicTimeLocator | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -92,6 +103,7 @@ function toCapture(row: CaptureRow): Capture[] {
       starred: row.starred,
       // locator는 JSONB라 무엇이든 들어갈 수 있다. 읽는 쪽이 모양을 확인한다.
       pdfLocation: parsePdfLocator(row.locator),
+      musicLocation: parseMusicTimeLocator(row.locator),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     },

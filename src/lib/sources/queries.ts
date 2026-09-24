@@ -45,6 +45,8 @@ export type SourceListItem = {
 export type SourceDetail = SourceListItem & {
   description: string | null;
   canonicalUrl: string | null;
+  /** 대표 그림. 웹사이트의 OG 이미지나 음악의 앨범 표지가 여기 온다. */
+  thumbnailUrl: string | null;
   updatedAt: string;
 };
 
@@ -163,6 +165,7 @@ export async function getSourceById(id: string): Promise<SourceDetail | null> {
     description: data.description,
     originalUrl: data.original_url,
     canonicalUrl: data.canonical_url,
+    thumbnailUrl: data.thumbnail_url,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };

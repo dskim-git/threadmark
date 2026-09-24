@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { linkCaptureToProject } from "@/app/(app)/projects/actions";
 import type { Capture } from "@/lib/captures/queries";
+import { describeMusicTime } from "@/lib/captures/music-locator";
 import { describeLocatorPages } from "@/lib/captures/pdf-locator";
 import { locatorIsStale } from "@/lib/drive/file-check";
 import {
@@ -94,6 +95,24 @@ export function CaptureList({
                 >
                   {describeLocatorPages(capture.pdfLocation)}으로
                 </Link>
+              ) : null}
+
+              {/*
+                음악의 재생 시점. (설계 문서 13.4절)
+
+                `01:08–01:34 / 2절 후렴`이 그대로 보인다. 시간을 본문에 섞어
+                적지 않고 따로 담았기 때문에, 목록에서 한눈에 어느 대목인지
+                알 수 있다.
+
+                누를 수 있게 만들지 않았다. 13.4절은 "지원되는 플레이어에서
+                해당 시점으로 이동한다"고 하는데, 그 플레이어를 붙이는 일은
+                MVP 이후다. 지금 누를 수 있게 해두면 눌러야만 아무 일도
+                없다는 것을 알게 된다.
+              */}
+              {capture.musicLocation ? (
+                <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
+                  {describeMusicTime(capture.musicLocation)}
+                </span>
               ) : null}
 
               {/*
