@@ -34,6 +34,7 @@ import {
 } from "@/lib/sources/relation-types";
 import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getBookProfile } from "@/lib/books/queries";
+import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
 import { getMusicProfile, listProviderLinks } from "@/lib/music/queries";
 import { getWebsiteProfile } from "@/lib/websites/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
@@ -118,6 +119,7 @@ export default async function SourceDetailPage({
     musicProfile,
     providerLinks,
     bookProfile,
+    placements,
     relations,
     allSources,
     sourceTags,
@@ -139,6 +141,7 @@ export default async function SourceDetailPage({
     source.type === "music" ? getMusicProfile(source.id) : null,
     source.type === "music" ? listProviderLinks(source.id) : [],
     source.type === "book" ? getBookProfile(source.id) : null,
+    listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
     listTagsForSource(source.id),
@@ -438,6 +441,43 @@ export default async function SourceDetailPage({
           links={providerLinks}
           returnTo={returnTo}
         />
+      ) : null}
+
+      {/*
+        이 자료가 어디에 쓰였나. (설계 문서 7.5절)
+
+        **재료 쪽에서 거꾸로 보는 길이다.** 같은 재료가 여러 요리에 들어가니
+        "이건 어디에 쓰였지"가 자료 화면에서 답할 만한 물음이 된다.
+        프로젝트에 이어둔 것만으로는 답이 되지 않는다. 이어두기만 하고 아직
+        어디에도 놓지 않은 것과, 실제로 3장에 놓은 것은 다르다.
+
+        놓인 데가 없으면 자리를 만들지 않는다. 빈 칸이 늘어나면 정작 있는
+        것이 눈에 안 들어온다.
+      */}
+      {placements.length > 0 ? (
+        <section className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950">
+          <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+            이 자료가 쓰인 자리 {placements.length}곳
+          </h2>
+          <ul className="flex flex-col gap-1.5">
+            {placements.map((placement) => (
+              <li key={`${placement.projectId}-${placement.nodeId}`}>
+                <Link
+                  href={`/projects/${placement.projectId}`}
+                  className="flex flex-wrap items-baseline gap-x-2 text-sm transition-colors hover:text-accent dark:hover:text-accent-dark"
+                >
+                  <span className="text-zinc-500">{placement.projectName}</span>
+                  <span aria-hidden="true" className="text-zinc-400">
+                    ›
+                  </span>
+                  <span className="text-black dark:text-zinc-50">
+                    {placement.nodeTitle}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {/*

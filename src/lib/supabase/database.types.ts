@@ -752,6 +752,64 @@ export type Database = {
         }
         Relationships: []
       }
+      project_node_items: {
+        Row: {
+          capture_id: string | null
+          created_at: string
+          id: string
+          node_id: string
+          note: string | null
+          owner_id: string
+          position: number
+          source_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          capture_id?: string | null
+          created_at?: string
+          id?: string
+          node_id: string
+          note?: string | null
+          owner_id?: string
+          position?: number
+          source_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          capture_id?: string | null
+          created_at?: string
+          id?: string
+          node_id?: string
+          note?: string | null
+          owner_id?: string
+          position?: number
+          source_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_node_items_capture_id_fkey"
+            columns: ["capture_id"]
+            isOneToOne: false
+            referencedRelation: "captures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_node_items_node_id_fkey"
+            columns: ["node_id"]
+            isOneToOne: false
+            referencedRelation: "project_outline_nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_node_items_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_outline_nodes: {
         Row: {
           body: string | null

@@ -1,6 +1,15 @@
 import { HelpButton } from "@/app/(app)/help-button";
+import { getCaptureTypeLabel } from "@/lib/captures/types";
 import { indentSteps, type OutlineItem } from "@/lib/projects/outline";
+import type {
+  PickerTree,
+  PlacedItem,
+} from "@/lib/projects/placement-queries";
+import { getSourceTypeLabel } from "@/lib/sources/types";
 
+import { ItemPicker } from "./item-picker";
+import { PlacedPeek } from "./placed-peek";
+import { removePlacement, savePlacementNote } from "./placement-actions";
 import {
   addOutlineNode,
   deleteOutlineNode,
@@ -26,10 +35,52 @@ import {
 export function OutlinePanel({
   projectId,
   items,
+  placements,
+  tree,
+  linked,
 }: {
   projectId: string;
   items: readonly OutlineItem[];
+  /** 자리에 놓인 재료 전부. 여기서 자리별로 나눈다. */
+  placements: readonly PlacedItem[];
+  /** 고르는 창이 보여줄 나무. 자료와 그 안의 기록이다. */
+  tree: PickerTree;
+  /** 이 프로젝트에 이어둔 것. `자리 못 찾은 것`을 세는 기준이다. */
+  linked: readonly PlacementChoice[];
 }) {
+  /*
+    자리별로 한 번에 나눈다.
+
+    자리마다 목록을 훑으면 자리 수 × 재료 수만큼 헛일을 한다. 뼈대의 크기에
+    한계가 없으므로 그 곱의 끝을 우리가 모른다.
+  */
+  const byNode = new Map<string, PlacedItem[]>();
+
+  for (const placed of placements) {
+    const group = byNode.get(placed.nodeId);
+
+    if (group) {
+      group.push(placed);
+    } else {
+      byNode.set(placed.nodeId, [placed]);
+    }
+  }
+
+  /*
+    자리를 못 찾은 것을 가려낸다.
+
+    **프로젝트에 이어둔 것 중에서만 센다.** 내 자료 전부를 세면 담아둔 것이
+    늘어날수록 이 칸이 수백 개가 되고, "아직 못 놓았다"는 말이 뜻을 잃는다.
+    이어둔 것은 이 프로젝트에 쓰겠다고 정한 것들이다.
+  */
+  const placedValues = new Set(
+    placements.map((item) =>
+      item.kind === "source" ? `source:${item.sourceId}` : `capture:${item.captureId}`,
+    ),
+  );
+
+  const unplaced = linked.filter((choice) => !placedValues.has(choice.value));
+
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -37,6 +88,7 @@ export function OutlinePanel({
           뼈대
         </h2>
         <HelpButton topic="project-outline" label="프로젝트 뼈대" />
+        <HelpButton topic="project-place" label="자리에 재료 놓기" />
         <span className="text-xs text-zinc-500">
           {items.length > 0 ? `자리 ${items.length}개` : null}
         </span>
@@ -75,6 +127,12 @@ export function OutlinePanel({
                   {item.body ? (
                     <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
                       글 있음
+                    </span>
+                  ) : null}
+
+                  {(byNode.get(item.id) ?? []).length > 0 ? (
+                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 dark:bg-white/[.08] dark:text-zinc-400">
+                      재료 {(byNode.get(item.id) ?? []).length}
                     </span>
                   ) : null}
 
@@ -132,6 +190,27 @@ export function OutlinePanel({
                       저장
                     </button>
                   </form>
+
+                  {/*
+                    이 자리에 놓인 재료. 글 칸과 단추 사이에 둔다.
+                    쓰면서 옆에 두고 보는 것이라 멀리 두면 소용이 없다.
+                  */}
+                  <PlacedList
+                    projectId={projectId}
+                    placed={byNode.get(item.id) ?? []}
+                  />
+
+                  <ItemPicker
+                    projectId={projectId}
+                    nodeId={item.id}
+                    nodeTitle={`${item.number}. ${item.title}`}
+                    tree={tree}
+                    placedValues={(byNode.get(item.id) ?? []).map((placed) =>
+                      placed.kind === "source"
+                        ? `source:${placed.sourceId}`
+                        : `capture:${placed.captureId}`,
+                    )}
+                  />
 
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-black/[.06] pt-3 dark:border-white/[.08]">
                     <MoveButton
@@ -211,6 +290,38 @@ export function OutlinePanel({
         </ul>
       )}
 
+      {/*
+        자리를 못 찾은 것.
+
+        프로젝트에 이어두었지만 아직 어느 자리에도 놓이지 않은 재료다.
+        **실제 작업에서 가장 자주 보게 될 자리다.** 모으는 일과 배치하는
+        일 사이에 이 칸이 있다. (설계 문서 7.4절)
+
+        뼈대가 아직 없으면 보여주지 않는다. 놓을 자리가 없는데 "자리를
+        못 찾았다"고 하면 사용자가 무엇을 해야 할지 알 수 없다.
+      */}
+      {items.length > 0 && unplaced.length > 0 ? (
+        <section className="flex flex-col gap-2 rounded-2xl bg-zinc-50 p-4 dark:bg-white/[.04]">
+          <h3 className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            아직 자리를 못 찾은 것 {unplaced.length}개
+          </h3>
+          <p className="text-xs leading-5 text-zinc-500">
+            이 프로젝트에 이어뒀지만 아직 어느 자리에도 놓지 않은 것입니다.
+            위의 자리를 펼쳐 `이 자리에 재료 놓기`로 놓습니다.
+          </p>
+          <ul className="flex flex-wrap gap-1.5 pt-1">
+            {unplaced.map((choice) => (
+              <li
+                key={choice.value}
+                className="max-w-full truncate rounded-full bg-white px-2.5 py-1 text-xs text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300"
+              >
+                {choice.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {/* 맨 윗칸을 만든다. 목록 아래에 둬서 만들던 흐름이 이어진다. */}
       <form
         action={addOutlineNode}
@@ -269,5 +380,101 @@ function MoveButton({
         {label}
       </button>
     </form>
+  );
+}
+
+/** 놓을 수 있는 재료 하나. 자료와 기록을 한 목록에 섞어 고른다. */
+export type PlacementChoice = {
+  /** `source:<id>` 또는 `capture:<id>`. 고른 것이 곧 뜻이 되게 한 값이다. */
+  value: string;
+  label: string;
+  group: string;
+};
+
+/**
+ * 이 자리에 놓인 재료.
+ *
+ * **무엇을 놓았는지와 그것으로 할 말을 함께 보여준다.** 재료만 늘어놓으면
+ * 목록이고, 할 말이 붙어야 요리다. (설계 문서 7.1절 3번)
+ */
+function PlacedList({
+  projectId,
+  placed,
+}: {
+  projectId: string;
+  placed: readonly PlacedItem[];
+}) {
+  if (placed.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {placed.map((item) => (
+        <li
+          key={item.id}
+          className="flex flex-col gap-2 rounded-xl bg-zinc-50 p-3 dark:bg-white/[.04]"
+        >
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-zinc-600 dark:bg-white/[.08] dark:text-zinc-400">
+              {item.kind === "source"
+                ? getSourceTypeLabel(item.sourceType)
+                : getCaptureTypeLabel(item.captureType)}
+            </span>
+
+            {/*
+              재료를 누르면 그 재료로 간다. 옆에 두고 보면서 쓰는 중이라
+              원문을 확인하러 가는 일이 잦다.
+            */}
+            {/*
+              **누르면 그 자리에서 내용이 뜬다.**
+
+              처음에는 그 재료의 화면으로 보냈는데, 쓰던 자리를 잃는다.
+              글을 쓰다가 "이 인용이 정확히 뭐였지"를 확인하는 것이므로,
+              읽고 나서 돌아올 것이 아니라 **떠나지 않아야** 한다.
+              물음표 단추와 같은 방식이다. (popover.tsx)
+            */}
+            <PlacedPeek item={item} />
+
+            <form action={removePlacement} className="shrink-0">
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="placementId" value={item.id} />
+              <button
+                type="submit"
+                className="rounded-full px-2 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-black/[.04] hover:text-red-700 dark:hover:bg-white/[.06] dark:hover:text-red-400"
+              >
+                빼기
+              </button>
+            </form>
+          </div>
+
+          {/*
+            이 재료로 여기서 할 말.
+
+            **무엇을 어디에 놓았는지는 못 바꾸고 이 칸만 고칠 수 있다.**
+            옮기려면 빼고 다시 놓는다. 그때 무슨 말을 적을지 다시 생각하게
+            되는 편이 맞다. (설계 문서 7.4절)
+          */}
+          <form action={savePlacementNote} className="flex items-start gap-2">
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="placementId" value={item.id} />
+            <textarea
+              name="note"
+              rows={2}
+              maxLength={2000}
+              defaultValue={item.note ?? ""}
+              placeholder="이걸로 여기서 무슨 말을 할 것인가"
+              className="min-w-0 flex-1 rounded-lg border border-black/[.08] bg-white px-3 py-2 text-xs leading-6 text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            />
+            <button
+              type="submit"
+              className="h-8 shrink-0 rounded-full border border-black/[.08] px-3 text-xs text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              저장
+            </button>
+          </form>
+        </li>
+      ))}
+    </ul>
   );
 }

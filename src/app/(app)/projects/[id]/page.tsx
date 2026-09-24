@@ -13,6 +13,10 @@ import {
 import { listProjectPaperUses } from "@/lib/papers/project-use-queries";
 import { listOutline } from "@/lib/projects/outline-queries";
 import {
+  listPickerTree,
+  listPlacements,
+} from "@/lib/projects/placement-queries";
+import {
   getProjectById,
   listProjectCaptures,
   listProjectSources,
@@ -46,13 +50,24 @@ export default async function ProjectDetailPage({
     notFound();
   }
 
-  const [linkedSources, linkedCaptures, paperUses, allSources, outline, query] =
+  const [
+    linkedSources,
+    linkedCaptures,
+    paperUses,
+    allSources,
+    outline,
+    placements,
+    pickerTree,
+    query,
+  ] =
     await Promise.all([
       listProjectSources(project.id),
       listProjectCaptures(project.id),
       listProjectPaperUses(project.id),
       listSources(),
       listOutline(project.id),
+      listPlacements(project.id),
+      listPickerTree(),
       searchParams,
     ]);
 
@@ -143,7 +158,26 @@ export default async function ProjectDetailPage({
         모였나"가 아니라 "지금 어디까지 만들었나"이기 때문이다. 재료 목록이
         먼저 나오면 프로젝트가 여전히 모아두는 곳으로 보인다.
       */}
-      <OutlinePanel projectId={project.id} items={outline} />
+      <OutlinePanel
+        projectId={project.id}
+        items={outline}
+        placements={placements}
+        tree={pickerTree}
+        linked={[
+          ...linkedSources.map((source) => ({
+            value: `source:${source.id}`,
+            label: source.title,
+            group: "자료",
+          })),
+          ...linkedCaptures.map((capture) => ({
+            value: `capture:${capture.id}`,
+            label:
+              (capture.originalText ?? capture.content ?? "").trim().slice(0, 80) ||
+              "내용 없는 기록",
+            group: "기록",
+          })),
+        ]}
+      />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-black dark:text-zinc-50">
