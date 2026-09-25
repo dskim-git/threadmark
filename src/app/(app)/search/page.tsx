@@ -141,6 +141,21 @@ export default async function SearchPage({
                           {source.subtitle ?? source.description}
                         </span>
                       ) : null}
+
+                      {/*
+                        딸린 정보에서 걸렸을 때 **무엇이 걸렸는지 적는다.**
+
+                        `성수동`으로 찾았는데 `블루보틀`이 나오면 왜 나왔는지
+                        알 수 없다. 주소나 가수 이름은 이 목록 어디에도
+                        보이지 않아서, 적지 않으면 엉뚱한 것이 섞였다고
+                        여기게 된다.
+                      */}
+                      {source.matchedIn ? (
+                        <span className="line-clamp-1 text-xs leading-5 text-zinc-500">
+                          <span className="text-zinc-400">여기서 찾음 </span>
+                          {source.matchedIn}
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 ))}

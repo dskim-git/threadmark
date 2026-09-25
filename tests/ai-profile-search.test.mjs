@@ -16,6 +16,7 @@ import test from "node:test";
 
 import {
   PROFILE_SEARCH_TARGETS,
+  matchedProfileText,
   summarizeProfile,
 } from "../src/lib/ai/profile-search.ts";
 
@@ -227,4 +228,113 @@ test("비어 있는 값은 넣지 않는다", () => {
 test("담긴 것이 없으면 빈 글자다", () => {
   // 그때는 부르는 쪽이 아무것도 붙이지 않는다.
   assert.equal(summarizeProfile({ source_id: "x", artist: null }), "");
+});
+
+// -----------------------------------------------------------------------------
+// 두 검색이 같은 곳을 뒤지는가 (2026-09-26)
+// -----------------------------------------------------------------------------
+
+test("글자로 찾기도 이 목록을 본다", () => {
+  /*
+    **2026-09-26에 여기가 갈려 있었다.** 이 목록을 만들 때는 `AI에게
+    물어보기`만 썼고, `글자로 찾기`는 자료 제목과 기록 글만 보고 있었다.
+
+    그래서 AI에게 물으면 가수 이름으로 찾아주는데 글자로 찾기는 못 찾았다.
+    **같은 앱 안에서 찾는 힘이 둘로 갈려 있었고**, 사용법은 오히려 글자로
+    찾기가 "빠르고 돈이 들지 않는다"고 권하고 있었다.
+
+    9월 25일에 사용자가 찾은 고장이 **한쪽에만 남아 있던 것**이다.
+    고칠 곳이 여럿일 때 한 곳만 고치면 이렇게 된다.
+
+    두 검색이 이 목록을 부르는지 글자로 확인한다. 한쪽이 자기 목록을
+    따로 만들면 또 갈린다.
+  */
+  const users = [
+    path.join(repoRoot, "src", "lib", "ai", "candidates.ts"),
+    path.join(repoRoot, "src", "lib", "search", "queries.ts"),
+  ];
+
+  for (const file of users) {
+    const source = readFileSync(file, "utf8");
+
+    assert.ok(
+      source.includes("PROFILE_SEARCH_TARGETS"),
+      `${path.basename(file)}가 뒤질 곳 목록을 보지 않는다. 두 검색이 갈린다`,
+    );
+  }
+});
+
+// -----------------------------------------------------------------------------
+// 왜 걸렸는지
+// -----------------------------------------------------------------------------
+
+test("찾는 말이 든 값만 까닭으로 고른다", () => {
+  /*
+    `성수동`으로 찾았는데 `블루보틀`이 나오면 왜 나왔는지 알 수 없다.
+    주소는 목록 어디에도 보이지 않아서, 적지 않으면 엉뚱한 것이 섞였다고
+    여기게 된다.
+  */
+  const why = matchedProfileText(
+    {
+      source_id: "s1",
+      road_address: "서울 성동구 성수이로 66",
+      address: "서울 성동구 성수동2가 302-9",
+      category: "카페",
+    },
+    "성수",
+  );
+
+  assert.ok(why.includes("성수이로 66"));
+  assert.ok(why.includes("성수동2가"));
+  assert.ok(!why.includes("카페"));
+});
+
+test("자료 번호는 까닭에 넣지 않는다", () => {
+  // 번호가 우연히 찾는 말을 담을 수 있다. 사람에게 보여줄 까닭이 아니다.
+  const why = matchedProfileText(
+    { source_id: "abc-1234", artist: "아이유" },
+    "abc",
+  );
+
+  assert.equal(why, null);
+});
+
+test("배열 칸에서 걸린 것도 까닭이 된다", () => {
+  const why = matchedProfileText(
+    { source_id: "s1", genres: ["범죄", "스릴러"], cast_names: ["송강호"] },
+    "스릴러",
+  );
+
+  assert.equal(why, "스릴러");
+});
+
+test("대소문자가 달라도 걸린 것으로 본다", () => {
+  const why = matchedProfileText(
+    { source_id: "s1", channel_name: "Veritasium" },
+    "veritas",
+  );
+
+  assert.equal(why, "Veritasium");
+});
+
+test("걸린 것이 없으면 지어내지 않는다", () => {
+  /*
+    **아무 값이나 골라 보여주면 엉뚱한 까닭을 말하게 된다.** 데이터베이스와
+    여기의 견주는 방식이 어긋나면 그럴 수 있고, 그때는 아무 말도 안 하는
+    편이 낫다.
+  */
+  assert.equal(
+    matchedProfileText({ source_id: "s1", artist: "아이유" }, "김광석"),
+    null,
+  );
+  assert.equal(matchedProfileText({ source_id: "s1" }, "무엇"), null);
+  assert.equal(matchedProfileText({ artist: "아이유" }, "  "), null);
+});
+
+test("빈 값과 공백만 든 값은 까닭이 되지 않는다", () => {
+  // 밖에서 받아온 값에는 빈 글자가 섞인다. 까닭 자리에 빈 줄이 뜨면 고장처럼 보인다.
+  assert.equal(
+    matchedProfileText({ source_id: "s1", publisher: "   ", verdict: "" }, " "),
+    null,
+  );
 });

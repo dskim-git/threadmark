@@ -46,8 +46,21 @@
  * **적어두는 것만으로는 모자라고, 표를 만드는 그 커밋에서 함께 고쳐야 한다.**
  * 설계 문서 17-1.6절이 다섯 곳을 한자리에 모아 둔 것이 그래서다.
  *
- * 데이터베이스를 무는 쪽은 `candidates.ts`에 있다. 이 파일은 **무엇을
- * 뒤질지 적은 목록**뿐이라 검사가 따로 들여다볼 수 있다.
+ * 이 목록을 두 검색이 함께 쓴다 (2026-09-26)
+ *   만들 때는 `AI에게 물어보기`만 썼다. 그래서 이 파일이 `lib/ai/` 아래
+ *   있는데, **`글자로 찾기`도 같은 목록을 본다.**
+ *
+ *   2026-09-26에 그것을 고쳤다. 그전까지 두 검색이 서로 다른 곳을 뒤지고
+ *   있었다. AI에게 물으면 가수 이름으로 찾아주는데 `글자로 찾기`는 못
+ *   찾았다. **같은 앱 안에서 찾는 힘이 둘로 갈려 있었고**, 사용법은 오히려
+ *   글자로 찾기가 "빠르고 돈이 들지 않는다"고 권하고 있었다.
+ *
+ *   9월 25일에 찾은 것과 같은 고장이 **한쪽에만 남아 있던 것**이다.
+ *   고칠 곳이 여럿일 때 한 곳만 고치면 이렇게 된다.
+ *
+ * 데이터베이스를 무는 쪽은 둘이다. AI 쪽은 `candidates.ts`, 글자로 찾기
+ * 쪽은 `search/queries.ts`다. 이 파일은 **무엇을 뒤질지 적은 목록**뿐이라
+ * 검사가 따로 들여다볼 수 있다.
  */
 
 /** 딸린 정보 표 하나를 어떻게 뒤질지. */
@@ -177,4 +190,64 @@ export function summarizeProfile(row: Record<string, unknown>): string {
   }
 
   return parts.join(" · ");
+}
+
+/**
+ * 찾는 말이 실제로 걸린 값만 골라 한 줄로. (2026-09-26)
+ *
+ * **왜 걸렸는지 보여주려고 만든다.** `성수동`으로 찾았는데 `블루보틀`이
+ * 나오면, 왜 나왔는지 알 수 없다. 담아둔 적 없는 것이 섞였다고 여기거나
+ * 검색이 고장 났다고 생각한다.
+ *
+ * `summarizeProfile`과 다르다. 그쪽은 AI에게 넘길 재료라 **가진 것을 다**
+ * 적고, 이쪽은 사람에게 보여줄 까닭이라 **걸린 것만** 적는다.
+ *
+ * 배열 칸도 같은 방식으로 본다. 찾는 쪽이 통째로 같은지로 걸렀으므로,
+ * 그 항목은 찾는 말을 담고 있다.
+ *
+ * 걸린 것이 없으면 `null`이다. **지어내지 않는다.** 대소문자만 다르거나
+ * 데이터베이스와 여기의 견주는 방식이 어긋나면 그럴 수 있는데, 그때
+ * 아무 값이나 골라 보여주면 엉뚱한 까닭을 말하게 된다.
+ */
+export function matchedProfileText(
+  row: Record<string, unknown>,
+  term: string,
+): string | null {
+  const needle = term.trim().toLowerCase();
+
+  if (needle.length === 0) {
+    return null;
+  }
+
+  const hits: string[] = [];
+
+  const take = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+
+    const text = value.trim();
+
+    if (text.length > 0 && text.toLowerCase().includes(needle)) {
+      hits.push(text);
+    }
+  };
+
+  for (const [key, value] of Object.entries(row)) {
+    if (key === "source_id") {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        take(item);
+      }
+
+      continue;
+    }
+
+    take(value);
+  }
+
+  return hits.length === 0 ? null : hits.join(" · ");
 }

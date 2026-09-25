@@ -511,6 +511,17 @@ export function SearchDock({ aiConfigured }: { aiConfigured: boolean }) {
                           {source.title}
                         </span>
                       </span>
+
+                      {/*
+                        딸린 정보에서 걸렸으면 무엇이 걸렸는지 적는다.
+                        이 칸은 제목만 보여주므로, 적지 않으면 왜 나왔는지
+                        알 길이 아예 없다. (`search/page.tsx`와 같은 생각)
+                      */}
+                      {source.matchedIn ? (
+                        <span className="line-clamp-1 text-[11px] leading-4 text-zinc-500">
+                          {source.matchedIn}
+                        </span>
+                      ) : null}
                     </a>
                   </li>
                 ))}
