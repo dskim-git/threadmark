@@ -323,6 +323,7 @@ npx tsc --noEmit
 npm test          # node --test, 1098개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
+npm run verify:split  # 003이 커서 SQL Editor가 끊길 때 조각낸다 (7절)
 ```
 
 Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `config diff`를 쓴다.
@@ -1207,6 +1208,37 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 사람이 Supabase
 대시보드 SQL Editor에 붙여넣어 돌린다. `npm test`는 이 파일을 읽을 뿐
 실행하지 않는다.
+
+### 003이 커지면 나눠 돌린다 (2026-09-26)
+
+**한 번에 붙여넣다가 끊긴다.** 130개가 되면서 260KB·8천 줄이 되었고,
+SQL Editor가 답을 받기 전에 요청이 끝났다.
+
+```
+Error: Failed to fetch (api.supabase.com)
+```
+
+**검사가 잡은 것이 아니다.** `검사 NNN 실패`로 시작하지 않으면 검사가 아니다.
+고장도 아니고 파일이 자란 것이며, 검사를 줄일 일이 아니다.
+
+```bash
+npm run verify:split          # supabase/verify/parts/ 에 조각이 생긴다
+npm run verify:split -- supabase/verify/003_rls_isolation_test.sql 4
+```
+
+**파일을 쪼개 저장소에 두지 않는다.** 같은 글이 두 곳에 있으면 한쪽만
+갱신되어 어긋난다. 원본은 하나로 두고 **조각은 만들어 쓰고 버린다.**
+`supabase/verify/parts/`는 Git이 따라가지 않는다.
+
+**손으로 자르지 않는다.** `do $$ ... $$;` 한가운데를 자르면 엉뚱한 문법
+오류가 나고, 그것을 검사가 실패한 것으로 읽게 된다. **검사가 아닌 이유로
+실패하면 다음부터 그 검사를 믿지 않는다.** 자르는 자리는 검사와 검사
+사이뿐이고, 그 판단을 `scripts/split-verify.mjs`가 한다.
+
+조각을 돌릴 때 **아무것도 안 나오면 통과다.** 세는 표는 마지막 조각에만
+붙는다. 그 표의 `비활성_자료_검사`·`비활성_기록_검사` 두 칸은 `건너뜀`으로
+나오는데, 검사 19·27이 남긴 값을 읽는 칸이라 나눠 돌리면 넘어오지 않는다.
+**그 두 검사가 안 돈 것이 아니라 결과를 전하는 길만 끊긴 것이다.**
 
 **2026-09-25에 앱의 모든 표가 003의 검사를 갖게 되었다.** 그전까지 일곱 표가
 빠져 있었고, 그중 `google_drive_connections`는 **빠져 있다는 것조차 몰랐다.**

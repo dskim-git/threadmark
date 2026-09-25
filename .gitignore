@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 검증 SQL 조각 (npm run verify:split이 만든다)
+# 원본은 supabase/verify/ 하나뿐이다. 조각은 만들어 쓰고 버린다.
+/supabase/verify/parts/
