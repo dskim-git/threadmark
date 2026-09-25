@@ -2,11 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { loadGoogleMaps } from "@/lib/places/google-map-sdk";
 import {
   loadKakaoMaps,
   readMapFailure,
 } from "@/lib/places/map-sdk";
-import { mapFailureMessage, type MapLoadFailure } from "@/lib/places/places";
+import {
+  getPlaceProviderLabel,
+  mapFailureMessage,
+  mapProviderForRegion,
+  type MapLoadFailure,
+} from "@/lib/places/places";
 
 /**
  * 담아둔 장소의 지도. (설계 문서 17-2절)
@@ -25,16 +31,28 @@ import { mapFailureMessage, type MapLoadFailure } from "@/lib/places/places";
  *
  * 우리가 그리는 지도로는 **길찾기를 할 수 없다.** 그래서 이 아래에
  * 카카오맵·구글 지도 링크가 남아 있다. 부르는 쪽이 그린다. (17-2.2절)
+ *
+ * **국내와 해외가 다른 지도를 쓴다.** (17-3.4절) 카카오맵은 해외가 부실해
+ * 찍을 것이 안 보이고, 구글 지도는 국내에서 길찾기가 안 된다. 어느 한쪽으로
+ * 통일하면 반쪽이 못 쓰게 된다.
+ *
+ * **두 지도의 겉모습을 같게 맞춘다.** 상자 높이, 기다리는 동안의 말,
+ * 실패했을 때의 말이 같다. 쓰는 사람이 "해외는 왜 이렇게 다르지"를 묻게
+ * 하지 않는다. 다른 것은 안에서 부르는 곳뿐이다.
  */
 export function PlaceMap({
   latitude,
   longitude,
   name,
+  region,
 }: {
   latitude: number;
   longitude: number;
   name: string;
+  /** 국내인지 해외인지. 이 값이 어느 지도를 그릴지 정한다. */
+  region: string;
 }) {
+  const provider = mapProviderForRegion(region);
   const box = useRef<HTMLDivElement | null>(null);
   const [failure, setFailure] = useState<MapLoadFailure | null>(null);
   const [drawn, setDrawn] = useState(false);
@@ -59,56 +77,102 @@ export function PlaceMap({
       좌표가 바뀌면 React가 이 칸을 새로 만든다. 그때 상태는 저절로
       처음 값이다. 손으로 맞출 자리가 없어진다.
     */
-    loadKakaoMaps()
-      .then((maps) => {
-        const container = box.current;
+    const drawKakao = async () => {
+      const maps = await loadKakaoMaps();
+      const container = box.current;
 
-        if (!alive || !container) {
-          return;
-        }
+      if (!alive || !container) {
+        return;
+      }
 
+      /*
+        다시 그릴 때 앞의 지도를 지운다. 카카오맵은 상자 안에 요소를
+        만들어 넣는데, 비우지 않으면 **지도가 겹쳐 쌓인다.**
+      */
+      container.innerHTML = "";
+
+      const center = new maps.LatLng(latitude, longitude);
+
+      const map = new maps.Map(container, {
+        center,
         /*
-          다시 그릴 때 앞의 지도를 지운다. 카카오맵은 상자 안에 요소를
-          만들어 넣는데, 비우지 않으면 **지도가 겹쳐 쌓인다.**
+          확대 정도. 3이면 골목이 보인다.
+
+          **가게 하나를 확인하는 지도다.** 넓게 잡으면 무엇을 확인해야
+          하는지 알 수 없고, 너무 좁히면 어디쯤인지 감이 안 온다.
         */
-        container.innerHTML = "";
+        level: 3,
+      });
 
-        const center = new maps.LatLng(latitude, longitude);
+      new maps.Marker({ position: center, map });
 
-        const map = new maps.Map(container, {
-          center,
-          /*
-            확대 정도. 3이면 골목이 보인다.
+      /*
+        상자 크기가 정해진 뒤에 자리를 다시 잡는다.
 
-            **가게 하나를 확인하는 지도다.** 넓게 잡으면 무엇을 확인해야
-            하는지 알 수 없고, 너무 좁히면 어디쯤인지 감이 안 온다.
-          */
-          level: 3,
-        });
+        지도를 만드는 시점에 상자가 아직 자리를 못 잡았으면 표시가
+        한쪽으로 치우친다. `relayout`이 그것을 바로잡는다.
+      */
+      map.relayout();
+      map.setCenter(center);
 
-        new maps.Marker({ position: center, map });
+      setDrawn(true);
+    };
 
+    const drawGoogle = async () => {
+      const maps = await loadGoogleMaps();
+      const container = box.current;
+
+      if (!alive || !container) {
+        return;
+      }
+
+      container.innerHTML = "";
+
+      const center = { lat: latitude, lng: longitude };
+
+      const map = new maps.Map(container, {
+        center,
         /*
-          상자 크기가 정해진 뒤에 자리를 다시 잡는다.
-
-          지도를 만드는 시점에 상자가 아직 자리를 못 잡았으면 표시가
-          한쪽으로 치우친다. `relayout`이 그것을 바로잡는다.
+          확대 정도. 카카오의 `level: 3`과 비슷하게 보이는 값이다.
+          **두 지도가 같은 만큼 보여야** 국내와 해외를 오갈 때 감이 흔들리지
+          않는다. 숫자의 방향이 반대라는 것에 주의한다. 카카오는 작을수록,
+          구글은 클수록 가깝다.
         */
-        map.relayout();
-        map.setCenter(center);
+        zoom: 16,
+        /*
+          지도 위 단추들을 끈다. **길찾기와 거리뷰는 지도 아래 링크가
+          맡는다.** (17-2.2절) 지도 안에 또 두면 같은 일을 하는 자리가
+          둘이 되고, 카카오 쪽에는 없는 단추라 두 지도가 달라 보인다.
+        */
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      });
 
-        setDrawn(true);
-      })
-      .catch((error: unknown) => {
+      /*
+        표시에 이름을 붙이지 않는다.
+
+        붙이면 `name`을 효과가 보게 되고, **이름 칸에 한 글자 칠 때마다
+        지도를 다시 그린다.** 지도 한 번이 곧 돈이라 그것은 그냥 느린
+        것이 아니다. 이름은 읽어주는 기계에 아래 `aria-label`로 알린다.
+      */
+      new maps.Marker({ position: center, map });
+
+      setDrawn(true);
+    };
+
+    (provider === "google" ? drawGoogle() : drawKakao()).catch(
+      (error: unknown) => {
         if (alive) {
           setFailure(readMapFailure(error));
         }
-      });
+      },
+    );
 
     return () => {
       alive = false;
     };
-  }, [latitude, longitude]);
+  }, [latitude, longitude, provider]);
 
   if (failure) {
     return (
@@ -151,14 +215,17 @@ export function PlaceMap({
         <p className="text-xs leading-5 text-zinc-500">지도를 불러오는 중…</p>
       ) : (
         /*
-          어디서 온 지도인지 밝힌다.
+          어디서 온 지도인지 밝힌다. **그리는 쪽이 바뀌면 이 글도 바뀐다.**
+          해외에 구글 지도를 그려놓고 카카오맵이라고 적으면, 밝히지 않은
+          것보다 나쁘다. 어디서 왔는지를 틀리게 말한 것이 된다.
 
           카카오가 정해진 문구를 요구하는지는 확인하지 못했다. 그 사정은
           `legal/attribution.ts`에 적어 두었다. **밝히는 것까지가 우리가
           확실히 할 수 있는 일이다.**
         */
         <p className="text-xs leading-5 text-zinc-500">
-          지도는 카카오맵에서 가져왔습니다.{" "}
+          지도는 {getPlaceProviderLabel(provider) ?? "지도 서비스"}에서
+          가져왔습니다.{" "}
           <a
             href="/credits"
             className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"

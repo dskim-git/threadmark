@@ -22,12 +22,17 @@ import {
   PLACE_PROVIDERS,
   PLACE_REGIONS,
   PLACE_VISIT_STATUSES,
-  canSearchRegion,
+  GOOGLE_ENTERPRISE_PLACE_FIELDS,
+  GOOGLE_PLACE_FIELDS,
+  canPickOnMap,
+  canSearchByAddress,
   categoryLabel,
   coordinatePair,
   getPlaceRegionLabel,
   isMapLoadFailure,
   isPlaceRegion,
+  mapProviderForRegion,
+  readGooglePlaceCandidates,
   readCoordinateAddress,
   mapFailureMessage,
   getPlaceProviderLabel,
@@ -789,8 +794,41 @@ test("국내만 찾아줄 수 있다", () => {
     해외를 무엇으로 찾을지 정하면 이 검사가 함께 바뀐다. **바뀌는 것을
     잊지 않도록 값을 콕 집어 적어 둔다.**
   */
-  assert.ok(canSearchRegion("domestic"));
-  assert.ok(!canSearchRegion("overseas"));
+  assert.ok(canSearchByAddress("domestic"));
+  assert.ok(!canSearchByAddress("overseas"));
+  assert.ok(canPickOnMap("domestic"));
+  assert.ok(!canPickOnMap("overseas"));
+});
+
+test("지도는 국내면 카카오맵, 해외면 구글 지도로 그린다", () => {
+  /*
+    17-3.4절 1차례. 카카오맵은 해외 자료가 부실해 찍을 것이 안 보이고,
+    구글 지도는 국내에서 길찾기가 안 된다. 어느 한쪽으로 통일하면 반쪽이
+    못 쓰게 된다.
+  */
+  assert.equal(mapProviderForRegion("domestic"), "kakao");
+  assert.equal(mapProviderForRegion("overseas"), "google");
+});
+
+test("어느 지도를 그릴지와 찾아줄 수 있는지는 다른 물음이다", () => {
+  /*
+    한 값에 두 가지를 묻고 있었다. 화면이 `찾을 수 있는 쪽에만 지도를
+    그린다`로 되어 있어서, **해외에 지도를 붙이는 순간 찾기 단추까지
+    함께 살아났다.**
+
+    둘은 서로 다른 때에 되기 시작한다. 지도는 1차례에 되고, 해외를 이름으로
+    찾는 것은 3차례가 되어야 된다. **그동안 두 값이 갈라져 있어야 한다.**
+  */
+  assert.equal(canSearchByAddress("overseas"), false);
+  assert.equal(canPickOnMap("overseas"), false);
+  assert.equal(mapProviderForRegion("overseas"), "google");
+});
+
+test("모르는 값에는 카카오맵으로 답한다", () => {
+  // region의 기본값이 domestic이고 데이터베이스가 not null로 같은 것을 지킨다.
+  assert.equal(mapProviderForRegion(null), "kakao");
+  assert.equal(mapProviderForRegion("DOMESTIC"), "kakao");
+  assert.equal(mapProviderForRegion(""), "kakao");
 });
 
 // -----------------------------------------------------------------------------
@@ -861,4 +899,160 @@ test("찍은 자리 주소도 모양이 바뀌면 빈 값이다", () => {
   assert.equal(readCoordinateAddress({ documents: "하나" }), null);
   assert.equal(readCoordinateAddress({ documents: [null] }), null);
   assert.equal(readCoordinateAddress("문서"), null);
+});
+
+// -----------------------------------------------------------------------------
+// 해외를 이름으로 찾기 (17-3.4절 2차례)
+// -----------------------------------------------------------------------------
+
+test("구글에 청하는 칸에 값이 뛰는 것이 섞이지 않았다", () => {
+  /*
+    **이 목록이 곧 값이다.** 구글은 청한 칸에 따라 값을 다르게 매기고,
+    칸 하나가 등급을 통째로 올린다.
+
+    19-E.5절이 하루 상한 50으로 한 달 최대 1,550번을 잡아두었는데 Pro의
+    월 무료가 5,000번이다. Enterprise 칸을 하나라도 청하면 그 셈이 무너지고,
+    **무너진 것은 청구서가 와야 안다.**
+
+    말로만 적은 약속은 잊힌다. 전화번호를 채우고 싶어지는 날이 온다.
+  */
+  const expensive = GOOGLE_PLACE_FIELDS.filter((field) =>
+    GOOGLE_ENTERPRISE_PLACE_FIELDS.includes(field),
+  );
+
+  assert.deepEqual(
+    expensive,
+    [],
+    `값이 뛰는 칸을 청하고 있다: ${expensive.join(", ")}`,
+  );
+});
+
+test("청하는 칸이 비어 있지 않고 겹치지 않는다", () => {
+  // 비면 이름도 좌표도 안 와서 후보가 하나도 안 남는다.
+  assert.ok(GOOGLE_PLACE_FIELDS.length > 0);
+  assert.equal(
+    new Set(GOOGLE_PLACE_FIELDS).size,
+    GOOGLE_PLACE_FIELDS.length,
+  );
+});
+
+test("구글이 준 장소를 후보로 읽는다", () => {
+  /*
+    지도 SDK가 주는 모양이다. 이름은 글자 하나이고 좌표는 `lat()`·`lng()`로
+    꺼내는 객체다.
+  */
+  const candidates = readGooglePlaceCandidates(
+    [
+      {
+        id: "ChIJLU7jZClu5kcR4PcOOO6p3I0",
+        displayName: "에펠탑",
+        formattedAddress: "Av. Gustave Eiffel, 75007 Paris, France",
+        primaryTypeDisplayName: "관광 명소",
+        location: { lat: () => 48.85837, lng: () => 2.294481 },
+      },
+    ],
+    10,
+  );
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].name, "에펠탑");
+  assert.equal(candidates[0].externalId, "ChIJLU7jZClu5kcR4PcOOO6p3I0");
+  assert.equal(
+    candidates[0].address,
+    "Av. Gustave Eiffel, 75007 Paris, France",
+  );
+  assert.equal(candidates[0].category, "관광 명소");
+  assert.equal(candidates[0].latitude, 48.85837);
+  assert.equal(candidates[0].longitude, 2.294481);
+});
+
+test("좌표가 숫자로 와도 읽는다", () => {
+  // 같은 API를 주소로 부르면 객체가 아니라 숫자로 온다.
+  const candidates = readGooglePlaceCandidates(
+    [
+      {
+        id: "x",
+        displayName: { text: "루브르 박물관", languageCode: "ko" },
+        location: { lat: 48.860611, lng: 2.337644 },
+      },
+    ],
+    10,
+  );
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].name, "루브르 박물관");
+  assert.equal(candidates[0].latitude, 48.860611);
+});
+
+test("해외 후보의 도로명 주소와 전화번호는 비운다", () => {
+  /*
+    **해외에는 도로명과 지번이라는 구분이 없다.** 구글은 주소를 한 줄로
+    준다. 그 한 줄을 도로명 칸에 넣으면 국내 장소와 같은 뜻인 것처럼
+    보이는데 아니다.
+
+    전화번호는 값이 뛰는 칸이라 아예 청하지 않는다. **모르는 것을
+    지어내지 않는다.**
+  */
+  const [only] = readGooglePlaceCandidates(
+    [
+      {
+        id: "x",
+        displayName: "에펠탑",
+        formattedAddress: "Av. Gustave Eiffel, 75007 Paris, France",
+        location: { lat: 48.85837, lng: 2.294481 },
+      },
+    ],
+    10,
+  );
+
+  assert.equal(only.roadAddress, null);
+  assert.equal(only.phone, null);
+  assert.equal(only.address, "Av. Gustave Eiffel, 75007 Paris, France");
+});
+
+test("이름이나 좌표가 없는 후보는 버린다", () => {
+  /*
+    이름이 없으면 화면에 **누를 수 없는 빈 단추**가 생긴다. 좌표가 없으면
+    눌렀을 때 지도가 사라진다. 해외에서는 좌표가 거의 전부다.
+
+    **하나가 이상해서 전부를 못 쓰게 만들지 않는다.** 멀쩡한 것은 남는다.
+  */
+  const candidates = readGooglePlaceCandidates(
+    [
+      { id: "a", location: { lat: 1, lng: 2 } },
+      { id: "b", displayName: "좌표 없음" },
+      { displayName: "번호 없음", location: { lat: 1, lng: 2 } },
+      { id: "d", displayName: "멀쩡한 곳", location: { lat: 1, lng: 2 } },
+    ],
+    10,
+  );
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].name, "멀쩡한 곳");
+});
+
+test("바다 밖 좌표를 가진 후보는 버린다", () => {
+  // 위도와 경도를 바꿔 넣는 실수가 여기서 걸린다.
+  const candidates = readGooglePlaceCandidates(
+    [{ id: "a", displayName: "어딘가", location: { lat: 200, lng: 2 } }],
+    10,
+  );
+
+  assert.deepEqual(candidates, []);
+});
+
+test("목록이 아니면 빈 목록이다", () => {
+  assert.deepEqual(readGooglePlaceCandidates(null, 10), []);
+  assert.deepEqual(readGooglePlaceCandidates({ places: [] }, 10), []);
+  assert.deepEqual(readGooglePlaceCandidates(undefined, 10), []);
+});
+
+test("청한 수보다 많이 와도 그만큼만 남긴다", () => {
+  const many = Array.from({ length: 30 }, (_, index) => ({
+    id: `id-${index}`,
+    displayName: `곳 ${index}`,
+    location: { lat: 1, lng: 2 },
+  }));
+
+  assert.equal(readGooglePlaceCandidates(many, 10).length, 10);
 });

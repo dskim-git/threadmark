@@ -127,6 +127,35 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     */
     termsUrl: "https://developers.kakao.com/docs/ko/local/common",
   },
+  {
+    id: "google-maps",
+    name: "Google 지도",
+    role: "해외 장소를 이름으로 찾고 그 지도를 보여줍니다.",
+    siteUrl: "https://www.google.com/maps",
+    /*
+      로고를 두지 않는다. 그리고 **이쪽은 그럴 만한 까닭이 더 분명하다.**
+
+      구글 지도는 **그려진 지도 안에 스스로 출처를 표시한다.** `Google`
+      글자와 저작권 줄이 지도 모서리에 늘 붙어 있고, 구글의 표시 조건이
+      요구하는 것이 그것이다. 우리가 그 위에 로고를 또 얹을 일이 아니다.
+      **지우지 않는 것이 우리가 지킬 일이다.**
+
+      그래서 아래 문구는 고지가 아니라 **어디서 온 지도인지 밝히는 말**이다.
+      TMDB처럼 글자 그대로 지켜야 하는 문구가 아니다. 카카오·JustWatch와
+      같은 자리다.
+
+      **짐작으로 영문 고지를 지어내지 않는다.** 공식 문구가 아닌 것을
+      공식처럼 적으면, 나중에 진짜 요구를 만났을 때 이미 지키고 있다고
+      착각하게 된다. (카카오 항목과 같은 판단)
+
+      **2026-09-26에 해외 장소의 지도(17-3.4절)를 만들면서 더했다.**
+      그전까지 구글은 로그인과 Drive만 썼고 화면에 그림을 그리지 않았다.
+    */
+    notice:
+      "해외 장소의 이름·주소·좌표와 지도는 Google 지도에서 가져옵니다. 지도 안의 Google 표시와 저작권 표기는 구글이 직접 그립니다.",
+    termsUrl:
+      "https://developers.google.com/maps/documentation/javascript/policies",
+  },
 ];
 
 /**

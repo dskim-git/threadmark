@@ -320,7 +320,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 1086개
+npm test          # node --test, 1098개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -350,6 +350,17 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 `NEXT_PUBLIC_KAKAO_JAVASCRIPT_KEY`는 브라우저로 나간다. 뒤엣것은 감출 수
 없는 것이 정상이고 **카카오에 등록한 도메인이 유일한 방어선이다.**
 `localhost:3001`과 배포 주소를 둘 다 등록해 두었다.
+
+**해외 장소는 2026-09-26에 붙였다.** (17-3.4절) 구글 지도를 그리고(1차례)
+이름으로 찾는다(2차례). `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`는 **브라우저
+전용**이고 HTTP 리퍼러 제한이 걸려 있어 **서버에서 부르면 거부된다.**
+카카오 REST 열쇠와 정반대라 국내 코드를 보고 해외를 만들면 늘 막힌다.
+아직 남은 것은 해외에서 지도 찍기(3차례)다.
+
+**차례를 쓸 수 있게 되는 순서로 잡는다.** 지도를 먼저 만들었더니 사용자가
+"아직 아무것도 못하는 것 같다"고 했다. 좌표가 있어야 뜨는 지도인데 해외
+좌표를 얻을 길이 그때까지 없었다. **우리 눈에는 바탕이었고 쓰는 사람
+눈에는 아무것도 아니었다.**
 
 표의 **18단계는 번호가 아니라 자리다.** 무엇을 더 만들든 마지막에 온다.
 
@@ -1188,7 +1199,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1086개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1098개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (130검사) |

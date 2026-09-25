@@ -3,11 +3,13 @@
 import { useState, useTransition } from "react";
 
 import { Panel } from "@/app/(app)/panel";
+import { findGooglePlaces } from "@/lib/places/google-place-search";
 import type { AddressCandidate, PlaceCandidate } from "@/lib/places/kakao";
 import {
   PLACE_REGIONS,
   PLACE_VISIT_STATUSES,
-  canSearchRegion,
+  canPickOnMap,
+  canSearchByAddress,
   categoryLabel,
   getPlaceRegionLabel,
   getPlaceProviderLabel,
@@ -117,7 +119,16 @@ export function PlacePanel({
     }
 
     startBusy(async () => {
-      const result = await findPlaces(query);
+      /*
+        **부르는 자리가 다르다.** (17-3.4절) 국내는 우리 서버가 카카오에
+        묻고, 해외는 **이 브라우저가 구글에 직접 묻는다.** 구글 열쇠에
+        리퍼러 제한이 걸려 있어 서버에서 부르면 거부되기 때문이다.
+
+        돌려주는 모양은 같게 맞춰 두었다. 그래야 아래가 한 벌로 끝난다.
+      */
+      const result = overseas
+        ? await findGooglePlaces(query)
+        : await findPlaces(query);
 
       if (!result.ok) {
         setFailed(result.message);
@@ -289,7 +300,13 @@ export function PlacePanel({
       사용자가 적은 것을 우리가 지우는 셈이다.
     */
     setName(candidate.name.slice(0, MAX_TITLE_LENGTH));
-    setProvider("kakao");
+    /*
+      **어디서 왔는지를 그대로 적는다.** 데이터베이스가 `국내는 카카오,
+      해외는 구글`을 짝으로 묶어 두었다(`place_profiles_region_provider_match`).
+      틀리게 적으면 저장할 때 걸리고, 화면에는 "저장하지 못했습니다" 한 줄만
+      뜬다. 어느 값이 문제였는지 알 수 없다.
+    */
+    setProvider(overseas ? "google" : "kakao");
     setExternalId(candidate.externalId);
     setRoadAddress(candidate.roadAddress ?? "");
     setAddress(candidate.address ?? "");
@@ -309,6 +326,25 @@ export function PlacePanel({
     setLng(String(candidate.longitude));
 
     setFailed(null);
+
+    /*
+      **해외는 여기서 끝난다.** 뒤따르는 `주소를 마저 찾기`는 카카오의
+      도로명·우편번호를 채우는 일인데, 해외에는 그 구분 자체가 없다.
+      구글은 주소를 한 줄로 주고 그 한 줄이 이미 지번 칸에 들어갔다.
+
+      **없는 일을 하는 척하지 않는다.** `주소를 마저 찾는 중…`을 띄워놓고
+      아무 일도 안 하면, 기다리다 고장이라고 생각한다.
+    */
+    if (overseas) {
+      setNotice(
+        candidate.address === null
+          ? "구글 지도에서 가져온 값으로 채웠습니다. 그 곳에는 주소가 없습니다. 저장을 눌러야 남습니다."
+          : "구글 지도에서 가져온 값으로 채웠습니다. 저장을 눌러야 남습니다.",
+      );
+
+      return;
+    }
+
     setNotice("카카오맵에서 가져온 값으로 채웠습니다. 주소를 마저 찾는 중…");
 
     /*
@@ -372,7 +408,15 @@ export function PlacePanel({
     );
   }
 
-  const searchable = canSearchRegion(region);
+  /*
+    어느 길이 열려 있는가. **셋을 따로 묻는다.** (17-3.4절)
+
+    전에는 `searchable` 하나가 셋을 한꺼번에 답했다. 해외가 하나씩 열리기
+    시작하자 **하나를 열면 셋이 다 열리는** 상태가 되었다.
+  */
+  const overseas = region === "overseas";
+  const addressSearchable = canSearchByAddress(region);
+  const pickable = canPickOnMap(region);
   const hasPair = lat !== "" && lng !== "";
   const latNumber = Number(lat);
   const lngNumber = Number(lng);
@@ -442,9 +486,9 @@ export function PlacePanel({
             적었다"인지 알 수 없었다. (17-3.1절)
           */}
           <p className="text-xs leading-5 text-zinc-500">
-            {searchable
-              ? "이름이나 주소로 찾을 수 있고, 지도에서 찍어 담을 수도 있습니다."
-              : "해외는 아직 찾아드리지 못합니다. 이름·주소·좌표를 직접 적어 주세요. 구글 지도로 열리는 링크는 그대로 생깁니다."}
+            {overseas
+              ? "이름으로 찾을 수 있습니다. 구글 지도에서 가져옵니다. 주소로 찾기와 지도에서 찍기는 아직 국내만 됩니다."
+              : "이름이나 주소로 찾을 수 있고, 지도에서 찍어 담을 수도 있습니다."}
           </p>
         </div>
 
@@ -464,19 +508,19 @@ export function PlacePanel({
               className="h-10 min-w-0 flex-1 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
             {/*
-              **해외에는 찾기 단추를 그리지 않는다.** 눌러도 안 되는 단추를
-              두면 눌러보고 나서야 안 되는 것을 알게 된다. (17-3.1절)
+              **이제 양쪽 다 그린다.** (17-3.4절 2차례) 국내는 카카오가,
+              해외는 구글이 찾아준다. 단추 이름을 같게 두는 까닭은 쓰는
+              사람이 하는 일이 같기 때문이다. 어디서 가져왔는지는 고른
+              뒤 안내문과 아래 `어디서 왔는지`가 말한다.
             */}
-            {searchable ? (
-              <button
-                type="button"
-                onClick={search}
-                disabled={busy}
-                className="h-10 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-              >
-                {busy ? "찾는 중…" : "찾기"}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={search}
+              disabled={busy}
+              className="h-10 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              {busy ? "찾는 중…" : "찾기"}
+            </button>
 
             {/*
               지도에서 찍기. (17-3.3절, 사용자 요청)
@@ -485,7 +529,7 @@ export function PlacePanel({
               적으려다 막힌 그 자리에 있어야 한다. 아래에 두면 찾다가
               포기한 사람이 거기까지 내려가지 않는다.
             */}
-            {searchable ? (
+            {pickable ? (
               <PlacePicker
                 startLatitude={canLink ? latNumber : null}
                 startLongitude={canLink ? lngNumber : null}
@@ -712,7 +756,7 @@ export function PlacePanel({
           적는 칸이 곧 찾는 말이다. 음악에서 칸을 둘로 나눴다가 값이 두
           벌이 되어 어긋났다.
         */}
-        {searchable ? (
+        {addressSearchable ? (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -863,23 +907,36 @@ export function PlacePanel({
           지도의 일이다. 단추 아래에 두면 누른 뒤에 보게 된다.
         */}
         {/*
-          **해외에는 카카오맵을 그리지 않는다.** 해외 자료가 부실해서
-          찍을 것이 안 보인다. 구글 지도를 그리는 길은 아직 정하지 않았다.
-          (17-3.4절) 그동안 해외는 아래 링크로 연다.
+          **해외에도 지도를 그린다.** (17-3.4절 1차례, 2026-09-26)
+
+          그전까지는 `searchable`이 지도까지 함께 막고 있었다. 카카오맵은
+          해외 자료가 부실해 찍을 것이 안 보였기 때문이다. 이제 해외는
+          구글 지도를 그린다.
+
+          **조건에서 `searchable`을 뺀 것이 핵심이다.** 그 값은 "이름으로
+          찾아줄 수 있는가"에 답하는 값이고, 해외는 아직 못 찾는다.
+          "그릴 수 있는가"를 거기에 묶어두면 **찾기가 되는 날까지 지도도
+          못 그린다.** 어느 지도를 그릴지는 `PlaceMap`이 `region`을 보고
+          정한다.
         */}
-        {canLink && searchable ? (
+        {canLink ? (
           <PlaceMap
             /*
-              좌표를 `key`로 준다.
+              좌표와 국내·해외를 `key`로 준다.
 
               **다른 장소를 고르면 지도를 처음부터 다시 만든다.** 안 그러면
               앞 장소에서 지도가 실패했을 때 그 안내문이 새 장소에도 남는다.
               그 칸 안에서 손으로 되돌리는 것보다 이 편이 짧고 틀릴 데가 없다.
+
+              **국내·해외도 함께 넣는다.** 그리는 쪽이 바뀌는 값이다.
+              좌표만 넣으면 카카오맵이 실패한 자리에서 해외로 바꿨을 때
+              **구글 지도가 떴는데도 카카오 실패 안내문이 그대로 남는다.**
             */
-            key={`${latNumber},${lngNumber}`}
+            key={`${latNumber},${lngNumber},${region}`}
             latitude={latNumber}
             longitude={lngNumber}
             name={name.trim() === "" ? "담아둔 곳" : name}
+            region={region}
           />
         ) : null}
 

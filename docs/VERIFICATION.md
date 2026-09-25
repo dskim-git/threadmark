@@ -12,7 +12,7 @@
 ```bash
 npm run lint     # 정적 분석
 npx tsc --noEmit # 타입 검사
-npm test         # 1086개 단위 검사
+npm test         # 1098개 단위 검사
 npm run build    # production 빌드
 ```
 

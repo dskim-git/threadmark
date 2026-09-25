@@ -107,19 +107,75 @@ export function getPlaceRegionLabel(value: unknown): string {
   return PLACE_REGION_LABELS[isPlaceRegion(value) ? value : "domestic"];
 }
 
+/*
+  어느 길이 열려 있는가. **셋을 따로 묻는다.** (17-3.4절)
+
+  전에는 `canSearchRegion` 하나가 이 셋을 한꺼번에 답했다. 국내는 다 되고
+  해외는 다 안 되던 때라 그것으로 충분했다. 해외가 하나씩 열리기 시작하자
+  **하나를 열면 셋이 다 열리는** 상태가 되었다.
+
+  화면이 이것을 보고 단추를 그릴지 정한다. **없는 길을 눌러보고 나서야
+  없다는 것을 알게 하지 않는다.** 1단계에서 해외를 찾으면 `찾은 장소가
+  없습니다`만 떴고, 그것이 "카카오에 없다"인지 "이름을 잘못 적었다"인지
+  알 수 없었다. (17-3.1절)
+
+  | | 국내 | 해외 |
+  | --- | --- | --- |
+  | 이름으로 찾기 | 카카오 | **구글** |
+  | 주소로 찾기 | 카카오 | 아직 |
+  | 지도에서 찍기 | 카카오 | 아직 |
+
+  모르는 값에는 국내로 답한다. `region`의 기본값이 `domestic`이고
+  데이터베이스가 `not null`로 같은 것을 지킨다.
+*/
+
+/*
+  이름으로 찾는 길에는 함수를 두지 않는다. **양쪽 다 되기 때문이다.**
+  (17-3.4절 2차례) 늘 참을 돌려주는 함수를 두면, 읽는 사람은 어딘가에
+  막히는 경우가 있는 줄 알고 그것을 찾는다.
+
+  다만 **부르는 자리가 다르다.** 국내는 우리 서버가 카카오에 묻고, 해외는
+  이용자 브라우저가 구글에 직접 묻는다. 구글 열쇠에 리퍼러 제한이 걸려
+  있어 서버에서 부르면 거부되기 때문이다. 어느 쪽을 부를지는 화면이
+  `region`을 보고 정한다.
+*/
+
 /**
- * 그 쪽에서 장소를 찾을 수 있는가.
+ * 주소로 찾을 수 있는가. **국내만 된다.**
  *
- * 국내는 카카오가 찾아준다. **해외는 아직 찾아주지 못한다.** 무엇으로
- * 찾을지 정하지 않았다. (17-3.4절) 정해지기 전까지 해외는 손으로 적는다.
- *
- * **화면이 이것을 보고 단추를 그릴지 정한다.** 없는 길을 눌러보고 나서야
- * 없다는 것을 알게 하지 않는다. 1단계에서 해외를 찾으면 `찾은 장소가
- * 없습니다`만 떴고, 그것이 "카카오에 없다"인지 "이름을 잘못 적었다"인지
- * 알 수 없었다. (17-3.1절)
+ * 이 길은 우편번호가 오는 유일한 자리이고, 도로명과 지번을 갈라서 준다.
+ * **해외에는 그 구분 자체가 없다.** 구글은 주소를 한 줄로 준다.
  */
-export function canSearchRegion(value: unknown): boolean {
+export function canSearchByAddress(value: unknown): boolean {
   return isPlaceRegion(value) ? value === "domestic" : true;
+}
+
+/**
+ * 지도에서 찍어 담을 수 있는가. **아직 국내만 된다.**
+ *
+ * 찍은 좌표를 주소로 바꾸는 일을 카카오의 `coord2address`가 한다. 해외는
+ * 구글 Geocoding으로 같은 일을 할 수 있고 3차례에서 만든다. (17-3.4절)
+ */
+export function canPickOnMap(value: unknown): boolean {
+  return isPlaceRegion(value) ? value === "domestic" : true;
+}
+
+/**
+ * 그 쪽 장소의 지도를 어느 것으로 그리는가. (17-3.4절)
+ *
+ * 국내는 카카오맵, 해외는 구글 지도다. **카카오맵은 해외가 부실해서
+ * 찍을 것이 안 보이고**, 구글 지도는 국내에서 길찾기가 안 된다. 어느
+ * 한쪽으로 통일하면 반쪽이 못 쓰게 된다.
+ *
+ * **찾는 일과 따로 둔다.** 전에는 화면이 "찾을 수 있는 쪽에만 지도를
+ * 그린다"로 하나에 두 가지를 물었다. 그래서 해외에 지도를 붙이는 순간
+ * **찾기 단추까지 함께 살아났다.** 둘은 서로 다른 때에 되기 시작한다.
+ *
+ * 모르는 값에는 카카오맵으로 답한다. `region`의 기본값이 `domestic`이고
+ * 데이터베이스가 `not null`로 같은 것을 지킨다.
+ */
+export function mapProviderForRegion(value: unknown): PlaceProvider {
+  return isPlaceRegion(value) && value === "overseas" ? "google" : "kakao";
 }
 
 /** 분류를 가르는 글자. 카카오가 `음식점 > 한식 > 한정식`처럼 준다. */
@@ -685,4 +741,177 @@ export function readCoordinateAddress(
     // 우편번호는 도로명 쪽에만 있다.
     postalCode: postalCode(road?.zone_no),
   };
+}
+
+/**
+ * 구글에 청하는 칸. (17-3.4절 2차례)
+ *
+ * **이 목록이 곧 값이다.** 구글은 청한 칸에 따라 값을 다르게 매긴다.
+ * 칸 하나를 더 청하는 것이 등급을 통째로 올려버린다.
+ *
+ *   Essentials  id, name
+ *   Pro         displayName, formattedAddress, location, primaryTypeDisplayName …
+ *   Enterprise  internationalPhoneNumber, rating, websiteUri, 영업시간 …
+ *
+ * **여기 있는 것은 전부 Pro까지다.** 19-E.5절이 잡아둔 하루 상한 50으로
+ * 한 달 최대 1,550번인데, Pro의 월 무료가 5,000번이다. Enterprise 칸을
+ * 하나라도 청하면 그 셈이 무너진다.
+ *
+ * 그래서 전화번호를 가져오지 않는다. 국내와 다른 점이고, **모르는 것을
+ * 지어내는 대신 비워 둔다.**
+ *
+ * `tests/places.test.mjs`가 이 목록에 Enterprise 칸이 섞이지 않았는지
+ * 본다. 말로만 적은 약속은 잊힌다.
+ */
+export const GOOGLE_PLACE_FIELDS = [
+  "id",
+  "displayName",
+  "formattedAddress",
+  "location",
+  "primaryTypeDisplayName",
+] as const;
+
+/**
+ * 청하면 값이 뛰는 칸. **검사가 이 목록과 위 목록을 견준다.**
+ *
+ * 전부 적지 않는다. 적을 수 있는 만큼 적고, 늘어나면 더한다. 여기 없는
+ * 칸을 더할 때는 구글 문서에서 등급을 먼저 확인한다.
+ */
+export const GOOGLE_ENTERPRISE_PLACE_FIELDS = [
+  "internationalPhoneNumber",
+  "nationalPhoneNumber",
+  "rating",
+  "userRatingCount",
+  "websiteUri",
+  "priceLevel",
+  "regularOpeningHours",
+  "currentOpeningHours",
+] as const;
+
+/**
+ * 구글이 이름을 담아주는 모양이 두 가지다.
+ *
+ * 브라우저에서 부르는 지도 SDK는 글자 하나로 주고, 같은 API를 주소로
+ * 부르면 `{ text, languageCode }`로 준다. **우리는 앞엣것만 쓰지만 둘 다
+ * 읽는다.** 나중에 부르는 자리가 바뀌었을 때 조용히 이름이 사라지는 것보다
+ * 낫다. 빈 이름은 화면에 **누를 수 없는 빈 단추**로 나타난다.
+ */
+function readDisplayText(value: unknown, maxLength: number): string | null {
+  if (typeof value === "string") {
+    return placeText(value, maxLength);
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return placeText((value as Record<string, unknown>).text, maxLength);
+  }
+
+  return null;
+}
+
+/**
+ * 구글이 주는 좌표를 숫자 둘로.
+ *
+ * **모양이 두 가지다.** 지도 SDK의 `LatLng`은 `lat()`·`lng()`로 꺼내는
+ * 객체이고, 그냥 `{ lat, lng }` 숫자인 경우도 있다. 둘 다 읽는다.
+ * 카카오에서 `getLat()`으로 꺼내던 것과 같은 자리다.
+ */
+function readLatLngLike(
+  value: unknown,
+): { latitude: number; longitude: number } | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const row = value as Record<string, unknown>;
+
+  const rawLat = typeof row.lat === "function" ? row.lat() : row.lat;
+  const rawLng = typeof row.lng === "function" ? row.lng() : row.lng;
+
+  const lat = latitude(rawLat);
+  const lng = longitude(rawLng);
+
+  if (lat === null || lng === null) {
+    return null;
+  }
+
+  return { latitude: lat, longitude: lng };
+}
+
+/**
+ * 구글이 준 장소 하나를 후보로 읽는다. **모르는 모양은 버린다.**
+ *
+ * 카카오 쪽(`readPlaceCandidate`)과 같은 생각이다. 받아온 값은 전부 남이
+ * 쓴 글이라 모양을 하나하나 확인하고, 아닌 것은 조용히 빼낸다. 하나가
+ * 이상해서 전부를 못 쓰게 만들지 않는다.
+ *
+ * **도로명 주소를 비운다.** 해외에는 도로명과 지번이라는 구분 자체가
+ * 없다. 구글은 주소를 한 줄로 준다. 그 한 줄을 도로명 칸에 넣으면 국내
+ * 장소와 같은 뜻인 것처럼 보이는데 아니다. 지번 칸에 넣는다.
+ *
+ * **전화번호와 상세 화면 주소를 비운다.** 청하지 않은 칸이다. 값이 더
+ * 드는 등급이라 일부러 뺐다. 모르는 것을 지어내지 않는다.
+ */
+export function readGooglePlaceCandidate(value: unknown): PlaceCandidate | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const row = value as Record<string, unknown>;
+
+  const name = readDisplayText(row.displayName, MAX_NAME_LENGTH);
+
+  // 이름이 없으면 고를 수가 없다. 화면에 빈 단추가 생긴다.
+  if (name === null) {
+    return null;
+  }
+
+  const externalId = placeText(row.id, MAX_EXTERNAL_ID_LENGTH);
+
+  // 번호가 없으면 다시 받아올 길이 없다. 그 후보는 쓰지 않는다.
+  if (externalId === null) {
+    return null;
+  }
+
+  const point = readLatLngLike(row.location);
+
+  /*
+    좌표가 없으면 버린다. **해외에서는 좌표가 거의 전부다.** 지도를 그리는
+    것도, 지도 링크를 만드는 것도 좌표로 한다. 주소만 있는 후보를 목록에
+    두면 눌렀을 때 지도가 사라진다.
+  */
+  if (point === null) {
+    return null;
+  }
+
+  return {
+    name,
+    externalId,
+    roadAddress: null,
+    address: placeText(row.formattedAddress, MAX_ADDRESS_LENGTH),
+    category: readDisplayText(row.primaryTypeDisplayName, MAX_CATEGORY_LENGTH),
+    phone: null,
+    placeUrl: null,
+    latitude: point.latitude,
+    longitude: point.longitude,
+  };
+}
+
+/**
+ * 구글이 준 목록을 후보로 읽는다.
+ *
+ * 목록이 아니면 빈 목록이다. **비어 있는 것과 못 읽은 것을 화면에서 같게
+ * 다루지 않으려고**, 부르는 쪽이 그 둘을 갈라 말한다.
+ */
+export function readGooglePlaceCandidates(
+  value: unknown,
+  limit: number,
+): PlaceCandidate[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(readGooglePlaceCandidate)
+    .filter((candidate): candidate is PlaceCandidate => candidate !== null)
+    .slice(0, limit);
 }
