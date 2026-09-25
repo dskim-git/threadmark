@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireActiveAccount } from "@/lib/auth/account";
 
 import { AppNav, AppSubNav, SettingsLink } from "./app-nav";
+import { SearchDock } from "./search-dock";
 
 /**
  * 보호된 앱 영역의 레이아웃.
@@ -46,7 +47,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             */}
             <form
               action="/search"
-              className="ml-auto hidden shrink-0 sm:block"
+              className="ml-auto hidden shrink-0 items-center gap-1 sm:flex"
             >
               <label htmlFor="header-search" className="sr-only">
                 찾기
@@ -58,6 +59,36 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
                 placeholder="찾기"
                 className="h-9 w-32 rounded-full border border-black/[.08] bg-zinc-50 px-4 text-sm text-black transition-colors focus:w-48 focus:bg-white focus:outline-none md:w-40 dark:border-white/[.145] dark:bg-black dark:text-zinc-50 dark:focus:bg-zinc-950"
               />
+
+              {/*
+                찾기 화면으로 가는 단추. (사용자 요청, 2026-09-25)
+
+                **링크가 아니라 이 폼의 보내기 단추다.** 링크로 두면 적다가
+                누른 사람이 검색어를 잃는다. 적은 것이 있으면 그것으로 찾고,
+                없으면 빈 찾기 화면으로 간다. 두 경우 모두 맞게 움직인다.
+
+                창에서 Enter를 눌러야만 갈 수 있다는 것을 사용자가 지적했다.
+                Enter는 누를 곳이 보이지 않는 길이다.
+              */}
+              <button
+                type="submit"
+                aria-label="찾기 화면으로"
+                title="찾기 화면으로"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-black/[.04] hover:text-black dark:hover:bg-white/[.06] dark:hover:text-zinc-50"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  className="h-4 w-4"
+                >
+                  <circle cx="9" cy="9" r="5.5" />
+                  <path d="M13.2 13.2 17 17" />
+                </svg>
+              </button>
             </form>
 
             {/* 창을 접은 좁은 화면에서 찾기로 가는 길. */}
@@ -94,6 +125,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         {children}
       </main>
+
+      {/*
+        어디서든 띄워두고 쓰는 찾기 창. (사용자 요청, 2026-09-25)
+
+        **레이아웃에 둔다.** 앱 안에서 화면을 옮겨도 다시 그려지지 않으므로
+        자리와 찾은 결과가 그대로 남는다. 화면마다 따로 두면 옮길 때마다
+        처음으로 돌아가고, 그러면 띄워두는 뜻이 없다.
+      */}
+      <SearchDock />
     </div>
   );
 }
