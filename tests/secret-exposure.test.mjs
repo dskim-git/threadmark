@@ -253,6 +253,7 @@ test("검사할 비밀값 목록이 실제로 쓰이는 값을 덮는다", () =>
   /** 비밀이 아니라서 검사하지 않는 것들. 왜 아닌지 적어 둔다. */
   const NOT_SECRET = new Set([
     "ANTHROPIC_MODEL", // 모델 이름. 비밀이 아니다
+    "ANTHROPIC_SEARCH_MODEL", // 모델 이름. 비어 있으면 위의 값을 쓴다
     "ANTHROPIC_BUDGET_USD", // 얼마까지 쓸지 정한 숫자다
     "GOOGLE_CLIENT_ID", // 공개되는 값이다. 동의 화면에 그대로 보인다
     "GOOGLE_OAUTH_REDIRECT_URI", // 우리 앱의 주소다

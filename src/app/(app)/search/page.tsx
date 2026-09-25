@@ -67,11 +67,29 @@ export default async function SearchPage({
         />
         <button
           type="submit"
-          className="h-11 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
+          className="h-11 whitespace-nowrap rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
         >
           찾기
         </button>
       </form>
+
+      {/*
+        AI로 물어보는 길은 여기서 간다. 메뉴에 두지 않았다.
+
+        **돈이 드는 것과 안 드는 것을 같은 높이에 두지 않는다.** 글자로
+        찾는 것이 먼저이고, 그것으로 안 될 때 물어보는 것이 순서다. 설계
+        문서 19절의 흐름도 `키워드 검색`이 앞이다.
+      */}
+      <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+        낱말이 기억나지 않거나 여러 기록에 흩어져 있을 때는{" "}
+        <Link
+          href="/ai-search"
+          className="underline underline-offset-2 hover:text-accent dark:hover:text-accent-dark"
+        >
+          AI에게 물어보기
+        </Link>
+        를 쓸 수 있습니다. 담아둔 것에서 찾아 읽고 글로 답합니다.
+      </p>
 
       {results === null ? null : found === 0 ? (
         <p className="rounded-2xl bg-white px-6 py-12 text-center text-sm leading-6 text-zinc-500 dark:bg-zinc-950">
