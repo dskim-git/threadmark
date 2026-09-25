@@ -758,17 +758,23 @@ export function PlacePanel({
         {/*
           어디서 온 값인지 밝힌다.
 
-          **`출처 표기` 화면으로 보내지 않는다.** 그 화면에는 TMDB와
-          JustWatch만 있다. 그 둘은 쓰는 조건으로 표기하기로 한 곳이고,
-          Kakao는 그 목록에 없다. **없는 곳으로 링크를 걸면 눌러본 사람이
-          찾지 못한다.** 책 찾기도 같은 방식으로 이름만 밝힌다.
+          처음에는 `출처 표기` 화면으로 링크를 걸지 않았다. 그 화면에
+          TMDB와 JustWatch만 있고 Kakao가 없었기 때문이다. **없는 곳으로
+          링크를 걸면 눌러본 사람이 찾지 못한다.**
 
-          Kakao가 형식을 갖춘 표기를 요구하는지는 확인하지 않았다. 요구한다면
-          `legal/attribution.ts`에 더하고 이 자리에서 그 화면으로 보낸다.
+          2026-09-25에 Kakao를 그 목록에 더했다. 그래서 링크를 건다.
+          **카카오가 정해진 고지 문구를 요구하는지는 여전히 모른다.**
+          그 사정은 `legal/attribution.ts`에 적어 두었다.
         */}
         {provider === "kakao" ? (
           <p className="text-xs leading-5 text-zinc-500">
-            주소·좌표·분류는 카카오맵에서 가져온 값입니다.
+            주소·좌표·분류는 카카오맵에서 가져온 값입니다.{" "}
+            <a
+              href="/credits"
+              className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-300"
+            >
+              출처 표기
+            </a>
           </p>
         ) : null}
       </form>
