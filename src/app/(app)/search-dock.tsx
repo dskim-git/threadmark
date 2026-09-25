@@ -14,6 +14,11 @@ import { HelpButton } from "@/app/(app)/help-button";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
+import {
+  askAboutMyNotes,
+  countAiRemaining,
+} from "./ai-search/actions";
+import { EMPTY_ASK_STATE, type AskState } from "./ai-search/state";
 import { searchFromDock } from "./dock-actions";
 import { DOCK_LIMIT, EMPTY_DOCK_STATE, type DockState } from "./dock-state";
 
@@ -50,6 +55,23 @@ import { DOCK_LIMIT, EMPTY_DOCK_STATE, type DockState } from "./dock-state";
  * 결과를 누르면 새 탭에서 연다
  *   이 창을 만든 까닭이 "하던 일을 멈추지 않는 것"이다. 같은 탭에서 열면
  *   그 까닭이 무너진다.
+ *
+ * AI는 두 번째 단추다
+ *   사용자가 "여기에 AI 검색을 일부러 안 넣은 거지?"라고 물어서 붙였다.
+ *   넣는 것이 맞다. 재료를 고르는 일은 흩어진 것을 엮는 일이고, 글자로
+ *   찾기는 **낱말을 알아야** 쓴다. 낱말이 기억나지 않는 자리가 여기다.
+ *
+ *   다만 **돈이 드는 것과 안 드는 것을 한 단추에 섞지 않는다.** `/search`와
+ *   `/ai-search`를 가를 때 쓴 기준이 창 안에서도 같다. 먼저 글자로 찾고,
+ *   그것으로 안 됐을 때 아래 단추를 누른다.
+ *
+ *   **남은 횟수를 늘 보여준다.** `/ai-search`에서는 얼마 안 남았을 때만
+ *   알리기로 했는데 여기는 다르다. 늘 떠 있는 단추라 무심코 누르기 쉽다.
+ *
+ * 칸은 하나다
+ *   `찾기`와 `AI에게 물어보기`가 같은 칸을 본다. 두 벌로 만들면 어긋날
+ *   자리가 생긴다. 값을 위로 올려 둘이 나눠 쓴다.
+ *   (AGENTS.md 2절 `두 칸이 같은 값을 써야 하면 그 값을 위로 올린다`)
  */
 
 /** 동그란 단추의 지름. 자리를 잴 때 쓴다. */
@@ -66,14 +88,59 @@ const DRAG_THRESHOLD = 4;
 
 type Point = { x: number; y: number };
 
-export function SearchDock() {
+export function SearchDock({ aiConfigured }: { aiConfigured: boolean }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  /*
+    찾을 말을 여기서 들고 두 폼이 나눠 쓴다. 각자 칸을 가지면 위에서 적은
+    것과 아래가 찾는 것이 어긋난다. 15-E에서 실제로 겪은 일이다.
+  */
+  const [term, setTerm] = useState("");
 
   const [state, formAction, pending] = useActionState<DockState, FormData>(
     searchFromDock,
     EMPTY_DOCK_STATE,
   );
+
+  const [ask, askAction, asking] = useActionState<AskState, FormData>(
+    askAboutMyNotes,
+    EMPTY_ASK_STATE,
+  );
+
+  /*
+    이번 달에 몇 번 남았는가.
+
+    창을 열 때 한 번 센다. 물어본 뒤에는 그 결과가 더 새것이므로 그쪽을
+    쓴다. 셀 수 없으면 null이고, 그때는 숫자를 감춘다. **모르는 숫자를
+    적지 않는다.**
+  */
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open || !aiConfigured) {
+      return;
+    }
+
+    let alive = true;
+
+    countAiRemaining()
+      .then((value) => {
+        if (alive) {
+          setRemaining(value);
+        }
+      })
+      .catch(() => {
+        // 못 세면 감춘다. 이 숫자 하나 때문에 창이 안 뜨게 하지 않는다.
+        if (alive) {
+          setRemaining(null);
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [open, aiConfigured]);
 
   /*
     **자리를 상태로 두지 않고 DOM을 직접 고친다.**
@@ -226,6 +293,12 @@ export function SearchDock() {
 
   const found = (state.sources?.length ?? 0) + (state.captures?.length ?? 0);
 
+  /*
+    물어본 뒤에는 그 결과가 더 새것이다. 창을 열 때 센 값은 그 사이에
+    다른 탭에서 물어봤으면 뒤처져 있다.
+  */
+  const shownRemaining = ask.remaining ?? remaining;
+
   return (
     <div
       ref={rootRef}
@@ -293,12 +366,14 @@ export function SearchDock() {
             </label>
             <input
               id="dock-term"
-              name="term"
               type="search"
-              defaultValue={state.term}
-              placeholder="모델링, Blum, 표본"
+              value={term}
+              onChange={(event) => setTerm(event.target.value)}
+              placeholder="모델링, 학생들이 자주 틀리는 곳"
               className="h-9 min-w-0 flex-1 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-zinc-950 dark:text-zinc-50"
             />
+            {/* 값은 위에서 들고 있다. 폼에는 보이지 않는 칸으로 넘긴다. */}
+            <input type="hidden" name="term" value={term} />
             <button
               type="submit"
               disabled={pending}
@@ -309,6 +384,99 @@ export function SearchDock() {
           </form>
 
           <div className="max-h-[50vh] overflow-y-auto px-3 pb-3">
+            {/*
+              AI 자리를 목록보다 **위**에 둔다. 물어본 사람이 보려는 것이
+              답이기 때문이다. 목록은 바로 아래에 그대로 있다.
+
+              따로 접는 단추를 두지 않았다. 창 안이 좁아 단추 하나가 자리를
+              많이 먹고, 다음 답이 오면 이 자리가 그대로 바뀐다.
+            */}
+            {aiConfigured ? (
+              <div className="flex flex-col gap-2 border-b border-black/[.06] py-2 dark:border-white/[.08]">
+                {ask.answer ? (
+                  <>
+                    <p className="whitespace-pre-wrap text-xs leading-6 text-zinc-800 dark:text-zinc-200">
+                      {ask.answer}
+                    </p>
+
+                    {ask.cited.length > 0 ? (
+                      <ul className="flex flex-col gap-1">
+                        {ask.cited.map((item) => (
+                          <li
+                            key={`a-${item.kind}-${item.index}`}
+                            className="text-[11px] leading-4 text-zinc-500"
+                          >
+                            [{item.index}]{" "}
+                            {item.href ? (
+                              <a
+                                href={item.href}
+                                target="_blank"
+                                rel="noopener"
+                                className="underline underline-offset-2 hover:text-black dark:hover:text-zinc-50"
+                              >
+                                {item.origin}
+                              </a>
+                            ) : (
+                              item.origin
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-[11px] leading-4 text-zinc-500">
+                        이 답은 어느 기록을 근거로 삼았는지 밝히지 않았습니다.
+                        그대로 믿지 마세요.
+                      </p>
+                    )}
+                  </>
+                ) : null}
+
+                {ask.error ? (
+                  <p
+                    role="alert"
+                    className="text-xs leading-5 text-red-700 dark:text-red-300"
+                  >
+                    {ask.error}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/*
+                    **두 번째 단추다.** 먼저 글자로 찾고, 그것으로 안 됐을
+                    때 누른다. 위의 `찾기`와 생김새를 다르게 두어 같은 일이
+                    아니라는 것을 보인다.
+                  */}
+                  <form action={askAction}>
+                    <input type="hidden" name="question" value={term} />
+                    <button
+                      type="submit"
+                      disabled={asking || shownRemaining === 0}
+                      className="h-8 whitespace-nowrap rounded-full border border-black/[.12] px-3 text-xs font-medium text-zinc-700 transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.2] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                    >
+                      {asking ? "찾아보는 중…" : "AI에게 물어보기"}
+                    </button>
+                  </form>
+
+                  {/*
+                    **남은 횟수를 늘 보여준다.** 늘 떠 있는 단추라 무심코
+                    누르기 쉽다. 누르기 전에 값이 보여야 한다.
+                    모르면 감춘다. 모르는 숫자를 적지 않는다.
+                  */}
+                  {shownRemaining !== null ? (
+                    <span className="text-[11px] text-zinc-500">
+                      이번 달 {shownRemaining}번 남음
+                    </span>
+                  ) : null}
+                </div>
+
+                {asking ? (
+                  <p className="text-[11px] leading-4 text-zinc-500">
+                    담아둔 것에서 찾아 읽고 있습니다. 몇 초 걸립니다.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {state.error ? (
               <p role="alert" className="py-2 text-xs leading-5 text-red-700 dark:text-red-300">
                 {state.error}

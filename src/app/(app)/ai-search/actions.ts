@@ -41,11 +41,40 @@ function fail(question: string, error: string, remaining: number | null): AskSta
   return { question, answer: null, cited: [], error, remaining };
 }
 
+/**
+ * 이번 달에 몇 번 더 물어볼 수 있는지.
+ *
+ * **떠다니는 창이 쓴다.** 그 창의 AI 단추는 늘 떠 있어서 무심코 누르기
+ * 쉽다. `/ai-search`에서는 얼마 안 남았을 때만 알리기로 했지만, 여기서는
+ * 누르기 전에 늘 보여야 한다. 그러려면 묻기 전에 셀 수 있어야 한다.
+ *
+ * 브라우저가 불러도 되는가. **된다.** 돌려주는 것은 부른 사람 자신의
+ * 숫자뿐이고, 승인 확인을 먼저 건다. (AGENTS.md 6절 `Next.js 16`)
+ *
+ * 셀 수 없으면 null이다. 0이 아니다. 화면은 null일 때 숫자를 감춘다.
+ */
+export async function countAiRemaining(): Promise<number | null> {
+  await requireActiveAccount();
+
+  const used = await countAiCallsThisMonth();
+
+  if (used === null) {
+    return null;
+  }
+
+  return decideAiCall(used).remaining;
+}
+
 export async function askAboutMyNotes(
   _previous: AskState,
   formData: FormData,
 ): Promise<AskState> {
-  await requireActiveAccount("/ai-search");
+  /*
+    돌아올 곳을 적지 않는다. 이 동작은 `/ai-search` 화면과 **떠다니는
+    창** 양쪽에서 부른다. 창에서 부른 것을 `/ai-search`로 되돌리면
+    하던 일을 잃는데, 그 창은 하던 일을 잃지 않으려고 만든 것이다.
+  */
+  await requireActiveAccount();
 
   const question = normalizeQuestion(formData.get("question"));
 

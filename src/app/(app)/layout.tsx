@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { isAiSearchConfigured } from "@/lib/ai/anthropic";
 import { requireActiveAccount } from "@/lib/auth/account";
 
 import { AppNav, AppSubNav, SettingsLink } from "./app-nav";
@@ -133,7 +134,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         자리와 찾은 결과가 그대로 남는다. 화면마다 따로 두면 옮길 때마다
         처음으로 돌아가고, 그러면 띄워두는 뜻이 없다.
       */}
-      <SearchDock />
+      <SearchDock aiConfigured={isAiSearchConfigured()} />
     </div>
   );
 }
