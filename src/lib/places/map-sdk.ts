@@ -48,12 +48,27 @@ import type { MapLoadFailure } from "./places";
     draw-failed    스크립트는 받았는데 지도를 그리지 못했다.
 */
 
-/** 우리가 쓰는 만큼만 적은 카카오맵의 모양. */
-type KakaoLatLng = object;
+/**
+ * 우리가 쓰는 만큼만 적은 카카오맵의 모양.
+ *
+ * **쓰지 않는 것은 적지 않는다.** 카카오맵의 모양을 통째로 옮겨 적으면
+ * 그 글이 낡는 것을 아무도 모른다. 여기 적힌 것은 전부 우리가 부르는
+ * 것이고, 안 맞으면 컴파일이 멈춘다.
+ */
+type KakaoLatLng = {
+  getLat: () => number;
+  getLng: () => number;
+};
 
 type KakaoMap = {
   setCenter: (latlng: KakaoLatLng) => void;
   relayout: () => void;
+};
+
+type KakaoMarker = {
+  setMap: (map: KakaoMap | null) => void;
+  /** 찍은 자리로 옮긴다. **새로 만들지 않는다.** 만들면 표시가 쌓인다. */
+  setPosition: (latlng: KakaoLatLng) => void;
 };
 
 type KakaoMaps = {
@@ -63,8 +78,22 @@ type KakaoMaps = {
     container: HTMLElement,
     options: { center: KakaoLatLng; level: number },
   ) => KakaoMap;
-  Marker: new (options: { position: KakaoLatLng; map?: KakaoMap }) => {
-    setMap: (map: KakaoMap | null) => void;
+  Marker: new (options: {
+    position: KakaoLatLng;
+    map?: KakaoMap;
+  }) => KakaoMarker;
+  /**
+   * 지도를 누른 것을 듣는다. (17-3.3절)
+   *
+   * `latLng`이 누른 자리다. **카카오가 주는 것은 숫자가 아니라 객체**라
+   * `getLat()`·`getLng()`로 꺼낸다.
+   */
+  event: {
+    addListener: (
+      target: KakaoMap,
+      type: "click",
+      handler: (event: { latLng: KakaoLatLng }) => void,
+    ) => void;
   };
 };
 

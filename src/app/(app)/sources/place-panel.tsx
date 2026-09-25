@@ -5,8 +5,11 @@ import { useState, useTransition } from "react";
 import { Panel } from "@/app/(app)/panel";
 import type { AddressCandidate, PlaceCandidate } from "@/lib/places/kakao";
 import {
+  PLACE_REGIONS,
   PLACE_VISIT_STATUSES,
+  canSearchRegion,
   categoryLabel,
+  getPlaceRegionLabel,
   getPlaceProviderLabel,
   getPlaceVisitStatusLabel,
   googleMapsUrl,
@@ -16,6 +19,7 @@ import type { PlaceProfile } from "@/lib/places/queries";
 import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 
 import { PlaceMap } from "./place-map";
+import { PlacePicker, type PickedPoint } from "./place-picker";
 
 import { findAddresses, findPlaces, savePlace } from "./place-actions";
 
@@ -60,6 +64,13 @@ export function PlacePanel({
   const [name, setName] = useState(sourceTitle);
   const [why, setWhy] = useState(description ?? "");
 
+  /*
+    국내인가 해외인가. (17-3.2절, 사용자 요청)
+
+    **담기 시작할 때 고른다.** 고른 뒤에는 그쪽에 맞는 길만 보여준다.
+    없는 길을 눌러보고 나서야 없다는 것을 알게 하지 않는다.
+  */
+  const [region, setRegion] = useState(profile?.region ?? "domestic");
   const [provider, setProvider] = useState(profile?.provider ?? "");
   const [externalId, setExternalId] = useState(profile?.externalId ?? "");
   const [roadAddress, setRoadAddress] = useState(profile?.roadAddress ?? "");
@@ -310,6 +321,58 @@ export function PlacePanel({
     });
   }
 
+  /**
+   * 국내·해외를 바꾼다.
+   *
+   * **`provider`를 비운다.** 데이터베이스가 `국내는 카카오, 해외는 구글`을
+   * 짝으로 묶어 두었다(`place_profiles_region_provider_match`). 카카오에서
+   * 찾아 채운 장소를 해외로 바꾸고 저장하면 그 제약에 걸리고, 화면에는
+   * "저장하지 못했습니다" 한 줄만 뜬다. **어느 값이 문제였는지 알 수 없다.**
+   *
+   * 비우는 것이 뜻으로도 맞다. 해외로 바꾼 순간 **그 값이 카카오에서 왔다는
+   * 주장은 더 이상 맞지 않는다.** 주소와 좌표는 그대로 둔다. 같은 장소를
+   * 가리키고 있을 수 있고, 사용자가 지운 적이 없다.
+   */
+  function changeRegion(next: string) {
+    setRegion(next === "overseas" ? "overseas" : "domestic");
+    setProvider("");
+    setExternalId("");
+    setPlaceUrl("");
+    setFound(null);
+    setFailed(null);
+    setNotice(
+      next === "overseas"
+        ? "해외는 아직 찾아드리지 못합니다. 이름과 주소, 좌표를 직접 적어 주세요. 구글 지도로 열리는 링크는 그대로 생깁니다."
+        : null,
+    );
+  }
+
+  /** 지도에서 찍은 자리로 칸을 채운다. **이름은 건드리지 않는다.** */
+  function usePickedPoint(point: PickedPoint) {
+    setProvider("kakao");
+    setLat(String(point.latitude));
+    setLng(String(point.longitude));
+
+    /*
+      주소를 못 알아냈으면 앞서 적어둔 것을 지우지 않는다. **찍은 것은
+      좌표이고, 주소는 딸려 오면 좋은 값이다.** 지우면 손으로 적어둔 것을
+      우리가 없애는 셈이 된다.
+    */
+    if (point.address) {
+      setRoadAddress(point.address.roadAddress ?? "");
+      setAddress(point.address.address ?? "");
+      setPostal(point.address.postalCode ?? "");
+    }
+
+    setFailed(null);
+    setNotice(
+      point.address === null
+        ? "찍은 자리의 좌표를 담았습니다. 그 자리의 주소는 찾지 못했으니 이름과 주소를 적어 주세요."
+        : "찍은 자리의 좌표와 주소를 담았습니다. 이름은 직접 적어 주세요. 지도는 그 자리에 무엇이 있는지 모릅니다.",
+    );
+  }
+
+  const searchable = canSearchRegion(region);
   const hasPair = lat !== "" && lng !== "";
   const latNumber = Number(lat);
   const lngNumber = Number(lng);
@@ -329,12 +392,61 @@ export function PlacePanel({
       <form action={savePlace} className="flex flex-col gap-4">
         <input type="hidden" name="sourceId" value={sourceId} />
         <input type="hidden" name="returnTo" value={returnTo} />
+        <input type="hidden" name="region" value={region} />
         <input type="hidden" name="provider" value={provider} />
         <input type="hidden" name="externalId" value={externalId} />
         <input type="hidden" name="category" value={category} />
         <input type="hidden" name="postalCode" value={postal} />
         <input type="hidden" name="phone" value={phone} />
         <input type="hidden" name="placeUrl" value={placeUrl} />
+
+        {/*
+          국내인가 해외인가. **맨 위에 둔다.** (17-3.1절, 사용자 요청)
+
+          이것을 고르는 것이 첫 동작이다. 고른 뒤에 쓸 수 있는 길이
+          달라지므로, 아래 칸들을 만진 뒤에 바꾸게 하면 채운 것이 어긋난다.
+
+          단추 둘로 둔다. 목록에서 고르는 것보다 **지금 어느 쪽인지가
+          한눈에 보인다.** 둘뿐이라 목록이 아까울 자리다.
+        */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            어디에 있는 곳인가요
+          </span>
+
+          <div className="flex flex-wrap gap-2">
+            {PLACE_REGIONS.map((value) => {
+              const chosen = region === value;
+
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => changeRegion(value)}
+                  className={`h-9 shrink-0 rounded-full border px-4 text-sm transition-colors ${
+                    chosen
+                      ? "border-accent bg-accent-soft font-medium text-black dark:border-accent-dark dark:bg-accent-dark-soft dark:text-zinc-50"
+                      : "border-black/[.08] text-zinc-600 hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-400 dark:hover:bg-white/[.06]"
+                  }`}
+                >
+                  {getPlaceRegionLabel(value)}
+                </button>
+              );
+            })}
+          </div>
+
+          {/*
+            해외에서 무엇이 다른지 **미리** 말한다. 눌러보고 나서야 없다는
+            것을 알게 하지 않는다. 1단계에서 해외를 찾으면 `찾은 장소가
+            없습니다`만 떴고, 그것이 "카카오에 없다"인지 "이름을 잘못
+            적었다"인지 알 수 없었다. (17-3.1절)
+          */}
+          <p className="text-xs leading-5 text-zinc-500">
+            {searchable
+              ? "이름이나 주소로 찾을 수 있고, 지도에서 찍어 담을 수도 있습니다."
+              : "해외는 아직 찾아드리지 못합니다. 이름·주소·좌표를 직접 적어 주세요. 구글 지도로 열리는 링크는 그대로 생깁니다."}
+          </p>
+        </div>
 
         {/* 이름 칸이 곧 검색어다. 값이 하나면 어긋날 자리가 없다. */}
         <label className="flex flex-col gap-1.5">
@@ -351,14 +463,35 @@ export function PlacePanel({
               onChange={(event) => setName(event.target.value)}
               className="h-10 min-w-0 flex-1 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
             />
-            <button
-              type="button"
-              onClick={search}
-              disabled={busy}
-              className="h-10 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
-            >
-              {busy ? "찾는 중…" : "찾기"}
-            </button>
+            {/*
+              **해외에는 찾기 단추를 그리지 않는다.** 눌러도 안 되는 단추를
+              두면 눌러보고 나서야 안 되는 것을 알게 된다. (17-3.1절)
+            */}
+            {searchable ? (
+              <button
+                type="button"
+                onClick={search}
+                disabled={busy}
+                className="h-10 shrink-0 whitespace-nowrap rounded-full border border-black/[.08] px-4 text-sm font-medium text-black transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+              >
+                {busy ? "찾는 중…" : "찾기"}
+              </button>
+            ) : null}
+
+            {/*
+              지도에서 찍기. (17-3.3절, 사용자 요청)
+
+              **이름 칸 옆에 둔다.** 이름을 모를 때 쓰는 길이라, 이름을
+              적으려다 막힌 그 자리에 있어야 한다. 아래에 두면 찾다가
+              포기한 사람이 거기까지 내려가지 않는다.
+            */}
+            {searchable ? (
+              <PlacePicker
+                startLatitude={canLink ? latNumber : null}
+                startLongitude={canLink ? lngNumber : null}
+                onPicked={usePickedPoint}
+              />
+            ) : null}
           </div>
         </label>
 
@@ -579,6 +712,7 @@ export function PlacePanel({
           적는 칸이 곧 찾는 말이다. 음악에서 칸을 둘로 나눴다가 값이 두
           벌이 되어 어긋났다.
         */}
+        {searchable ? (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -594,6 +728,7 @@ export function PlacePanel({
             않을 때 쓰세요. 자료 제목은 바뀌지 않습니다.
           </span>
         </div>
+        ) : null}
 
         {/*
           좌표.
@@ -727,7 +862,12 @@ export function PlacePanel({
           저장 단추보다 위에 둔다. **저장하기 전에 확인하는 것**이 이
           지도의 일이다. 단추 아래에 두면 누른 뒤에 보게 된다.
         */}
-        {canLink ? (
+        {/*
+          **해외에는 카카오맵을 그리지 않는다.** 해외 자료가 부실해서
+          찍을 것이 안 보인다. 구글 지도를 그리는 길은 아직 정하지 않았다.
+          (17-3.4절) 그동안 해외는 아래 링크로 연다.
+        */}
+        {canLink && searchable ? (
           <PlaceMap
             /*
               좌표를 `key`로 준다.

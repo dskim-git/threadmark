@@ -403,6 +403,9 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 17-1-3. 장소 화면과 지도로 가는 링크 (17-1.2절) | | 완료 |
 | 17-1-4. 주소로 찾기와 우편번호 (17-1.3절) | | 완료 |
 | 17-2. 앱 안에 지도 그리기 | | 완료 |
+| 17-3-1. 국내·해외 갈라 담기, 지도에서 찍기 (17-3절) | | 완료 (국내) |
+| 17-3-2. 해외 구글 지도·검색 | | 예정 (Cloud 결제·API 열쇠 필요) |
+| 19-E. 유저별 과금 기능 사용량 조회와 허용량 더하기 | | 예정 |
 | 18. 최종 보안 점검과 배포 | | 진행 중 |
 
 18단계에서 한 것과 남은 것은 `docs/VERIFICATION.md` 4-36절에 있다.
@@ -1151,10 +1154,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1067개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1074개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (124검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (125검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 사람이 Supabase
 대시보드 SQL Editor에 붙여넣어 돌린다. `npm test`는 이 파일을 읽을 뿐

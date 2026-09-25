@@ -1,13 +1,17 @@
 import { KAKAO_REQUEST_HEADERS } from "@/lib/net/request-headers";
 
 import {
+  latitude,
+  longitude,
   readAddressCandidates,
+  readCoordinateAddress,
   readPlaceCandidates,
   type AddressCandidate,
+  type CoordinateAddress,
   type PlaceCandidate,
 } from "./places";
 
-export type { AddressCandidate, PlaceCandidate };
+export type { AddressCandidate, CoordinateAddress, PlaceCandidate };
 
 /**
  * 카카오 Local에 장소를 물어 후보를 모은다. (설계 문서 17-1절)
@@ -189,6 +193,71 @@ export async function lookupAddresses(
   }
 
   return { ok: true, candidates, notice: null };
+}
+
+/**
+ * 좌표를 주소로 바꾸는 곳. (17-3.3절)
+ *
+ * **지도에서 찍어 담을 때 쓴다.** 찍은 자리의 도로명 주소·지번 주소·
+ * 우편번호를 함께 준다. 같은 REST 열쇠로 된다.
+ *
+ * 국내만이다. 문서가 국내 지명만 말한다. 해외를 찍는 길은 따로 만든다.
+ */
+const COORD_TO_ADDRESS_ENDPOINT =
+  "https://dapi.kakao.com/v2/local/geo/coord2address.json";
+
+export type CoordinateAddressResult =
+  | { ok: true; address: CoordinateAddress | null }
+  | { ok: false; message: string };
+
+/**
+ * 찍은 자리의 주소를 받아온다. (2026-09-25, 사용자 요청)
+ *
+ * **이름은 돌려주지 않는다.** 좌표만으로는 그 자리에 무엇이 있는지 알 수
+ * 없다. 이름을 모를 때 쓰는 길이므로 그것이 맞다. 이름은 사용자가 적는다.
+ *
+ * 주소를 못 알아내도 `ok: true`에 `address: null`로 돌려준다. **실패가
+ * 아니다.** 바다나 산을 찍으면 그렇게 되고, 그때도 좌표는 쓸모가 있다.
+ * 실패로 다루면 화면이 "담을 수 없다"로 읽는다.
+ */
+export async function lookupAddressAtPoint(
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+): Promise<CoordinateAddressResult> {
+  const lat = latitude(latitudeValue);
+  const lng = longitude(longitudeValue);
+
+  if (lat === null || lng === null) {
+    return { ok: false, message: "찍은 자리를 알 수 없습니다." };
+  }
+
+  const key = process.env.KAKAO_REST_API_KEY?.trim();
+
+  if (!key) {
+    console.error("[ThreadMark] KAKAO_REST_API_KEY가 설정되지 않았습니다.");
+
+    return {
+      ok: false,
+      message: "주소를 알아볼 준비가 아직 안 됐습니다. 손으로 적어 주세요.",
+    };
+  }
+
+  /*
+    **`x`가 경도, `y`가 위도다.** 보내는 쪽에서도 같다. 뒤바꿔 보내면
+    엉뚱한 주소가 오고 오류는 나지 않는다.
+  */
+  const url = `${COORD_TO_ADDRESS_ENDPOINT}?x=${lng}&y=${lat}`;
+
+  const payload = await askJson(url, key);
+
+  if (payload === null) {
+    return {
+      ok: false,
+      message: "지금은 주소를 알아보지 못했습니다. 좌표만 담아도 됩니다.",
+    };
+  }
+
+  return { ok: true, address: readCoordinateAddress(payload) };
 }
 
 /**

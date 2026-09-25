@@ -20,10 +20,15 @@ import {
   MAP_FAILURES,
   MAX_ADDRESS_LENGTH,
   PLACE_PROVIDERS,
+  PLACE_REGIONS,
   PLACE_VISIT_STATUSES,
+  canSearchRegion,
   categoryLabel,
   coordinatePair,
+  getPlaceRegionLabel,
   isMapLoadFailure,
+  isPlaceRegion,
+  readCoordinateAddress,
   mapFailureMessage,
   getPlaceProviderLabel,
   getPlaceVisitStatusLabel,
@@ -743,4 +748,117 @@ test("스크립트 실패를 한 가지 원인으로 단정하지 않는다", ()
 
   assert.ok(said.includes("인터넷") || said.includes("확장"));
   assert.ok(!said.includes("도메인"), "이용자가 할 수 없는 일을 시킨다");
+});
+
+// -----------------------------------------------------------------------------
+// 국내와 해외
+// -----------------------------------------------------------------------------
+
+test("국내와 해외 둘뿐이고 비워둘 수 없다", () => {
+  /*
+    **`visit_status`와 다르다.** 가봤는지는 안 정함이 뜻을 갖지만, 장소가
+    국내인지 해외인지는 **안 정한 상태가 없다.** 담는 순간 정해져 있고,
+    모르면 지도를 어느 것으로 그릴지도 못 정한다. (17-3.2절)
+  */
+  assert.deepEqual([...PLACE_REGIONS], ["domestic", "overseas"]);
+  assert.ok(isPlaceRegion("domestic"));
+  assert.ok(isPlaceRegion("overseas"));
+  assert.ok(!isPlaceRegion(""));
+  assert.ok(!isPlaceRegion("korea"));
+});
+
+test("모르는 값에도 빈 자리를 만들지 않는다", () => {
+  /*
+    비움이 뜻을 갖지 않는 칸이라 **빈 말을 돌려주면 안 된다.**
+    데이터베이스가 `not null default 'domestic'`으로 같은 것을 지킨다.
+  */
+  assert.equal(getPlaceRegionLabel("domestic"), "국내");
+  assert.equal(getPlaceRegionLabel("overseas"), "해외");
+  assert.equal(getPlaceRegionLabel(null), "국내");
+  assert.equal(getPlaceRegionLabel(""), "국내");
+  assert.equal(getPlaceRegionLabel("무엇인가"), "국내");
+});
+
+test("국내만 찾아줄 수 있다", () => {
+  /*
+    **화면이 이것을 보고 단추를 그릴지 정한다.** 없는 길을 눌러보고 나서야
+    없다는 것을 알게 하지 않는다. 1단계에서 해외를 찾으면 `찾은 장소가
+    없습니다`만 떴고, 그것이 "카카오에 없다"인지 "이름을 잘못 적었다"인지
+    알 수 없었다. (17-3.1절)
+
+    해외를 무엇으로 찾을지 정하면 이 검사가 함께 바뀐다. **바뀌는 것을
+    잊지 않도록 값을 콕 집어 적어 둔다.**
+  */
+  assert.ok(canSearchRegion("domestic"));
+  assert.ok(!canSearchRegion("overseas"));
+});
+
+// -----------------------------------------------------------------------------
+// 찍은 자리의 주소
+// -----------------------------------------------------------------------------
+
+test("찍은 자리의 주소와 우편번호를 읽는다", () => {
+  /*
+    `coord2address`의 응답 모양이다. **좌표가 응답에 없다.** 우리가 보낸
+    값이므로 돌려줄 이유가 없다. 그래서 주소 검색 쪽 읽기를 쓸 수 없다.
+  */
+  const payload = {
+    documents: [
+      {
+        road_address: {
+          address_name: "서울 종로구 사직로 161",
+          building_name: "경복궁",
+          zone_no: "03045",
+        },
+        address: {
+          address_name: "서울 종로구 세종로 1-1",
+          region_1depth_name: "서울",
+        },
+      },
+    ],
+    meta: { total_count: 1 },
+  };
+
+  assert.deepEqual(readCoordinateAddress(payload), {
+    roadAddress: "서울 종로구 사직로 161",
+    address: "서울 종로구 세종로 1-1",
+    postalCode: "03045",
+  });
+});
+
+test("도로명 주소가 없는 자리도 읽는다", () => {
+  /*
+    **지도에서 찍을 때는 이런 자리가 오히려 잦다.** 산, 논밭, 새로 낸 길이
+    그렇다. 그때도 지번 주소는 있으니 버리지 않는다.
+  */
+  const payload = {
+    documents: [
+      { road_address: null, address: { address_name: "강원 평창군 대관령면 산1" } },
+    ],
+  };
+
+  assert.deepEqual(readCoordinateAddress(payload), {
+    roadAddress: null,
+    address: "강원 평창군 대관령면 산1",
+    postalCode: null,
+  });
+});
+
+test("바다를 찍으면 주소가 없다", () => {
+  /*
+    **그래도 좌표는 쓸모가 있다.** 주소를 못 알아낸 것이 장소를 못 담을
+    이유는 아니다. 부르는 쪽이 `null`을 실패가 아니라 "주소 없음"으로 읽는다.
+  */
+  assert.equal(readCoordinateAddress({ documents: [] }), null);
+  assert.equal(
+    readCoordinateAddress({ documents: [{ road_address: null, address: null }] }),
+    null,
+  );
+});
+
+test("찍은 자리 주소도 모양이 바뀌면 빈 값이다", () => {
+  assert.equal(readCoordinateAddress(null), null);
+  assert.equal(readCoordinateAddress({ documents: "하나" }), null);
+  assert.equal(readCoordinateAddress({ documents: [null] }), null);
+  assert.equal(readCoordinateAddress("문서"), null);
 });

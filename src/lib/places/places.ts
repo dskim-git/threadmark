@@ -70,6 +70,58 @@ export function getPlaceVisitStatusLabel(value: unknown): string | null {
   return isPlaceVisitStatus(value) ? PLACE_VISIT_STATUS_LABELS[value] : null;
 }
 
+/**
+ * 국내인가 해외인가. (17-3.2절, 2026-09-25 사용자 요청)
+ *
+ * **비워둘 수 없다.** `visit_status`와 다르다. 가봤는지는 안 정함이 뜻을
+ * 가지지만, 장소가 국내인지 해외인지는 **안 정한 상태가 없다.** 담는 순간
+ * 어느 쪽인지 정해져 있고, 모르면 지도를 어느 것으로 그릴지도 못 정한다.
+ *
+ * **좌표로 짐작하지 않는다.** 위도·경도로 한반도 안인지 재는 방법이 있지만
+ * 좌표 없는 장소에서는 알 수 없고, 무엇보다 **사용자가 이미 말해준 것을
+ * 우리가 다시 추측하는 일**이다.
+ */
+export const PLACE_REGIONS = ["domestic", "overseas"] as const;
+
+export type PlaceRegion = (typeof PLACE_REGIONS)[number];
+
+const PLACE_REGION_LABELS: Record<PlaceRegion, string> = {
+  domestic: "국내",
+  overseas: "해외",
+};
+
+export function isPlaceRegion(value: unknown): value is PlaceRegion {
+  return (
+    typeof value === "string" && (PLACE_REGIONS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * 어느 쪽인지 보여줄 말.
+ *
+ * **모르는 값에도 `국내`로 답한다.** 비움이 뜻을 갖지 않는 칸이라 빈
+ * 자리를 만들면 안 된다. 데이터베이스가 `not null default 'domestic'`으로
+ * 같은 것을 지킨다.
+ */
+export function getPlaceRegionLabel(value: unknown): string {
+  return PLACE_REGION_LABELS[isPlaceRegion(value) ? value : "domestic"];
+}
+
+/**
+ * 그 쪽에서 장소를 찾을 수 있는가.
+ *
+ * 국내는 카카오가 찾아준다. **해외는 아직 찾아주지 못한다.** 무엇으로
+ * 찾을지 정하지 않았다. (17-3.4절) 정해지기 전까지 해외는 손으로 적는다.
+ *
+ * **화면이 이것을 보고 단추를 그릴지 정한다.** 없는 길을 눌러보고 나서야
+ * 없다는 것을 알게 하지 않는다. 1단계에서 해외를 찾으면 `찾은 장소가
+ * 없습니다`만 떴고, 그것이 "카카오에 없다"인지 "이름을 잘못 적었다"인지
+ * 알 수 없었다. (17-3.1절)
+ */
+export function canSearchRegion(value: unknown): boolean {
+  return isPlaceRegion(value) ? value === "domestic" : true;
+}
+
 /** 분류를 가르는 글자. 카카오가 `음식점 > 한식 > 한정식`처럼 준다. */
 const CATEGORY_SEPARATOR = ">";
 
@@ -564,4 +616,73 @@ export function mapFailureMessage(value: unknown): string {
   return MAP_FAILURE_MESSAGES[
     isMapLoadFailure(value) ? value : "draw-failed"
   ];
+}
+
+/**
+ * 찍은 자리의 주소. (17-3.3절)
+ *
+ * 카카오의 `coord2address`가 돌려주는 모양이다. **좌표가 응답에 없다.**
+ * 우리가 보낸 값이므로 돌려줄 이유가 없다. 그래서 `readAddressCandidate`를
+ * 쓸 수 없다. 그쪽은 좌표가 없는 후보를 버린다.
+ */
+export type CoordinateAddress = {
+  roadAddress: string | null;
+  address: string | null;
+  postalCode: string | null;
+};
+
+/**
+ * 찍은 좌표의 주소를 읽는다.
+ *
+ * **도로명 주소가 없는 자리가 많다.** 산, 논밭, 새로 낸 길이 그렇다.
+ * 지도에서 찍는 일은 그런 자리를 찍을 때가 오히려 잦다. 그때도 지번
+ * 주소는 있으니 버리지 않는다.
+ *
+ * 둘 다 없으면 `null`이다. 바다나 국경 밖을 찍은 경우다. **그때는 좌표만
+ * 담는다.** 주소를 못 알아낸 것이 장소를 못 담을 이유는 아니다.
+ */
+export function readCoordinateAddress(
+  payload: unknown,
+): CoordinateAddress | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const documents = (payload as { documents?: unknown }).documents;
+
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return null;
+  }
+
+  const row =
+    typeof documents[0] === "object" && documents[0] !== null
+      ? (documents[0] as Record<string, unknown>)
+      : null;
+
+  if (row === null) {
+    return null;
+  }
+
+  const road =
+    typeof row.road_address === "object" && row.road_address !== null
+      ? (row.road_address as Record<string, unknown>)
+      : undefined;
+  const jibun =
+    typeof row.address === "object" && row.address !== null
+      ? (row.address as Record<string, unknown>)
+      : undefined;
+
+  const roadAddress = placeText(road?.address_name, MAX_ADDRESS_LENGTH);
+  const address = placeText(jibun?.address_name, MAX_ADDRESS_LENGTH);
+
+  if (roadAddress === null && address === null) {
+    return null;
+  }
+
+  return {
+    roadAddress,
+    address,
+    // 우편번호는 도로명 쪽에만 있다.
+    postalCode: postalCode(road?.zone_no),
+  };
 }

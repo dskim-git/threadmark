@@ -846,6 +846,7 @@ export type Database = {
           place_url: string | null
           postal_code: string | null
           provider: Database["public"]["Enums"]["place_provider"] | null
+          region: Database["public"]["Enums"]["place_region"]
           road_address: string | null
           source_id: string
           updated_at: string
@@ -865,6 +866,7 @@ export type Database = {
           place_url?: string | null
           postal_code?: string | null
           provider?: Database["public"]["Enums"]["place_provider"] | null
+          region?: Database["public"]["Enums"]["place_region"]
           road_address?: string | null
           source_id: string
           updated_at?: string
@@ -886,6 +888,7 @@ export type Database = {
           place_url?: string | null
           postal_code?: string | null
           provider?: Database["public"]["Enums"]["place_provider"] | null
+          region?: Database["public"]["Enums"]["place_region"]
           road_address?: string | null
           source_id?: string
           updated_at?: string
@@ -1578,6 +1581,7 @@ export type Database = {
       media_kind: "movie" | "tv"
       paper_use_status: "planned" | "used"
       place_provider: "kakao" | "google"
+      place_region: "domestic" | "overseas"
       place_visit_status: "want_to_visit" | "visited"
       project_status: "active"
       project_visibility: "private"
@@ -1765,6 +1769,7 @@ export const Constants = {
       media_kind: ["movie", "tv"],
       paper_use_status: ["planned", "used"],
       place_provider: ["kakao", "google"],
+      place_region: ["domestic", "overseas"],
       place_visit_status: ["want_to_visit", "visited"],
       project_status: ["active"],
       project_visibility: ["private"],

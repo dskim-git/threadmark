@@ -7300,6 +7300,8 @@ declare
   v_blank    boolean := false;
   v_spaces   boolean := false;
   v_postal   boolean := false;
+  v_mixed    boolean := false;
+  v_nulled   boolean := false;
 begin
   select user_id into v_owner
   from public.user_roles where role = 'admin'::public.app_role limit 1;
@@ -7392,6 +7394,35 @@ begin
     v_postal := true;
   end;
 
+  /*
+    국내인데 구글에서 온 값. (17-3.2절)
+
+    **어긋나면 화면이 어느 지도를 그릴지 고를 때 엉뚱한 쪽을 고른다.**
+    카카오는 해외를 다루지 않고 구글은 국내에 쓰지 않기로 했다.
+    오류는 나지 않으므로 제약조건이 막는다.
+  */
+  begin
+    update public.place_profiles
+    set provider = 'google'::public.place_provider
+    where id = v_profile;
+  exception when others then
+    v_mixed := true;
+  end;
+
+  /*
+    국내·해외를 비울 수 없다.
+
+    `visit_status`와 다르다. 가봤는지는 **안 정함이 뜻을 가지지만**,
+    장소가 국내인지 해외인지는 안 정한 상태가 없다. 비면 지도를 어느
+    것으로 그릴지도 정할 수 없다.
+  */
+  begin
+    update public.place_profiles
+    set region = null where id = v_profile;
+  exception when others then
+    v_nulled := true;
+  end;
+
   reset role;
 
   delete from public.place_profiles where id = v_profile;
@@ -7435,6 +7466,91 @@ begin
   if not v_postal then
     raise exception
       '검사 124 실패: 빈 글자 우편번호가 저장되었습니다.';
+  end if;
+
+  if not v_mixed then
+    raise exception
+      '검사 124 실패: 국내 장소에 구글에서 온 값이 담겼습니다. 화면이 엉뚱한 지도를 그리게 됩니다.';
+  end if;
+
+  if not v_nulled then
+    raise exception
+      '검사 124 실패: 국내·해외를 비울 수 있었습니다. 지도를 어느 것으로 그릴지 정할 수 없게 됩니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 125. 국내 장소를 해외로 바꿀 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **잘못 골랐을 때 되돌릴 길이 있어야 한다.** 국내로 담은 뒤 해외였음을
+-- 알게 되는 일이 있고(같은 이름의 다른 나라 지명), 그때 자료를 지우고
+-- 다시 만들게 하면 적어둔 메모가 함께 사라진다.
+--
+-- 막는 것만 검사하면 이것을 놓친다. 검사 124가 어긋난 짝을 막는데, 그
+-- 제약이 지나치면 **바꾸는 길까지 함께 막힌다.** 실제로 12-C의 가드가
+-- 그렇게 돼서 missing 표시까지 막혔던 적이 있다. (검사 42)
+--
+-- 바꿀 때 `provider`를 함께 비워야 한다. 카카오에서 온 값이라는 주장이
+-- 더 이상 맞지 않기 때문이다. 화면이 그 일을 하고, 여기서는 그 길이
+-- 열려 있는지를 본다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_profile uuid;
+  v_region  public.place_region;
+  v_provider public.place_provider;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'place'::public.source_type, 'RLS 격리 검사용 옮길 장소')
+  returning id into v_source;
+
+  insert into public.place_profiles
+    (owner_id, source_id, region, provider, external_id, road_address)
+  values
+    (v_owner, v_source, 'domestic'::public.place_region,
+     'kakao'::public.place_provider, '26338954', '서울 중구 세종대로 110')
+  returning id into v_profile;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 해외로 바꾸면서 어디서 왔는지를 비운다. 화면이 하는 그대로다.
+  update public.place_profiles
+  set region = 'overseas'::public.place_region,
+      provider = null,
+      external_id = null,
+      fetched_at = null
+  where id = v_profile;
+
+  select region, provider into v_region, v_provider
+  from public.place_profiles where id = v_profile;
+
+  reset role;
+
+  delete from public.place_profiles where id = v_profile;
+  delete from public.sources where id = v_source;
+
+  if v_region is distinct from 'overseas'::public.place_region then
+    raise exception
+      '검사 125 실패: 국내 장소를 해외로 바꾸지 못했습니다. 잘못 고른 뒤 되돌릴 수 없게 됩니다. (지금 %)',
+      v_region;
+  end if;
+
+  if v_provider is not null then
+    raise exception
+      '검사 125 실패: 어디서 왔는지를 비우지 못했습니다. 카카오에서 온 값이라는 주장이 해외 장소에 남습니다.';
   end if;
 end
 $$;
@@ -7529,6 +7645,8 @@ select
     where latitude is not null)                                         as 좌표_있는_장소,
   (select count(*) from public.place_profiles
     where postal_code is not null)                                      as 우편번호_있는_장소,
+  (select count(*) from public.place_profiles
+    where region = 'overseas'::public.place_region)                     as 해외_장소,
   (select count(*) from public.place_profiles
     where visit_status = 'want_to_visit'::public.place_visit_status)     as 가볼_곳,
   (select count(*) from public.place_profiles

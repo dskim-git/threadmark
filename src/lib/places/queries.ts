@@ -3,8 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 
 import {
   isPlaceProvider,
+  isPlaceRegion,
   isPlaceVisitStatus,
   type PlaceProvider,
+  type PlaceRegion,
   type PlaceVisitStatus,
 } from "./places";
 
@@ -17,6 +19,8 @@ import {
  */
 
 export type PlaceProfile = {
+  /** 국내인가 해외인가. **비어 있을 수 없다.** (17-3.2절) */
+  region: PlaceRegion;
   /** 어디서 받아온 값인가. 비어 있으면 직접 적은 장소다. */
   provider: PlaceProvider | null;
   externalId: string | null;
@@ -50,7 +54,7 @@ export async function getPlaceProfile(
   const { data, error } = await supabase
     .from("place_profiles")
     .select(
-      "provider, external_id, road_address, address, latitude, longitude, category, postal_code, phone, place_url, fetched_at, visit_status",
+      "region, provider, external_id, road_address, address, latitude, longitude, category, postal_code, phone, place_url, fetched_at, visit_status",
     )
     .eq("source_id", sourceId)
     .maybeSingle();
@@ -74,6 +78,11 @@ export async function getPlaceProfile(
     감추지 않는다.** (보안 원칙 7은 접근 판단에 쓰는 규칙이다)
   */
   return {
+    /*
+      모르는 값은 국내로 본다. **비우지 않는다.** 이 칸은 비움이 뜻을
+      갖지 않으므로, 비우면 화면이 지도를 어느 것으로 그릴지 못 정한다.
+    */
+    region: isPlaceRegion(data.region) ? data.region : "domestic",
     provider: isPlaceProvider(data.provider) ? data.provider : null,
     externalId: data.external_id,
     roadAddress: data.road_address,
@@ -92,6 +101,7 @@ export async function getPlaceProfile(
 }
 
 export type PlaceProfileInput = {
+  region: PlaceRegion;
   provider: PlaceProvider | null;
   externalId: string | null;
   roadAddress: string | null;
@@ -150,6 +160,7 @@ export async function savePlaceProfile(
   const { error } = await supabase.from("place_profiles").upsert(
     {
       source_id: sourceId,
+      region: input.region,
       provider: input.provider,
       external_id: fromProvider ? input.externalId : null,
       road_address: input.roadAddress,
