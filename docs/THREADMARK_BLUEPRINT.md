@@ -1605,7 +1605,7 @@ JavaScript 열쇠와 도메인 등록이 먼저다.
 2. `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`
 3. 003 결과 표의 세는 칸
 4. `src/lib/account/export-tables.ts`의 `EXPORTED_TABLES`
-5. **`src/lib/ai/profile-search.ts`의 `PROFILE_SEARCH_TARGETS`** —
+5. **`src/lib/search/profile-targets.ts`의 `PROFILE_SEARCH_TARGETS`** —
    안 넣으면 **주소나 분류로 찾을 수 없다.** 2026-09-25에 딸린 정보 표가
    통째로 검색 밖에 있던 것을 사용자가 찾았고, 그때 만든 목록이다.
 

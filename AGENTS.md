@@ -1260,7 +1260,7 @@ npm run verify:split -- supabase/verify/003_rls_isolation_test.sql 4
 4. `src/lib/account/export-tables.ts`의 `EXPORTED_TABLES`에 이름을 더한다.
    담지 않을 것이면 `EXCLUDED_TABLES`에 **까닭과 함께** 적는다. 빠뜨리면
    **나가는 사람의 마지막 파일에서 그 표만 조용히 빠진다.**
-5. 딸린 정보 표(`*_profiles`)라면 `src/lib/ai/profile-search.ts`의
+5. 딸린 정보 표(`*_profiles`)라면 `src/lib/search/profile-targets.ts`의
    `PROFILE_SEARCH_TARGETS`에 **뒤질 칸과 함께** 더한다. 빠뜨리면 거기 담긴
    글을 **검색이 한 번도 보지 않는다.**
 
@@ -1276,7 +1276,7 @@ npm run verify:split -- supabase/verify/003_rls_isolation_test.sql 4
 양쪽에서 조인다. 빠뜨린 표가 생겨도 실패하고, 검사를 쓰고서 목록에서 빼지
 않아도 실패한다. **이 목록은 빚이지 면제가 아니다. 줄어들기만 해야 한다.**
 
-5번은 `tests/ai-profile-search.test.mjs`가 **마이그레이션에서 표 이름을 직접
+5번은 `tests/search-profile-targets.test.mjs`가 **마이그레이션에서 표 이름을 직접
 뽑아** 견준다. 손으로 적은 목록과 견주지 않는 까닭은, 그 목록 자체가
 뒤처질 수 있는 또 하나의 자리이기 때문이다. 양쪽에서 조이는 것은 같다.
 없는 표를 뒤지려 해도 실패한다.

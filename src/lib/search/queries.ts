@@ -1,7 +1,7 @@
 import {
   PROFILE_SEARCH_TARGETS,
   matchedProfileText,
-} from "@/lib/ai/profile-search";
+} from "./profile-targets";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { isCaptureType, type CaptureType } from "@/lib/captures/types";
 import { createClient } from "@/lib/supabase/server";
@@ -80,7 +80,7 @@ export async function search(term: string): Promise<SearchResults> {
   const supabase = await createClient();
 
   /*
-    딸린 정보 표를 표마다 따로 묻는다. 까닭은 `profile-search.ts`에 적었다.
+    딸린 정보 표를 표마다 따로 묻는다. 까닭은 `profile-targets.ts`에 적었다.
     뷰를 만들거나 글자를 이어 붙여 한 질의로 만드는 길은 새는 구멍이 생긴다.
 
     돌려받는 것은 **자료 번호와 걸린 값들**이다. 그 번호로 자료를 다시
@@ -226,7 +226,16 @@ export async function search(term: string): Promise<SearchResults> {
         subtitle: row.subtitle,
         description: row.description,
         createdAt: row.created_at,
-        matchedIn: matchedBy.get(row.id) ?? null,
+        /*
+          **제목으로 이미 걸린 것에는 까닭을 붙이지 않는다.** 그쪽은 왜
+          나왔는지 화면에 보인다. 주소에도 함께 걸렸다고 한 줄 더 적으면
+          맞는 말이긴 해도 아무것도 알려주지 않고 줄만 길어진다.
+
+          이 칸은 **화면 어디에도 까닭이 안 보일 때**를 위한 것이다.
+        */
+        matchedIn: alreadyFound.has(row.id)
+          ? null
+          : (matchedBy.get(row.id) ?? null),
       } satisfies SourceHit,
     ];
   });

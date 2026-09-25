@@ -30,7 +30,7 @@
  * 딸린 정보 표도 뒤진다 (2026-09-25)
  *   가수 이름, 장르, 배우, 학술지, 채널 이름, 그리고 **자기가 왜 그 책을
  *   골랐는지 쓴 글**까지 검색이 한 번도 본 적이 없었다. 무엇을 어떻게
- *   뒤지는지는 `profile-search.ts`에 적었다.
+ *   뒤지는지는 `search/profile-targets.ts`에 적었다.
  *
  * 무엇인지 함께 넘긴다
  *   후보에 넣는 것만으로는 모자랐다. **제목만 넘기면 `브레이킹 배드`가
@@ -55,7 +55,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   PROFILE_SEARCH_TARGETS,
   summarizeProfile,
-} from "./profile-search";
+} from "@/lib/search/profile-targets";
 import { matchingTypes } from "./question";
 import type { AskItem } from "./types";
 
@@ -126,7 +126,7 @@ export async function gatherCandidates(
   const types = matchingTypes(keywords, SOURCE_TYPE_LABELS);
 
   /*
-    딸린 정보 표를 표마다 따로 묻는다. 까닭은 `profile-search.ts`에 적었다.
+    딸린 정보 표를 표마다 따로 묻는다. 까닭은 `search/profile-targets.ts`에 적었다.
     돌려받는 것은 자료 번호와 걸린 값들이다.
   */
   const profileQueries = PROFILE_SEARCH_TARGETS.flatMap((target) => {
@@ -228,7 +228,7 @@ export async function gatherCandidates(
 
     /*
       칸 목록을 **실행 중에 만들기 때문에** 타입이 따라오지 못한다.
-      `profile-search.ts`의 목록을 보고 고르는 값이라 컴파일 시점에는
+      `profile-targets.ts`의 목록을 보고 고르는 값이라 컴파일 시점에는
       무엇이 올지 알 수 없다. 이 저장소의 다른 곳도 같은 자리에서
       `as unknown as`를 쓴다. 모양은 아래에서 하나씩 확인한다.
     */

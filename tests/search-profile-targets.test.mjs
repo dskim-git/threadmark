@@ -18,7 +18,7 @@ import {
   PROFILE_SEARCH_TARGETS,
   matchedProfileText,
   summarizeProfile,
-} from "../src/lib/ai/profile-search.ts";
+} from "../src/lib/search/profile-targets.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const migrationsDir = path.join(repoRoot, "supabase", "migrations");
