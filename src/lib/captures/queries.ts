@@ -7,6 +7,10 @@ import {
 } from "./music-locator";
 import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
 import {
+  parseMediaTimeLocator,
+  type MediaTimeLocator,
+} from "./media-locator";
+import {
   parseVideoTimeLocator,
   type VideoTimeLocator,
 } from "./video-locator";
@@ -62,6 +66,13 @@ export type Capture = {
    * 건너뛸 수 있고 음악은 그렇지 않다. (video-locator.ts)
    */
   videoLocation: VideoTimeLocator | null;
+  /**
+   * 영화·드라마에서 온 기록의 자리. (설계 문서 15절)
+   *
+   * 시즌·회차가 시간 앞에 온다. **누를 수 없다.** OTT 영상을 우리가 틀
+   * 수 없기 때문이고, 음악과 같은 자리다. (media-locator.ts)
+   */
+  mediaLocation: MediaTimeLocator | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -117,6 +128,7 @@ function toCapture(row: CaptureRow): Capture[] {
       pdfLocation: parsePdfLocator(row.locator),
       musicLocation: parseMusicTimeLocator(row.locator),
       videoLocation: parseVideoTimeLocator(row.locator),
+      mediaLocation: parseMediaTimeLocator(row.locator),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     },

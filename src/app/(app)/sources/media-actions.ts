@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { MEDIA_TIME_KIND } from "@/lib/captures/media-locator";
+import { parsePosition } from "@/lib/media/time";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
 import {
   getMediaProfile,
@@ -426,4 +428,112 @@ export async function removeWatchProvider(formData: FormData): Promise<void> {
   revalidatePath(returnTo);
 
   redirectWithQuery(returnTo, { notice: "볼 수 있는 곳에서 뺐습니다." });
+}
+
+const momentSchema = z.object({
+  sourceId: z.string().uuid(),
+  /*
+    셋 다 비워둘 수 있다. 다만 **셋 다 비면 자리가 아니다.** 아래에서
+    함께 본다. `refine`을 칸마다 걸면 "무엇을 적어야 하는지"를 칸마다
+    말하게 되는데, 실제 규칙은 "셋 중 하나는 있어야 한다"이다.
+  */
+  season: optionalCount(1000),
+  episode: optionalCount(100_000),
+  /** 사람이 `12:30`이나 `750`처럼 친다. 읽는 규칙은 한 곳에 있다. */
+  position: z.string().trim().max(20),
+  content: z
+    .string()
+    .trim()
+    .min(1, "이 대목에 남길 말을 적어 주세요.")
+    .max(5000),
+  returnTo: z.string(),
+});
+
+/**
+ * 시즌·회차·시점에 기록을 남긴다. (설계 문서 15절)
+ *
+ *   "시즌, 회차, 타임코드를 Capture 위치로 저장한다."
+ *
+ * 담는 곳은 `captures.locator`다. 새 표를 만들지 않는다. PDF·음악·영상이
+ * 이미 그 칸을 쓰고 있고 `kind`로 갈린다. (6.3절)
+ *
+ * **누를 수 없는 자리다.** OTT 영상을 우리가 틀 수 없다. 15절이
+ * "OTT 영상 자체를 임베드하거나 다운로드하지 않는다"고 못 박았다.
+ * 적어두는 것까지가 우리가 할 수 있는 일이다.
+ */
+export async function captureMediaMoment(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const parsed = momentSchema.safeParse({
+    sourceId: formValue(formData.get("sourceId")),
+    season: formValue(formData.get("season")),
+    episode: formValue(formData.get("episode")),
+    position: formValue(formData.get("position")),
+    content: formValue(formData.get("content")),
+    returnTo: formValue(formData.get("returnTo")),
+  });
+
+  if (!parsed.success) {
+    const fallback = sanitizeNextPath(formValue(formData.get("returnTo"))) ?? "/library";
+
+    redirectWithQuery(fallback, {
+      error: parsed.error.issues[0]?.message ?? "적어주신 내용을 확인해 주세요.",
+    });
+  }
+
+  const values = parsed.data;
+  const returnTo = sanitizeNextPath(values.returnTo) ?? "/library";
+
+  /*
+    시점은 사람이 친 글자다. `12:30`도 `750`도 `1:12:00`도 온다.
+    읽는 규칙은 `media/time.ts` 한 곳에 있고, 음악이 쓰던 것과 같다.
+  */
+  const startSeconds =
+    values.position === "" ? null : parsePosition(values.position);
+
+  if (values.position !== "" && startSeconds === null) {
+    redirectWithQuery(returnTo, {
+      error: "시점을 `12:30`이나 `750`처럼 적어 주세요.",
+    });
+  }
+
+  /*
+    **셋 다 비면 자리가 아니다.** 아무것도 가리키지 않는 꼬리표가 붙는다.
+    그럴 바에는 기록만 남기는 편이 낫고, 그 길은 기록 화면에 이미 있다.
+  */
+  if (values.season === null && values.episode === null && startSeconds === null) {
+    redirectWithQuery(returnTo, {
+      error: "시즌·회차·시점 중 하나는 적어 주세요.",
+    });
+  }
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    source_id: values.sourceId,
+    /*
+      보면서 남기는 말은 **내가 쓴 글**이다. 대사를 그대로 옮긴 것이
+      아니므로 `note`다. (설계 문서 2.4절)
+    */
+    capture_type: "note",
+    content: values.content,
+    locator: {
+      kind: MEDIA_TIME_KIND,
+      season: values.season,
+      episode: values.episode,
+      startSeconds,
+    },
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 작품 시점 기록 실패:", error.message);
+
+    redirectWithQuery(returnTo, {
+      error: "기록하지 못했습니다. 잠시 뒤에 다시 눌러 주세요.",
+    });
+  }
+
+  revalidatePath(returnTo.split(/[?#]/, 1)[0] || "/");
+
+  redirectWithQuery(returnTo, { notice: "그 대목에 기록을 남겼습니다." });
 }

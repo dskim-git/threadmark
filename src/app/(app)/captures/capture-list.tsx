@@ -5,6 +5,7 @@ import { Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { PlacedWhere } from "@/app/(app)/projects/placed-where";
 import type { Capture } from "@/lib/captures/queries";
+import { describeMediaTime } from "@/lib/captures/media-locator";
 import { describeMusicTime } from "@/lib/captures/music-locator";
 import { VideoTimeChip } from "./video-time-chip";
 import { describeLocatorPages } from "@/lib/captures/pdf-locator";
@@ -125,6 +126,19 @@ export function CaptureList({
               {capture.musicLocation ? (
                 <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
                   {describeMusicTime(capture.musicLocation)}
+                </span>
+              ) : null}
+
+              {/*
+                영화·드라마의 자리. `시즌 2 · 3화 · 12:30`
+
+                **음악과 같이 누를 수 없다.** OTT 영상을 우리가 틀 수 없어
+                갈 곳이 없다. (설계 문서 15절) 생김새를 음악과 같게 두어
+                "누를 수 있는 것"과 구분되게 한다.
+              */}
+              {capture.mediaLocation ? (
+                <span className="whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
+                  {describeMediaTime(capture.mediaLocation)}
                 </span>
               ) : null}
 

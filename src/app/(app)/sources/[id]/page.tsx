@@ -73,6 +73,7 @@ import { YoutubePanel } from "../youtube-panel";
 import { YoutubePlayer } from "../youtube-player";
 import { MediaPanel } from "../media-panel";
 import { WatchPanel } from "../watch-panel";
+import { MediaMomentForm } from "../media-moment-form";
 import { MusicPanel } from "../music-panel";
 import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
@@ -571,6 +572,21 @@ export default async function SourceDetailPage({
           watchLink={mediaProfile?.watchLink ?? null}
           ready={mediaProfile !== null}
           returnTo={returnTo}
+        />
+      ) : null}
+
+      {/*
+        본 대목 남기기. 작품을 고른 뒤에만 나온다. (설계 문서 15절)
+
+        **영화인지 드라마인지를 넘긴다.** 영화에는 시즌·회차 칸을 보여주지
+        않는다. 비워두면 될 칸이 화면을 차지하고 "여기에 뭘 적지"가 생긴다.
+      */}
+      {source.type === "media" && mediaProfile ? (
+        <MediaMomentForm
+          sourceId={source.id}
+          kind={mediaProfile.kind}
+          returnTo={returnTo}
+          defaultOpen={Boolean(error)}
         />
       ) : null}
 
