@@ -373,7 +373,8 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 15-E-2b-1. YouTube 영상 담기와 찾아오기 (14절) | Phase 6 | 완료 |
 | 15-E-2b-2. 앱 안에서 재생과 시점 기록 (14절) | Phase 6 | 완료 |
 | 15-E-2c-1. 영화·드라마 담기와 출처 표기 (15절) | Phase 6 | 완료 |
-| 15-E-2c-2. 볼 수 있는 곳과 시즌·회차 기록 (15절) | Phase 6 | 예정 |
+| 15-E-2c-2a. 볼 수 있는 곳 (15절) | Phase 6 | 완료 |
+| 15-E-2c-2b. 시즌·회차·타임코드 기록 (15절) | Phase 6 | 예정 |
 | 16. AI와 공유 | Phase 7 | 예정 |
 | 17-A. 계정과 자료 지우기 (`/account/delete`) | | 완료 |
 | 17-B. 개인정보 처리방침·삭제 안내 화면 (`/privacy`, `/data-deletion`) | | 완료 |
@@ -1071,10 +1072,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (884개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (892개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (112검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (116검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 사람이 Supabase
 대시보드 SQL Editor에 붙여넣어 돌린다. `npm test`는 이 파일을 읽을 뿐
@@ -1090,12 +1091,15 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
    모두 쓴다.** 막는 것만 쓰면 과하게 잠근 것을 놓치고, 잠긴 자리는 오류
    없이 값이 안 바뀔 뿐이라 쓰다가 부딪히기 전에는 모른다.
 2. `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`에 이름을 더한다.
-   (지금 26개)
+   (지금 27개)
 3. 결과 표 맨 아래 `select`에 세는 칸을 더한다. **그 칸 이름이 무엇을 세는지
    말하게 한다.** `글_쓴_자리`가 어느 글을 세는지 말하지 않아 고장 소동이
    한 번 있었다. (`docs/VERIFICATION.md` 4-30절)
+4. `src/lib/account/export-tables.ts`의 `EXPORTED_TABLES`에 이름을 더한다.
+   담지 않을 것이면 `EXCLUDED_TABLES`에 **까닭과 함께** 적는다. 빠뜨리면
+   **나가는 사람의 마지막 파일에서 그 표만 조용히 빠진다.**
 
-1번과 2번은 검사가 붙잡는다. `TABLES_WITHOUT_ISOLATION_TEST`가 **빈 목록**이며
+1번과 2번과 4번은 검사가 붙잡는다. `TABLES_WITHOUT_ISOLATION_TEST`가 **빈 목록**이며
 양쪽에서 조인다. 빠뜨린 표가 생겨도 실패하고, 검사를 쓰고서 목록에서 빼지
 않아도 실패한다. **이 목록은 빚이지 면제가 아니다. 줄어들기만 해야 한다.**
 

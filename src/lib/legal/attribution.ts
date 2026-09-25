@@ -33,9 +33,17 @@ export type Attribution = {
    *
    * **공식 승인 로고 파일만 쓴다.** 색·비율·방향을 바꾸지 않는다.
    * (15.1절 표시 원칙)
+   *
+   * **없을 수 있다.** 로고까지 요구하는 곳이 있고 글로 밝히면 되는 곳이
+   * 있다. TMDB는 15.1절이 로고를 명시적으로 요구하지만, JustWatch는
+   * "출처를 JustWatch로 밝히라"는 것이 요구다.
+   *
+   * 없는데 있는 척 그리지 않는다. 아무 그림이나 가져다 쓰면 **공식 파일만
+   * 쓴다는 조건을 어기는 것**이고, 빈 자리를 그리면 표기가 깨져 보인다.
+   * 나중에 로고가 필요해지면 파일을 받아 여기에 주소를 적는다.
    */
-  logoSrc: string;
-  logoAlt: string;
+  logoSrc?: string;
+  logoAlt?: string;
   /**
    * 고치지 않고 그대로 보여야 하는 문구.
    *
@@ -61,6 +69,27 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     notice:
       "This product uses the TMDB API but is not endorsed or certified by TMDB.",
     termsUrl: "https://www.themoviedb.org/about/logos-attribution",
+  },
+  {
+    id: "justwatch",
+    name: "JustWatch",
+    role: "영화와 드라마를 어디서 볼 수 있는지 알려줍니다.",
+    siteUrl: "https://www.justwatch.com",
+    /*
+      로고 파일을 두지 않는다.
+
+      TMDB는 15.1절이 공식 로고를 명시적으로 요구하지만, JustWatch 쪽
+      요구는 **출처를 JustWatch로 밝히는 것**이다. 아래 문구와 링크가
+      그 일을 한다.
+
+      **로고까지 요구하는지 우리가 확실히 확인하지 못했다.** 그래서 아무
+      그림이나 가져다 쓰지 않는다. 공식 파일만 쓴다는 조건이 있는 자리에
+      짐작으로 그림을 넣는 것이 가장 나쁘다. 필요하다고 확인되면 그때
+      파일을 받아 `logoSrc`를 적는다.
+    */
+    notice:
+      "볼 수 있는 곳 정보는 JustWatch에서 제공하며, TMDB를 통해 전달받습니다.",
+    termsUrl: "https://developer.themoviedb.org/docs/faq",
   },
 ];
 

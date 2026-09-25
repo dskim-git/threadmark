@@ -35,7 +35,7 @@ import {
 import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getBookProfile } from "@/lib/books/queries";
 import { getYoutubeProfile } from "@/lib/youtube/queries";
-import { getMediaProfile } from "@/lib/media/queries";
+import { getMediaProfile, listWatchProviders } from "@/lib/media/queries";
 import { Panel, Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
@@ -72,6 +72,7 @@ import { BookPanel } from "../book-panel";
 import { YoutubePanel } from "../youtube-panel";
 import { YoutubePlayer } from "../youtube-player";
 import { MediaPanel } from "../media-panel";
+import { WatchPanel } from "../watch-panel";
 import { MusicPanel } from "../music-panel";
 import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
@@ -128,6 +129,7 @@ export default async function SourceDetailPage({
     bookProfile,
     youtubeProfile,
     mediaProfile,
+    watchProviders,
     placements,
     relations,
     allSources,
@@ -152,6 +154,7 @@ export default async function SourceDetailPage({
     source.type === "book" ? getBookProfile(source.id) : null,
     source.type === "youtube" ? getYoutubeProfile(source.id) : null,
     source.type === "media" ? getMediaProfile(source.id) : null,
+    source.type === "media" ? listWatchProviders(source.id) : [],
     listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
@@ -549,6 +552,24 @@ export default async function SourceDetailPage({
           description={source.description}
           thumbnailUrl={source.thumbnailUrl}
           profile={mediaProfile}
+          returnTo={returnTo}
+        />
+      ) : null}
+
+      {/*
+        볼 수 있는 곳. 작품 칸 바로 아래다. (설계 문서 15절)
+
+        **작품을 고른 뒤에야 쓸모가 있다.** 어느 작품인지 정해져야 볼 수
+        있는 곳을 찾을 수 있다. 그래도 칸 자체는 보여준다. 없으면 이 기능이
+        있다는 것을 알 방법이 없다.
+      */}
+      {source.type === "media" ? (
+        <WatchPanel
+          sourceId={source.id}
+          providers={watchProviders}
+          syncedAt={mediaProfile?.watchSyncedAt ?? null}
+          watchLink={mediaProfile?.watchLink ?? null}
+          ready={mediaProfile !== null}
           returnTo={returnTo}
         />
       ) : null}

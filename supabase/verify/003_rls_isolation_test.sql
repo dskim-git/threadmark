@@ -6548,6 +6548,294 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 113. 다른 사용자의 자료에 볼 수 있는 곳을 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. set_media_watch_provider_owner 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 남의 작품')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.media_watch_providers
+      (source_id, provider_name, offer_kind)
+    values (v_source, '넷플릭스', 'flatrate'::public.watch_offer_kind);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.media_watch_providers where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 113 실패: 다른 사용자의 자료에 볼 수 있는 곳을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 114. 소유자는 볼 수 있는 곳을 담고 읽고 뺄 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 한 곳에서 **빌릴 수도 있고 살 수도** 있다. 그 둘은 다른 줄이며 둘 다
+-- 담겨야 한다. 열쇠에 `보는 방법`을 넣은 까닭이 이것이다.
+--
+-- 빼는 것까지 확인한다. 이 표에는 고치는 길이 거의 없어서(아래 116),
+-- 잘못 담았을 때 되돌릴 방법은 빼기 하나뿐이다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_row    uuid;
+  v_count  integer;
+  v_left   integer;
+  v_synced timestamptz;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 내 작품')
+  returning id into v_source;
+
+  insert into public.media_profiles (owner_id, source_id, tmdb_id, media_kind)
+  values (v_owner, v_source, 550, 'movie'::public.media_kind);
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.media_watch_providers
+    (source_id, provider_name, offer_kind, origin, display_order)
+  values
+    (v_source, '넷플릭스', 'flatrate'::public.watch_offer_kind,
+     'api'::public.watch_provider_origin, 0)
+  returning id into v_row;
+
+  -- 같은 곳, 다른 방법. 다른 줄이어야 한다.
+  insert into public.media_watch_providers
+    (source_id, provider_name, offer_kind, origin, display_order)
+  values
+    (v_source, '넷플릭스', 'rent'::public.watch_offer_kind,
+     'api'::public.watch_provider_origin, 1);
+
+  -- 직접 적은 것. TMDB가 모르는 곳이 있다.
+  insert into public.media_watch_providers
+    (source_id, provider_name, offer_kind, origin, display_order)
+  values
+    (v_source, '학교 도서관 영상실', 'free'::public.watch_offer_kind,
+     'manual'::public.watch_provider_origin, 100);
+
+  -- 언제 받아왔는지는 작품 쪽에 적는다.
+  update public.media_profiles
+  set watch_synced_at = pg_catalog.now(),
+      watch_link = 'https://www.themoviedb.org/movie/550/watch'
+  where source_id = v_source;
+
+  select count(*) into v_count
+  from public.media_watch_providers where source_id = v_source;
+
+  select watch_synced_at into v_synced
+  from public.media_profiles where source_id = v_source;
+
+  delete from public.media_watch_providers where id = v_row;
+
+  select count(*) into v_left
+  from public.media_watch_providers where id = v_row;
+
+  reset role;
+
+  delete from public.media_watch_providers where source_id = v_source;
+  delete from public.media_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_count <> 3 then
+    raise exception
+      '검사 114 실패: 볼 수 있는 곳이 %건 담겼습니다. 3건이어야 합니다. 같은 곳이라도 보는 방법이 다르면 다른 줄입니다.',
+      v_count;
+  end if;
+
+  if v_synced is null then
+    raise exception '검사 114 실패: 언제 받아왔는지를 적지 못했습니다.';
+  end if;
+
+  if v_left <> 0 then
+    raise exception '검사 114 실패: 담아둔 곳을 빼지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 115. 같은 곳을 같은 방법으로 두 번 담을 수 없다
+-- -----------------------------------------------------------------------------
+-- 화면에 같은 줄이 둘 보이는 것은 실수이지 뜻이 아니다. 다시 받아올 때
+-- 지우고 담는 순서가 어긋나면 이 길로 들어온다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 두 번 담기')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.media_watch_providers (source_id, provider_name, offer_kind)
+  values (v_source, '웨이브', 'flatrate'::public.watch_offer_kind);
+
+  begin
+    insert into public.media_watch_providers (source_id, provider_name, offer_kind)
+    values (v_source, '웨이브', 'flatrate'::public.watch_offer_kind);
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.media_watch_providers where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked then
+    raise exception
+      '검사 115 실패: 같은 곳을 같은 방법으로 두 번 담을 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 116. 어디서 온 줄인지는 나중에 바꿀 수 없다
+-- -----------------------------------------------------------------------------
+-- **이 표에서 가장 중요한 가드다.**
+--
+-- `origin`을 바꿀 수 있으면 두 가지 일이 일어난다. 받아온 줄을 `manual`로
+-- 바꿔 다시 받아올 때 살아남게 하거나, 사용자가 적은 줄을 `api`로 바꿔
+-- 쓸려 나가게 할 수 있다. **어느 쪽도 사용자가 뜻한 일이 아니다.**
+--
+-- 15절이 "사용자가 직접 입력한 시청 서비스와 API 조회 결과를 구분한다"고
+-- 한 것을 데이터베이스가 지킨다. 화면이 실수해도 이 줄은 넘어가지 않는다.
+--
+-- 붙은 자료도 바꿀 수 없다. 가 작품의 볼 곳이 나 자료에 붙는다.
+do $$
+declare
+  v_owner    uuid;
+  v_source_a uuid;
+  v_source_b uuid;
+  v_row      uuid;
+  v_origin   boolean := false;
+  v_moved    boolean := false;
+  v_now      public.watch_provider_origin;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 작품 가')
+  returning id into v_source_a;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'media'::public.source_type, 'RLS 격리 검사용 작품 나')
+  returning id into v_source_b;
+
+  insert into public.media_watch_providers
+    (owner_id, source_id, provider_name, offer_kind, origin)
+  values
+    (v_owner, v_source_a, '내가 적은 곳', 'free'::public.watch_offer_kind,
+     'manual'::public.watch_provider_origin)
+  returning id into v_row;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.media_watch_providers
+    set origin = 'api'::public.watch_provider_origin
+    where id = v_row;
+  exception when others then
+    v_origin := true;
+  end;
+
+  begin
+    update public.media_watch_providers
+    set source_id = v_source_b where id = v_row;
+  exception when others then
+    v_moved := true;
+  end;
+
+  select origin into v_now
+  from public.media_watch_providers where id = v_row;
+
+  reset role;
+
+  delete from public.media_watch_providers
+  where source_id in (v_source_a, v_source_b);
+  delete from public.sources where id in (v_source_a, v_source_b);
+
+  if not v_origin
+     or v_now is distinct from 'manual'::public.watch_provider_origin then
+    raise exception
+      '검사 116 실패: 직접 적은 줄을 받아온 줄로 바꿀 수 있었습니다. 다시 받아올 때 사용자가 적은 것이 쓸려 나갑니다.';
+  end if;
+
+  if not v_moved then
+    raise exception
+      '검사 116 실패: 볼 수 있는 곳이 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -6605,6 +6893,17 @@ select
     where media_kind = 'movie'::public.media_kind)                      as 영화,
   (select count(*) from public.media_profiles
     where media_kind = 'tv'::public.media_kind)                         as 드라마,
+  (select count(*) from public.media_watch_providers)                   as 볼_수_있는_곳,
+  (select count(*) from public.media_watch_providers
+    where origin = 'manual'::public.watch_provider_origin)              as 직접_적은_곳,
+  /*
+    마지막으로 받아온 때.
+
+    **개수만으로는 `다시 받기`를 눌렀는지 알 수 없다.** 받아온 줄이 같은
+    수로 바뀌면 총계가 그대로다. 이 값이 바뀌면 다시 받은 것이 분명하다.
+  */
+  (select pg_catalog.max(watch_synced_at)::date
+     from public.media_profiles)                                        as 볼_곳_받은_날,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

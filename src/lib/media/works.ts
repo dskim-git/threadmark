@@ -187,3 +187,73 @@ export function posterUrl(posterPath: unknown): string | null {
 export function tmdbUrl(kind: MediaKind, tmdbId: number): string {
   return `https://www.themoviedb.org/${kind}/${tmdbId}`;
 }
+
+/**
+ * 볼 수 있는 곳의 갈래. (15-E-2c-2)
+ *
+ * TMDB가 나누는 그대로다. **다섯을 나누는 이유는 사용자가 할 일이 다르기
+ * 때문이다.** 이미 구독 중인 곳이면 바로 보면 되고 사야 하는 곳이면 돈을
+ * 내야 한다. 뭉뚱그리면 눌러보고 나서야 안다.
+ */
+export const OFFER_KINDS = ["flatrate", "rent", "buy", "free", "ads"] as const;
+
+export type OfferKind = (typeof OFFER_KINDS)[number];
+
+const OFFER_KIND_LABELS: Record<OfferKind, string> = {
+  flatrate: "구독",
+  rent: "대여",
+  buy: "구매",
+  free: "무료",
+  ads: "광고 보고 무료",
+};
+
+/**
+ * 화면에 늘어놓을 차례.
+ *
+ * **돈이 덜 드는 쪽을 앞에 둔다.** 이미 구독 중인 곳에 있으면 그것으로
+ * 끝이고, 없을 때에야 빌리거나 살지 생각한다. TMDB가 주는 순서는 같은
+ * 갈래 안에서만 뜻이 있다.
+ */
+export const OFFER_KIND_ORDER: Record<OfferKind, number> = {
+  free: 0,
+  flatrate: 1,
+  ads: 2,
+  rent: 3,
+  buy: 4,
+};
+
+export function isOfferKind(value: unknown): value is OfferKind {
+  return (
+    typeof value === "string" && (OFFER_KINDS as readonly string[]).includes(value)
+  );
+}
+
+export function getOfferKindLabel(value: unknown): string {
+  return isOfferKind(value) ? OFFER_KIND_LABELS[value] : "볼 수 있음";
+}
+
+/** 볼 수 있는 곳 한 줄. */
+export type WatchProvider = {
+  providerName: string;
+  offerKind: OfferKind;
+  displayOrder: number;
+};
+
+/**
+ * 받아온 목록을 화면 차례대로 늘어놓는다.
+ *
+ * 갈래를 먼저 보고, 같은 갈래 안에서는 TMDB가 준 순서를 따른다. 그 순서에는
+ * 뜻이 있어서(그 나라에서 많이 쓰는 곳이 앞) 우리가 다시 매기지 않는다.
+ * 그래도 같으면 이름으로 가른다. **새로고침마다 차례가 달라지면 사용자는
+ * 목록이 움직인다고 느낀다.** (`outline.ts`와 같은 판단)
+ */
+export function sortProviders<T extends WatchProvider>(
+  providers: readonly T[],
+): T[] {
+  return [...providers].sort(
+    (a, b) =>
+      OFFER_KIND_ORDER[a.offerKind] - OFFER_KIND_ORDER[b.offerKind] ||
+      a.displayOrder - b.displayOrder ||
+      a.providerName.localeCompare(b.providerName),
+  );
+}

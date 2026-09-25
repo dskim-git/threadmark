@@ -75,25 +75,36 @@ export default async function CreditsPage() {
               그래서 제목 자리가 아니라 본문 안에 작게 둔다. 색과 비율은
               건드리지 않는다. 공식 파일 그대로다.
             */}
-            <a
-              href={item.siteUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="w-fit"
-            >
-              {/*
-                `next/image`를 쓰지 않는다. 이 그림은 SVG이고, Next의 그림
-                처리기는 SVG를 기본적으로 거부한다. 켜는 설정이 있지만
-                **우리가 직접 넣은 파일 하나 때문에 그 문을 열 이유가 없다.**
-                앱의 다른 밖그림도 같은 이유로 `img`를 쓴다. (source-thumb.tsx)
-              */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.logoSrc}
-                alt={item.logoAlt}
-                style={{ height: ATTRIBUTION_LOGO_HEIGHT, width: "auto" }}
-              />
-            </a>
+            {/*
+              로고가 있는 곳만 그린다. **없는데 빈 자리를 그리지 않는다.**
+              곳마다 요구가 다르다. TMDB는 공식 로고를 요구하고, JustWatch는
+              출처를 이름으로 밝히면 된다. 없는 곳은 아래 이름이 그 일을 한다.
+            */}
+            {item.logoSrc ? (
+              <a
+                href={item.siteUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="w-fit"
+              >
+                {/*
+                  `next/image`를 쓰지 않는다. 이 그림은 SVG이고, Next의 그림
+                  처리기는 SVG를 기본적으로 거부한다. 켜는 설정이 있지만
+                  **우리가 직접 넣은 파일 하나 때문에 그 문을 열 이유가 없다.**
+                  앱의 다른 밖그림도 같은 이유로 `img`를 쓴다. (source-thumb.tsx)
+                */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.logoSrc}
+                  alt={item.logoAlt ?? item.name}
+                  style={{ height: ATTRIBUTION_LOGO_HEIGHT, width: "auto" }}
+                />
+              </a>
+            ) : (
+              <h2 className="text-sm font-medium text-black dark:text-zinc-50">
+                {item.name}
+              </h2>
+            )}
 
             <p className="text-sm leading-7 text-zinc-700 dark:text-zinc-300">
               {item.role}

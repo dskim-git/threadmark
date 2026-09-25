@@ -68,12 +68,23 @@ test("고지 문구를 번역하거나 고치지 않았다", () => {
   );
 });
 
-test("항목마다 이름·설명·링크·로고·문구가 있다", () => {
+test("항목마다 이름·설명·링크·문구가 있다", () => {
   for (const item of ATTRIBUTIONS) {
     assert.ok(item.name.length > 0, `${item.id}: 이름이 없다`);
     assert.ok(item.role.length > 0, `${item.id}: 설명이 없다`);
     assert.ok(item.notice.length > 0, `${item.id}: 고지 문구가 없다`);
-    assert.ok(item.logoAlt.length > 0, `${item.id}: 로고 대체 글이 없다`);
+
+    /*
+      로고는 곳마다 다르다. TMDB는 공식 로고를 명시적으로 요구하고
+      (15.1절), JustWatch는 출처를 밝히는 것이 요구다. **없을 수 있게
+      두되, 두었으면 읽어주는 기계를 위한 글이 함께 있어야 한다.**
+    */
+    if (item.logoSrc) {
+      assert.ok(
+        item.logoAlt && item.logoAlt.length > 0,
+        `${item.id}: 로고를 두었는데 대체 글이 없다`,
+      );
+    }
 
     for (const [field, value] of [
       ["siteUrl", item.siteUrl],
@@ -95,6 +106,10 @@ test("로고 파일이 실제로 있다", () => {
     공식 승인 로고 파일만 쓴다는 조건이라 우리가 그려 넣을 수도 없다.
   */
   for (const item of ATTRIBUTIONS) {
+    if (!item.logoSrc) {
+      continue;
+    }
+
     assert.ok(
       item.logoSrc.startsWith("/"),
       `${item.id}: 로고 주소가 / 로 시작하지 않는다`,
@@ -107,6 +122,34 @@ test("로고 파일이 실제로 있다", () => {
       `${item.id}: 로고 파일이 없다. public${item.logoSrc}에 공식 파일을 넣는다`,
     );
   }
+});
+
+test("TMDB에는 로고가 반드시 있다", () => {
+  /*
+    **로고를 선택으로 열어둔 탓에 TMDB 로고까지 사라질 수 있다.**
+    15.1절은 TMDB에 대해서만은 공식 승인 로고를 명시적으로 요구한다.
+    느슨하게 만든 자리를 이름으로 콕 집어 다시 조인다.
+  */
+  const tmdb = ATTRIBUTIONS.find((item) => item.id === "tmdb");
+
+  assert.ok(
+    tmdb?.logoSrc,
+    "TMDB 로고가 없다. 설계 문서 15.1절이 공식 승인 로고를 요구한다",
+  );
+});
+
+test("JustWatch 표기가 있다", () => {
+  /*
+    볼 수 있는 곳 정보는 JustWatch가 모은 것이고, TMDB는 그것을 쓸 때
+    출처를 JustWatch로 밝히라고 요구한다.
+  */
+  const justwatch = ATTRIBUTIONS.find((item) => item.id === "justwatch");
+
+  assert.ok(justwatch, "JustWatch 표기가 없다");
+  assert.ok(
+    justwatch.notice.includes("JustWatch"),
+    "고지 문구에 JustWatch가 없다. 출처를 그 이름으로 밝혀야 한다",
+  );
 });
 
 test("표기 화면이 세 가지를 모두 그린다", () => {

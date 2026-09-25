@@ -1,7 +1,13 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
-import { isMediaKind, type MediaKind } from "./works";
+import {
+  isMediaKind,
+  isOfferKind,
+  sortProviders,
+  type MediaKind,
+  type OfferKind,
+} from "./works";
 
 /**
  * 영화·드라마 자료 조회와 저장. (설계 문서 15절)
@@ -21,6 +27,10 @@ export type MediaProfile = {
   seasonCount: number | null;
   episodeCount: number | null;
   fetchedAt: string | null;
+  /** 볼 수 있는 곳을 언제 받아왔는지. **이 값은 빨리 낡는다.** */
+  watchSyncedAt: string | null;
+  /** JustWatch의 그 작품 페이지. */
+  watchLink: string | null;
 };
 
 export async function getMediaProfile(
@@ -37,7 +47,7 @@ export async function getMediaProfile(
   const { data, error } = await supabase
     .from("media_profiles")
     .select(
-      "tmdb_id, media_kind, original_title, released_on, genres, cast_names, runtime_minutes, season_count, episode_count, fetched_at",
+      "tmdb_id, media_kind, original_title, released_on, genres, cast_names, runtime_minutes, season_count, episode_count, fetched_at, watch_synced_at, watch_link",
     )
     .eq("source_id", sourceId)
     .maybeSingle();
@@ -77,6 +87,8 @@ export async function getMediaProfile(
     seasonCount: data.season_count,
     episodeCount: data.episode_count,
     fetchedAt: data.fetched_at,
+    watchSyncedAt: data.watch_synced_at,
+    watchLink: data.watch_link,
   };
 }
 
@@ -136,6 +148,147 @@ export async function saveMediaProfile(
 
   if (error) {
     console.error("[ThreadMark] 작품 정보 저장 실패:", error.message);
+
+    return false;
+  }
+
+  return true;
+}
+
+/** 볼 수 있는 곳 한 줄. */
+export type WatchProviderRow = {
+  id: string;
+  providerName: string;
+  offerKind: OfferKind;
+  /** `api`면 다시 받아올 때 지워지고 `manual`이면 남는다. */
+  origin: "api" | "manual";
+  displayOrder: number;
+};
+
+export async function listWatchProviders(
+  sourceId: string,
+): Promise<WatchProviderRow[]> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("media_watch_providers")
+    .select("id, provider_name, offer_kind, origin, display_order")
+    .eq("source_id", sourceId);
+
+  if (error) {
+    console.error("[ThreadMark] 볼 수 있는 곳 조회 실패:", error.message);
+
+    return [];
+  }
+
+  const rows: WatchProviderRow[] = [];
+
+  for (const row of data ?? []) {
+    /*
+      모르는 갈래는 버린다. 생성된 타입은 컴파일 시점의 약속일 뿐이고,
+      모르는 값이 화면에 오면 "볼 수 있음"이라는 뜻 없는 꼬리표가 붙는다.
+    */
+    if (!isOfferKind(row.offer_kind)) {
+      continue;
+    }
+
+    rows.push({
+      id: row.id,
+      providerName: row.provider_name,
+      offerKind: row.offer_kind,
+      origin: row.origin === "api" ? "api" : "manual",
+      displayOrder: row.display_order,
+    });
+  }
+
+  return sortProviders(rows);
+}
+
+/**
+ * 받아온 목록으로 바꿔 담는다.
+ *
+ * **`api`로 담긴 줄만 지우고 다시 담는다.** 사용자가 직접 적은 줄
+ * (`manual`)은 건드리지 않는다. 15절이 둘을 구분하라고 한 까닭이 여기서
+ * 드러난다. 구분하지 않으면 다시 받아올 때마다 적어둔 것이 쓸려 나간다.
+ *
+ * **지우고 담는 사이에 실패하면 빈 목록이 남는다.** 한 문장으로 묶고
+ * 싶지만 Supabase 클라이언트로는 트랜잭션을 걸 수 없다. 대신 담기에
+ * 실패하면 그 사실을 알려, 사용자가 다시 누를 수 있게 한다.
+ * **조용히 빈 채로 두지 않는다.**
+ */
+export async function replaceApiWatchProviders(
+  sourceId: string,
+  offers: readonly {
+    providerName: string;
+    offerKind: OfferKind;
+    displayOrder: number;
+  }[],
+  link: string | null,
+): Promise<boolean> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { error: clearError } = await supabase
+    .from("media_watch_providers")
+    .delete()
+    .eq("source_id", sourceId)
+    .eq("origin", "api");
+
+  if (clearError) {
+    console.error("[ThreadMark] 볼 수 있는 곳 지우기 실패:", clearError.message);
+
+    return false;
+  }
+
+  if (offers.length > 0) {
+    /*
+      **같은 곳이 같은 방법으로 두 번 오는 일이 있다.** 그대로 담으면
+      unique에 걸려 통째로 실패한다. 여기서 가려낸다.
+    */
+    const seen = new Set<string>();
+    const rows = [];
+
+    for (const offer of offers) {
+      const key = `${offer.providerName}|${offer.offerKind}`;
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      rows.push({
+        source_id: sourceId,
+        provider_name: offer.providerName,
+        offer_kind: offer.offerKind,
+        origin: "api" as const,
+        display_order: offer.displayOrder,
+      });
+    }
+
+    // owner_id를 보내지 않는다. 트리거가 채운다. (보안 원칙 2)
+    const { error } = await supabase.from("media_watch_providers").insert(rows);
+
+    if (error) {
+      console.error("[ThreadMark] 볼 수 있는 곳 저장 실패:", error.message);
+
+      return false;
+    }
+  }
+
+  const { error: stampError } = await supabase
+    .from("media_profiles")
+    .update({
+      watch_synced_at: new Date().toISOString(),
+      // 주소 자리에는 https만. 밖에서 온 값이 화면의 링크에 들어간다.
+      watch_link: link !== null && link.startsWith("https://") ? link : null,
+    })
+    .eq("source_id", sourceId);
+
+  if (stampError) {
+    console.error("[ThreadMark] 받아온 때 저장 실패:", stampError.message);
 
     return false;
   }

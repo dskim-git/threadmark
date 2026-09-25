@@ -24,7 +24,10 @@ import {
   normalizeReleaseDate,
   positiveCount,
   posterUrl,
+  getOfferKindLabel,
+  isOfferKind,
   releaseYear,
+  sortProviders,
   tmdbUrl,
 } from "../src/lib/media/works.ts";
 
@@ -202,4 +205,78 @@ test("영화와 드라마의 번호가 겹쳐도 주소가 갈린다", () => {
     있으므로, 갈래를 함께 넘기지 않으면 엉뚱한 작품으로 간다.
   */
   assert.notEqual(tmdbUrl("movie", 1396), tmdbUrl("tv", 1396));
+});
+
+// -----------------------------------------------------------------------------
+// 볼 수 있는 곳 (15-E-2c-2)
+// -----------------------------------------------------------------------------
+
+test("보는 방법 다섯만 받는다", () => {
+  for (const kind of ["flatrate", "rent", "buy", "free", "ads"]) {
+    assert.equal(isOfferKind(kind), true);
+  }
+
+  assert.equal(isOfferKind("subscription"), false);
+  assert.equal(isOfferKind(null), false);
+});
+
+test("보는 방법을 우리 말로 보여준다", () => {
+  assert.equal(getOfferKindLabel("flatrate"), "구독");
+  assert.equal(getOfferKindLabel("rent"), "대여");
+  assert.equal(getOfferKindLabel("nonsense"), "볼 수 있음", "모르는 값도 무너지지 않는다");
+});
+
+test("돈이 덜 드는 쪽을 앞에 둔다", () => {
+  /*
+    **이미 구독 중인 곳에 있으면 그것으로 끝이다.** 없을 때에야 빌리거나
+    살지 생각한다. 사는 곳이 맨 위에 뜨면 사용자가 돈을 쓸 뻔한다.
+  */
+  const sorted = sortProviders([
+    { providerName: "사는 곳", offerKind: "buy", displayOrder: 0 },
+    { providerName: "빌리는 곳", offerKind: "rent", displayOrder: 0 },
+    { providerName: "구독", offerKind: "flatrate", displayOrder: 0 },
+    { providerName: "무료", offerKind: "free", displayOrder: 0 },
+  ]);
+
+  assert.deepEqual(
+    sorted.map((item) => item.offerKind),
+    ["free", "flatrate", "rent", "buy"],
+  );
+});
+
+test("같은 갈래 안에서는 TMDB가 준 차례를 따른다", () => {
+  // 그 순서에는 뜻이 있다. 그 나라에서 많이 쓰는 곳이 앞이다.
+  const sorted = sortProviders([
+    { providerName: "나중", offerKind: "flatrate", displayOrder: 5 },
+    { providerName: "먼저", offerKind: "flatrate", displayOrder: 1 },
+  ]);
+
+  assert.deepEqual(sorted.map((item) => item.providerName), ["먼저", "나중"]);
+});
+
+test("차례가 같으면 이름으로 가른다", () => {
+  /*
+    **새로고침마다 차례가 달라지면 사용자는 목록이 움직인다고 느낀다.**
+    뼈대를 세울 때와 같은 판단이다.
+  */
+  const input = [
+    { providerName: "나중", offerKind: "flatrate", displayOrder: 0 },
+    { providerName: "가나다", offerKind: "flatrate", displayOrder: 0 },
+  ];
+
+  assert.deepEqual(
+    sortProviders(input).map((item) => item.providerName),
+    sortProviders([...input].reverse()).map((item) => item.providerName),
+  );
+});
+
+test("늘어놓아도 원래 목록을 건드리지 않는다", () => {
+  const input = [
+    { providerName: "사는 곳", offerKind: "buy", displayOrder: 0 },
+    { providerName: "무료", offerKind: "free", displayOrder: 0 },
+  ];
+
+  sortProviders(input);
+
+  assert.equal(input[0].providerName, "사는 곳", "원래 목록이 바뀌었다");
 });

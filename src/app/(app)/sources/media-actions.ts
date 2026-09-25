@@ -6,8 +6,13 @@ import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import { sanitizeNextPath } from "@/lib/auth/request-url";
-import { saveMediaProfile } from "@/lib/media/queries";
 import {
+  getMediaProfile,
+  replaceApiWatchProviders,
+  saveMediaProfile,
+} from "@/lib/media/queries";
+import {
+  fetchWatchProviders,
   fetchWorkDetail,
   searchWorks,
   type WorkCandidate,
@@ -18,6 +23,7 @@ import {
   GENRE_LIMIT,
   MAX_RUNTIME_MINUTES,
   MEDIA_KINDS,
+  OFFER_KINDS,
   cleanNames,
   normalizeReleaseDate,
   tmdbUrl,
@@ -248,4 +254,176 @@ export async function saveMediaWork(formData: FormData): Promise<void> {
   revalidatePath("/library");
 
   redirectWithQuery(returnTo, { notice: "작품 정보를 저장했습니다." });
+}
+
+/**
+ * 한국에서 볼 수 있는 곳을 받아와 담는다. (설계 문서 15절)
+ *
+ * **받아온 줄만 바꾼다.** 사용자가 직접 적은 줄은 건드리지 않는다.
+ * 15절이 둘을 구분하라고 한 까닭이 여기서 드러난다.
+ *
+ * 화면을 바꾸지 않고 결과만 돌려준다. 담기는 서버가 하므로 화면은
+ * 다시 그려야 하는데, 그 일은 부르는 쪽이 `router.refresh()`로 한다.
+ */
+export async function syncWatchProviders(
+  sourceId: string,
+): Promise<{ ok: true; count: number } | { ok: false; message: string }> {
+  await requireActiveAccount();
+
+  const parsed = z.string().uuid().safeParse(sourceId);
+
+  if (!parsed.success) {
+    return { ok: false, message: "자료를 찾을 수 없습니다." };
+  }
+
+  /*
+    어느 작품인지는 **우리가 담아둔 값에서 읽는다.** 화면이 보내온 번호를
+    쓰지 않는다. 브라우저에서 온 값으로 밖에 물으면, 남이 고른 번호를
+    우리 서버가 대신 조회하게 만드는 길이 열린다.
+
+    담아둔 값을 읽는 이 조회는 소유자 정책을 통과해야 하므로, 남의 자료
+    id가 와도 여기서 없는 것이 된다.
+  */
+  const profile = await getMediaProfile(parsed.data);
+
+  if (!profile) {
+    return {
+      ok: false,
+      message: "먼저 `찾기`로 작품을 고르고 저장해 주세요.",
+    };
+  }
+
+  const result = await fetchWatchProviders(profile.kind, profile.tmdbId);
+
+  if (!result.ok) {
+    return result;
+  }
+
+  const saved = await replaceApiWatchProviders(
+    parsed.data,
+    result.offers,
+    result.link,
+  );
+
+  if (!saved) {
+    return {
+      ok: false,
+      message: "받아온 것을 저장하지 못했습니다. 잠시 뒤에 다시 눌러 주세요.",
+    };
+  }
+
+  revalidatePath(`/sources/${parsed.data}`);
+
+  return { ok: true, count: result.offers.length };
+}
+
+const manualSchema = z.object({
+  sourceId: z.string().uuid(),
+  providerName: z
+    .string()
+    .trim()
+    .min(1, "볼 수 있는 곳의 이름을 적어 주세요.")
+    .max(200),
+  offerKind: z.enum(OFFER_KINDS),
+  returnTo: z.string(),
+});
+
+/**
+ * 볼 수 있는 곳을 직접 적는다.
+ *
+ * **TMDB가 모르는 곳이 있다.** 지역 서비스나 도서관 영상 서비스가 그렇다.
+ * 적어둘 자리가 있어야 이 기능이 쓸모 있다.
+ *
+ * 담을 때 `origin`을 `manual`로 둔다. 다시 받아올 때 살아남는다.
+ */
+export async function addWatchProvider(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const parsed = manualSchema.safeParse({
+    sourceId: formValue(formData.get("sourceId")),
+    providerName: formValue(formData.get("providerName")),
+    offerKind: formValue(formData.get("offerKind")),
+    returnTo: formValue(formData.get("returnTo")),
+  });
+
+  if (!parsed.success) {
+    const fallback = sanitizeNextPath(formValue(formData.get("returnTo"))) ?? "/library";
+
+    redirectWithQuery(fallback, {
+      error: parsed.error.issues[0]?.message ?? "적어주신 내용을 확인해 주세요.",
+    });
+  }
+
+  const values = parsed.data;
+  const returnTo = sanitizeNextPath(values.returnTo) ?? "/library";
+
+  const supabase = await createClient();
+
+  // owner_id를 보내지 않는다. 트리거가 채운다. (보안 원칙 2)
+  const { error } = await supabase.from("media_watch_providers").insert({
+    source_id: values.sourceId,
+    provider_name: values.providerName,
+    offer_kind: values.offerKind,
+    origin: "manual",
+    /*
+      직접 적은 것은 받아온 것 뒤에 온다. TMDB가 주는 차례는 그 나라에서
+      많이 쓰는 곳을 앞에 두는 것이고, 우리가 적은 것에는 그런 뜻이 없다.
+    */
+    display_order: 9_000,
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 볼 수 있는 곳 담기 실패:", error.message);
+
+    redirectWithQuery(returnTo, {
+      error: error.code === "23505"
+        ? "이미 같은 곳이 같은 방법으로 담겨 있습니다."
+        : "담지 못했습니다. 잠시 뒤에 다시 눌러 주세요.",
+    });
+  }
+
+  revalidatePath(returnTo);
+
+  redirectWithQuery(returnTo, { notice: "볼 수 있는 곳을 담았습니다." });
+}
+
+/** 담아둔 곳 하나를 뺀다. 받아온 것이든 적은 것이든 뺄 수 있다. */
+export async function removeWatchProvider(formData: FormData): Promise<void> {
+  await requireActiveAccount();
+
+  const parsed = z.object({
+    id: z.string().uuid(),
+    returnTo: z.string(),
+  }).safeParse({
+    id: formValue(formData.get("id")),
+    returnTo: formValue(formData.get("returnTo")),
+  });
+
+  const returnTo = sanitizeNextPath(
+    parsed.success ? parsed.data.returnTo : formValue(formData.get("returnTo")),
+  ) ?? "/library";
+
+  if (!parsed.success) {
+    redirectWithQuery(returnTo, { error: "지울 것을 찾지 못했습니다." });
+  }
+
+  const supabase = await createClient();
+
+  // 정책이 남의 것을 걸러낸다. 여기서 소유자를 따로 적지 않는다.
+  const { error } = await supabase
+    .from("media_watch_providers")
+    .delete()
+    .eq("id", parsed.data.id);
+
+  if (error) {
+    console.error("[ThreadMark] 볼 수 있는 곳 빼기 실패:", error.message);
+
+    redirectWithQuery(returnTo, {
+      error: "빼지 못했습니다. 잠시 뒤에 다시 눌러 주세요.",
+    });
+  }
+
+  revalidatePath(returnTo);
+
+  redirectWithQuery(returnTo, { notice: "볼 수 있는 곳에서 뺐습니다." });
 }

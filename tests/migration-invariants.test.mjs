@@ -73,6 +73,7 @@ const PROTECTED_TABLES = [
   "project_node_items",
   "youtube_profiles",
   "media_profiles",
+  "media_watch_providers",
 ];
 
 /**

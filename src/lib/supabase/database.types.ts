@@ -356,6 +356,8 @@ export type Database = {
           source_id: string
           tmdb_id: number
           updated_at: string
+          watch_link: string | null
+          watch_synced_at: string | null
         }
         Insert: {
           cast_names?: string[]
@@ -373,6 +375,8 @@ export type Database = {
           source_id: string
           tmdb_id: number
           updated_at?: string
+          watch_link?: string | null
+          watch_synced_at?: string | null
         }
         Update: {
           cast_names?: string[]
@@ -390,12 +394,55 @@ export type Database = {
           source_id?: string
           tmdb_id?: number
           updated_at?: string
+          watch_link?: string | null
+          watch_synced_at?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "media_profiles_source_id_fkey"
             columns: ["source_id"]
             isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_watch_providers: {
+        Row: {
+          created_at: string
+          display_order: number
+          id: string
+          offer_kind: Database["public"]["Enums"]["watch_offer_kind"]
+          origin: Database["public"]["Enums"]["watch_provider_origin"]
+          owner_id: string
+          provider_name: string
+          source_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          offer_kind: Database["public"]["Enums"]["watch_offer_kind"]
+          origin?: Database["public"]["Enums"]["watch_provider_origin"]
+          owner_id?: string
+          provider_name: string
+          source_id: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          offer_kind?: Database["public"]["Enums"]["watch_offer_kind"]
+          origin?: Database["public"]["Enums"]["watch_provider_origin"]
+          owner_id?: string
+          provider_name?: string
+          source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_watch_providers_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
             referencedRelation: "sources"
             referencedColumns: ["id"]
           },
@@ -1448,6 +1495,8 @@ export type Database = {
         | "note"
       source_visibility: "private"
       user_status: "pending" | "active" | "rejected" | "suspended"
+      watch_offer_kind: "flatrate" | "rent" | "buy" | "free" | "ads"
+      watch_provider_origin: "api" | "manual"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1630,6 +1679,8 @@ export const Constants = {
       ],
       source_visibility: ["private"],
       user_status: ["pending", "active", "rejected", "suspended"],
+      watch_offer_kind: ["flatrate", "rent", "buy", "free", "ads"],
+      watch_provider_origin: ["api", "manual"],
     },
   },
 } as const

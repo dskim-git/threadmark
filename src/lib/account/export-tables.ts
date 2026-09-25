@@ -42,6 +42,7 @@ export const EXPORTED_TABLES = [
   "music_provider_links",
   "youtube_profiles",
   "media_profiles",
+  "media_watch_providers",
   "tags",
   "source_tags",
   "capture_tags",

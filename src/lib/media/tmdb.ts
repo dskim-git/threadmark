@@ -3,6 +3,7 @@ import { TMDB_REQUEST_HEADERS } from "@/lib/net/request-headers";
 import {
   CAST_LIMIT,
   GENRE_LIMIT,
+  OFFER_KINDS,
   MAX_RUNTIME_MINUTES,
   cleanNames,
   isMediaKind,
@@ -12,6 +13,7 @@ import {
   releaseYear,
   tmdbUrl,
   type MediaKind,
+  type OfferKind,
 } from "./works";
 
 /**
@@ -383,4 +385,109 @@ function readText(value: unknown): string | null {
   const trimmed = value.trim();
 
   return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * 한국에서 볼 수 있는 곳을 받아온다. (설계 문서 15절)
+ *
+ * **JustWatch가 모은 자료다.** TMDB가 중계하며, 쓰려면 출처를 JustWatch로
+ * 밝혀야 한다. 화면의 글과 `/credits`가 그 일을 한다.
+ * (`src/lib/legal/attribution.ts`)
+ *
+ * **영상 자체는 다루지 않는다.** 15절이 "OTT 영상 자체를 임베드하거나
+ * 다운로드하지 않는다"고 못 박았다. 받아오는 것은 **어디서 볼 수 있는지와
+ * 그곳으로 가는 주소**뿐이다.
+ *
+ * 한국(`KR`)만 본다. 다른 나라 것을 함께 담으면 "내가 볼 수 있는 곳"이
+ * 아닌 줄이 섞이고, 사용자가 눌러보고 나서야 안다.
+ */
+
+/** 어느 나라 기준인가. */
+export const WATCH_REGION = "KR";
+
+export type WatchOffer = {
+  providerName: string;
+  offerKind: OfferKind;
+  /** TMDB가 준 차례. 그 나라에서 많이 쓰는 곳이 앞이다. */
+  displayOrder: number;
+};
+
+export type WatchResult =
+  | {
+      ok: true;
+      offers: WatchOffer[];
+      /** JustWatch의 그 작품 페이지. 없을 수 있다. */
+      link: string | null;
+    }
+  | { ok: false; message: string };
+
+export async function fetchWatchProviders(
+  kind: MediaKind,
+  tmdbId: number,
+): Promise<WatchResult> {
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
+    return { ok: false, message: "작품 번호를 확인해 주세요." };
+  }
+
+  const url = new URL(`${BASE}/${kind}/${tmdbId}/watch/providers`);
+
+  const payload = await request(url);
+
+  if (!payload.ok) {
+    return payload;
+  }
+
+  const results = readObject(readObject(payload.data)?.results);
+  const region = readObject(results?.[WATCH_REGION]);
+
+  if (!region) {
+    /*
+      **없는 것과 못 받은 것을 가른다.** 한국에서 볼 수 있는 곳이 하나도
+      없는 작품은 흔하다. 그것을 실패로 알리면 사용자가 다시 눌러 보게
+      된다. 빈 목록으로 돌려주고 화면이 "없다"고 말하게 한다.
+    */
+    return { ok: true, offers: [], link: null };
+  }
+
+  const offers: WatchOffer[] = [];
+
+  for (const kindName of OFFER_KINDS) {
+    const list = region[kindName];
+
+    if (!Array.isArray(list)) {
+      continue;
+    }
+
+    for (const item of list) {
+      const row = readObject(item);
+      const name = readText(row?.provider_name);
+
+      if (name === null) {
+        continue;
+      }
+
+      offers.push({
+        providerName: name,
+        offerKind: kindName,
+        /*
+          차례가 없으면 맨 뒤로 보낸다. 0으로 두면 맨 앞으로 오는데,
+          모르는 값이 가장 잘 보이는 자리를 차지할 이유가 없다.
+        */
+        displayOrder: positiveCount(row?.display_priority, 10_000) ?? 9_999,
+      });
+    }
+  }
+
+  /*
+    `link`는 JustWatch의 그 작품 페이지다. 화면이 "더 보기"로 쓴다.
+    **주소 자리에는 https만 받는다.** 밖에서 온 값이 화면의 링크에
+    그대로 들어간다. 데이터베이스도 같은 것을 보지만 여기서 먼저 거른다.
+  */
+  const link = readText(region.link);
+
+  return {
+    ok: true,
+    offers,
+    link: link !== null && link.startsWith("https://") ? link : null,
+  };
 }
