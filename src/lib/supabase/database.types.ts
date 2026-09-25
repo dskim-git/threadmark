@@ -831,6 +831,75 @@ export type Database = {
           },
         ]
       }
+      place_profiles: {
+        Row: {
+          address: string | null
+          category: string | null
+          created_at: string
+          external_id: string | null
+          fetched_at: string | null
+          id: string
+          latitude: number | null
+          longitude: number | null
+          owner_id: string
+          phone: string | null
+          place_url: string | null
+          provider: Database["public"]["Enums"]["place_provider"] | null
+          road_address: string | null
+          source_id: string
+          updated_at: string
+          visit_status: Database["public"]["Enums"]["place_visit_status"] | null
+        }
+        Insert: {
+          address?: string | null
+          category?: string | null
+          created_at?: string
+          external_id?: string | null
+          fetched_at?: string | null
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          owner_id?: string
+          phone?: string | null
+          place_url?: string | null
+          provider?: Database["public"]["Enums"]["place_provider"] | null
+          road_address?: string | null
+          source_id: string
+          updated_at?: string
+          visit_status?:
+            | Database["public"]["Enums"]["place_visit_status"]
+            | null
+        }
+        Update: {
+          address?: string | null
+          category?: string | null
+          created_at?: string
+          external_id?: string | null
+          fetched_at?: string | null
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          owner_id?: string
+          phone?: string | null
+          place_url?: string | null
+          provider?: Database["public"]["Enums"]["place_provider"] | null
+          road_address?: string | null
+          source_id?: string
+          updated_at?: string
+          visit_status?:
+            | Database["public"]["Enums"]["place_visit_status"]
+            | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "place_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           approved_at: string | null
@@ -1505,6 +1574,8 @@ export type Database = {
       drive_connection_status: "connected" | "revoked" | "error"
       media_kind: "movie" | "tv"
       paper_use_status: "planned" | "used"
+      place_provider: "kakao" | "google"
+      place_visit_status: "want_to_visit" | "visited"
       project_status: "active"
       project_visibility: "private"
       source_file_origin: "upload" | "picked"
@@ -1531,6 +1602,7 @@ export type Database = {
         | "drawing"
         | "audio"
         | "note"
+        | "place"
       source_visibility: "private"
       user_status: "pending" | "active" | "rejected" | "suspended"
       watch_offer_kind: "flatrate" | "rent" | "buy" | "free" | "ads"
@@ -1689,6 +1761,8 @@ export const Constants = {
       drive_connection_status: ["connected", "revoked", "error"],
       media_kind: ["movie", "tv"],
       paper_use_status: ["planned", "used"],
+      place_provider: ["kakao", "google"],
+      place_visit_status: ["want_to_visit", "visited"],
       project_status: ["active"],
       project_visibility: ["private"],
       source_file_origin: ["upload", "picked"],
@@ -1716,6 +1790,7 @@ export const Constants = {
         "drawing",
         "audio",
         "note",
+        "place",
       ],
       source_visibility: ["private"],
       user_status: ["pending", "active", "rejected", "suspended"],
