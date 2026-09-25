@@ -41,7 +41,10 @@
  *
  *   그래서 `스릴러`는 찾고 `스릴`은 못 찾는다. **적어두고 넘어간다.**
  *
- * 표를 새로 만들면 여기에 더한다. 장소(`place_profiles`)가 곧 그렇게 된다.
+ * 표를 새로 만들면 여기에 더한다. 장소(`place_profiles`)가 2026-09-25에
+ * 그렇게 들어왔다. 그때는 이 줄이 "곧 그렇게 된다"라고만 적혀 있었다.
+ * **적어두는 것만으로는 모자라고, 표를 만드는 그 커밋에서 함께 고쳐야 한다.**
+ * 설계 문서 17-1.6절이 다섯 곳을 한자리에 모아 둔 것이 그래서다.
  *
  * 데이터베이스를 무는 쪽은 `candidates.ts`에 있다. 이 파일은 **무엇을
  * 뒤질지 적은 목록**뿐이라 검사가 따로 들여다볼 수 있다.
@@ -56,7 +59,8 @@ export type ProfileSearchTarget = {
     | "website_profiles"
     | "music_profiles"
     | "youtube_profiles"
-    | "media_profiles";
+    | "media_profiles"
+    | "place_profiles";
   /** 글자 포함으로 뒤질 칸. */
   text: readonly string[];
   /** 낱말이 통째로 같은지로 뒤질 칸. */
@@ -112,6 +116,27 @@ export const PROFILE_SEARCH_TARGETS: readonly ProfileSearchTarget[] = [
     table: "media_profiles",
     text: ["original_title"],
     arrays: ["genres", "cast_names"],
+  },
+  {
+    /*
+      장소. (17-1)
+
+      **여기서만 주소가 찾는 값이 된다.** 위에서 주소를 뺐다고 적은 것은
+      웹 주소(`url`, `favicon_url`)를 말한 것이다. 사람이 `https://`로
+      시작하는 글자를 외워서 찾지는 않는다.
+
+      장소의 주소는 반대다. **`성수동`이나 `세종대로`가 그 장소를 떠올리는
+      말 그 자체다.** 가게 이름은 잊어도 어디쯤이었는지는 남는다.
+
+      `category`도 같다. `카페`, `관광명소`처럼 정해진 말이고, 사람은 가게
+      이름보다 무엇하는 곳이었는지를 먼저 떠올린다.
+
+      **`phone`과 `place_url`은 넣지 않는다.** 전화번호는 숫자가 우연히
+      걸리고, 상세 화면 주소는 웹 주소라 위의 판단이 그대로 적용된다.
+    */
+    table: "place_profiles",
+    text: ["road_address", "address", "category"],
+    arrays: [],
   },
 ];
 

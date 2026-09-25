@@ -49,6 +49,13 @@ export const EXPORTED_TABLES = [
   "project_outline_nodes",
   "project_node_items",
   /*
+    장소. (17-1) **좌표가 여기 들어 있다.**
+
+    이 표가 빠지면 나간 사람의 파일에 이름만 남고 어디였는지가 사라진다.
+    주소와 좌표는 사람이 다시 만들 수 없는 값이다.
+  */
+  "place_profiles",
+  /*
     AI를 언제 얼마나 불렀는가. **이용자 자신의 기록이므로 담는다.**
 
     운영에 관한 것이 아니다. `admin_audit_logs`는 우리가 무엇을 했는가이고

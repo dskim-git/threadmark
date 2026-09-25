@@ -76,6 +76,8 @@ const PROTECTED_TABLES = [
   "media_watch_providers",
   // 16-A-1. AI를 부른 기록. 고칠 수도 지울 수도 없는 장부라 정책이 둘뿐이다.
   "ai_usage_events",
+  // 17-1. 장소. 좌표가 들어오는 자리라 범위와 짝을 제약조건이 지킨다.
+  "place_profiles",
 ];
 
 /**

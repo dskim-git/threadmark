@@ -7100,6 +7100,295 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 122. 다른 사용자의 자료에 장소 정보를 붙일 수 없다
+-- -----------------------------------------------------------------------------
+-- 외래키는 RLS를 보지 않는다. set_place_profile_owner 트리거가 막는다.
+-- 검사 107(영상)·110(작품)과 같은 자리다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'place'::public.source_type, 'RLS 격리 검사용 남의 장소')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.place_profiles
+      (source_id, provider, external_id, road_address, latitude, longitude)
+    values
+      (v_source, 'kakao'::public.place_provider, '26338954',
+       '남의 자료에 붙인 주소', 37.566826, 126.978656);
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.place_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 122 실패: 다른 사용자의 자료에 장소 정보를 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 123. 소유자는 장소를 담고 읽고 다른 장소로 바꿀 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **다른 장소를 골라 다시 찾아오는 길이 열려 있어야 한다.** 15-E에서 겪은
+-- 고장이다. "적어둔 것을 덮지 않는다"를 뭉뚱그려 걸었더니 한 곡을 채운 뒤
+-- 다른 곡으로 바꿀 수 없었다. 잠겨도 오류가 나지 않고 그냥 값이 안 바뀔
+-- 뿐이라, 쓰다가 부딪히기 전에는 모른다. (AGENTS.md 2절)
+--
+-- **가보고 싶던 곳에 가는 길도 본다.** visit_status가 있는 이유가 그것인데,
+-- 잠기면 `가봤다`로 바꿀 수 없고 그래도 오류는 나지 않는다.
+--
+-- **비우는 길도 본다.** 이 칸은 옵션이다. 한 번 정하면 되돌릴 수 없게 되면
+-- 수업 준비에서 잘못 누른 값이 영원히 남는다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_ext    text;
+  v_road   text;
+  v_lat    numeric;
+  v_visit  public.place_visit_status;
+  v_empty  boolean := true;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'place'::public.source_type, 'RLS 격리 검사용 내 장소')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.place_profiles
+    (source_id, provider, external_id, road_address, address,
+     latitude, longitude, category, phone, place_url,
+     fetched_at, visit_status)
+  values
+    (v_source, 'kakao'::public.place_provider, '26338954',
+     '서울 중구 세종대로 110', '서울 중구 태평로1가 31',
+     37.566826, 126.978656, '관광명소', '02-120',
+     'http://place.map.kakao.com/26338954',
+     pg_catalog.now(), 'want_to_visit'::public.place_visit_status);
+
+  -- 다른 장소를 골라 다시 찾아온다.
+  update public.place_profiles
+  set external_id = '8127895',
+      road_address = '서울 용산구 서빙고로 137',
+      address = '서울 용산구 용산동6가 168-6',
+      latitude = 37.523975,
+      longitude = 126.980267,
+      category = '문화시설',
+      fetched_at = pg_catalog.now()
+  where source_id = v_source;
+
+  -- 가보고 싶던 곳에 갔다.
+  update public.place_profiles
+  set visit_status = 'visited'::public.place_visit_status
+  where source_id = v_source;
+
+  select external_id, road_address, latitude, visit_status
+  into v_ext, v_road, v_lat, v_visit
+  from public.place_profiles where source_id = v_source;
+
+  -- 정한 것을 다시 안 정함으로 되돌린다.
+  update public.place_profiles
+  set visit_status = null where source_id = v_source;
+
+  select visit_status is null into v_empty
+  from public.place_profiles where source_id = v_source;
+
+  reset role;
+
+  delete from public.place_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_ext is distinct from '8127895' then
+    raise exception
+      '검사 123 실패: 다른 장소로 바꾸지 못했습니다. 한 곳을 담은 뒤 다른 곳으로 고칠 수 없게 됩니다. (지금 %)',
+      v_ext;
+  end if;
+
+  if v_road is distinct from '서울 용산구 서빙고로 137' then
+    raise exception '검사 123 실패: 주소를 다시 받아와 덮어쓰지 못했습니다.';
+  end if;
+
+  if v_lat is distinct from 37.523975 then
+    raise exception
+      '검사 123 실패: 좌표를 고치지 못했습니다. 지도 링크가 옛 장소를 엽니다. (지금 %)',
+      v_lat;
+  end if;
+
+  if v_visit is distinct from 'visited'::public.place_visit_status then
+    raise exception
+      '검사 123 실패: 가보고 싶던 곳을 가봤다로 바꾸지 못했습니다. 이 칸이 있는 이유가 그것입니다.';
+  end if;
+
+  if not v_empty then
+    raise exception
+      '검사 123 실패: 정한 것을 다시 안 정함으로 되돌릴 수 없었습니다. 잘못 누른 값이 영원히 남습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 124. 장소가 붙은 자료는 바꿀 수 없고 모양이 깨진 값은 담기지 않는다
+-- -----------------------------------------------------------------------------
+-- 붙은 자료를 바꿀 수 있으면 가 장소의 정보가 나 자료에 붙는다. 자기
+-- 자료끼리라도 막는다. 검사 51·56·102·109·112와 같은 이유다.
+--
+-- 좌표는 **밖에서 받아온 값이 그대로 들어오는 자리다.**
+--
+--   범위를 벗어난 값  경도를 위도 칸에 넣은 것이 여기 걸린다. 안 막으면
+--                     지도 링크가 바다 한가운데를 열고, 사용자는 우리가
+--                     장소를 잃었다고 생각한다.
+--   한쪽만 있는 값    화면은 좌표가 있다고 보고 링크를 만들지만 그 링크는
+--                     깨진다. **오류 없이 엉뚱한 곳이 열리는 쪽이 더 나쁘다.**
+--   출처 없는 번호    다시 받아올 길이 없다. 카카오 것인지 구글 것인지
+--                     모르는 채 남는다.
+--   javascript: 링크  누르는 순간 실행된다. 검사 106과 같은 이유다.
+do $$
+declare
+  v_owner    uuid;
+  v_source_a uuid;
+  v_source_b uuid;
+  v_profile  uuid;
+  v_moved    boolean := false;
+  v_range    boolean := false;
+  v_half     boolean := false;
+  v_orphan   boolean := false;
+  v_scheme   boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'place'::public.source_type, 'RLS 격리 검사용 장소 가')
+  returning id into v_source_a;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'place'::public.source_type, 'RLS 격리 검사용 장소 나')
+  returning id into v_source_b;
+
+  insert into public.place_profiles
+    (owner_id, source_id, latitude, longitude)
+  values (v_owner, v_source_a, 37.566826, 126.978656)
+  returning id into v_profile;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.place_profiles
+    set source_id = v_source_b where id = v_profile;
+  exception when others then
+    v_moved := true;
+  end;
+
+  -- 경도를 위도 칸에 넣은 경우.
+  begin
+    update public.place_profiles
+    set latitude = 126.978656 where id = v_profile;
+  exception when others then
+    v_range := true;
+  end;
+
+  begin
+    update public.place_profiles
+    set longitude = null where id = v_profile;
+  exception when others then
+    v_half := true;
+  end;
+
+  begin
+    update public.place_profiles
+    set external_id = '26338954' where id = v_profile;
+  exception when others then
+    v_orphan := true;
+  end;
+
+  begin
+    update public.place_profiles
+    set place_url = 'javascript:alert(1)' where id = v_profile;
+  exception when others then
+    v_scheme := true;
+  end;
+
+  reset role;
+
+  delete from public.place_profiles where id = v_profile;
+  delete from public.sources where id in (v_source_a, v_source_b);
+
+  if not v_moved then
+    raise exception
+      '검사 124 실패: 장소 정보가 붙은 자료를 바꿀 수 있었습니다.';
+  end if;
+
+  if not v_range then
+    raise exception
+      '검사 124 실패: 범위를 벗어난 위도가 저장되었습니다. 지도 링크가 바다 한가운데를 엽니다.';
+  end if;
+
+  if not v_half then
+    raise exception
+      '검사 124 실패: 좌표 한쪽만 저장되었습니다. 지도 링크가 오류 없이 엉뚱한 곳을 엽니다.';
+  end if;
+
+  if not v_orphan then
+    raise exception
+      '검사 124 실패: 어디서 받았는지 없는 장소 번호가 저장되었습니다. 다시 받아올 길이 없습니다.';
+  end if;
+
+  if not v_scheme then
+    raise exception
+      '검사 124 실패: javascript: 링크가 저장되었습니다. 누르는 순간 실행됩니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -7177,6 +7466,20 @@ select
     where outcome = 'failed'::public.ai_call_outcome)                   as AI_실패한_횟수,
   (select count(*) from public.ai_usage_events
     where created_at >= pg_catalog.date_trunc('month', now()))          as AI_이번달_횟수,
+  /*
+    장소. **무엇을 세는 칸인지 이름이 말하게 한다.** (VERIFICATION 4-30절)
+
+    좌표를 따로 세는 까닭. 장소는 담겼는데 좌표가 없으면 **화면에 지도
+    링크가 안 뜬다.** 오류는 나지 않으므로, 이 둘의 수가 벌어지는 것이
+    카카오에서 좌표를 못 받아오고 있다는 유일한 신호다.
+  */
+  (select count(*) from public.place_profiles)                          as 장소,
+  (select count(*) from public.place_profiles
+    where latitude is not null)                                         as 좌표_있는_장소,
+  (select count(*) from public.place_profiles
+    where visit_status = 'want_to_visit'::public.place_visit_status)     as 가볼_곳,
+  (select count(*) from public.place_profiles
+    where visit_status = 'visited'::public.place_visit_status)           as 가본_곳,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'
