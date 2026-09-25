@@ -112,8 +112,16 @@ export const EXTERNAL_PROCESSORS: readonly ExternalProcessor[] = [
   },
   {
     name: "Kakao",
-    role: "제목이나 ISBN으로 책 정보를 찾습니다.",
-    data: "찾으려는 책 제목 또는 ISBN",
+    /*
+      2026-09-25에 장소가 더해졌다. (17-1)
+
+      **회사가 늘지 않았어도 나가는 것이 늘었다.** 같은 REST 열쇠로 책도
+      찾고 장소도 찾는다. 표에 줄을 더할 일은 아니지만, 여기 적힌 두 줄은
+      고쳐야 한다. 적어둔 것이 실제로 나가는 것보다 좁으면 그것은 방침이
+      아니라 짐작이다.
+    */
+    role: "제목이나 ISBN으로 책 정보를 찾고, 이름으로 장소의 주소와 좌표를 찾습니다.",
+    data: "찾으려는 책 제목 또는 ISBN, 찾으려는 장소 이름",
     headerSet: "kakao",
   },
   {

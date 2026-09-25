@@ -36,6 +36,7 @@ import { getSourceById, listSources } from "@/lib/sources/queries";
 import { getBookProfile } from "@/lib/books/queries";
 import { getYoutubeProfile } from "@/lib/youtube/queries";
 import { getMediaProfile, listWatchProviders } from "@/lib/media/queries";
+import { getPlaceProfile } from "@/lib/places/queries";
 import { Panel, Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
@@ -72,6 +73,7 @@ import { BookPanel } from "../book-panel";
 import { YoutubePanel } from "../youtube-panel";
 import { YoutubePlayer } from "../youtube-player";
 import { MediaPanel } from "../media-panel";
+import { PlacePanel } from "../place-panel";
 import { WatchPanel } from "../watch-panel";
 import { MediaMomentForm } from "../media-moment-form";
 import { MusicPanel } from "../music-panel";
@@ -131,6 +133,7 @@ export default async function SourceDetailPage({
     youtubeProfile,
     mediaProfile,
     watchProviders,
+    placeProfile,
     placements,
     relations,
     allSources,
@@ -156,6 +159,8 @@ export default async function SourceDetailPage({
     source.type === "youtube" ? getYoutubeProfile(source.id) : null,
     source.type === "media" ? getMediaProfile(source.id) : null,
     source.type === "media" ? listWatchProviders(source.id) : [],
+    // 장소가 아닌 자료에는 조회하지 않는다.
+    source.type === "place" ? getPlaceProfile(source.id) : null,
     listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
@@ -539,6 +544,22 @@ export default async function SourceDetailPage({
           sourceId={source.id}
           sourceTitle={source.title}
           profile={youtubeProfile}
+          returnTo={returnTo}
+        />
+      ) : null}
+
+      {/*
+        장소 칸. 장소 유형일 때만 보여준다. (설계 문서 17-1절)
+
+        **지도를 그리지 않는다.** 좌표까지 담고 카카오맵·구글 지도로 가는
+        링크를 둔다. 영화·드라마의 `볼 수 있는 곳`과 같은 판단이다.
+      */}
+      {source.type === "place" ? (
+        <PlacePanel
+          sourceId={source.id}
+          sourceTitle={source.title}
+          description={source.description}
+          profile={placeProfile}
           returnTo={returnTo}
         />
       ) : null}

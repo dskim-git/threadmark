@@ -7283,6 +7283,9 @@ $$;
 --   출처 없는 번호    다시 받아올 길이 없다. 카카오 것인지 구글 것인지
 --                     모르는 채 남는다.
 --   javascript: 링크  누르는 순간 실행된다. 검사 106과 같은 이유다.
+--   빈 글자 주소      **실제로 이렇게 온다.** 카카오는 도로명 주소가 없는
+--                     곳에 null이 아니라 빈 글자를 준다. 그대로 담으면
+--                     화면은 주소가 있다고 보고 빈 줄만 띄운다.
 do $$
 declare
   v_owner    uuid;
@@ -7294,6 +7297,9 @@ declare
   v_half     boolean := false;
   v_orphan   boolean := false;
   v_scheme   boolean := false;
+  v_blank    boolean := false;
+  v_spaces   boolean := false;
+  v_postal   boolean := false;
 begin
   select user_id into v_owner
   from public.user_roles where role = 'admin'::public.app_role limit 1;
@@ -7356,6 +7362,36 @@ begin
     v_scheme := true;
   end;
 
+  -- 카카오가 실제로 주는 모양이다. 도로명 주소가 없으면 빈 글자로 온다.
+  begin
+    update public.place_profiles
+    set road_address = '' where id = v_profile;
+  exception when others then
+    v_blank := true;
+  end;
+
+  -- 공백만 든 것도 같다. 사람이 손으로 적을 때 이렇게 된다.
+  begin
+    update public.place_profiles
+    set category = '   ' where id = v_profile;
+  exception when others then
+    v_spaces := true;
+  end;
+
+  /*
+    우편번호도 빈 글자를 받지 않는다.
+
+    **다섯 자리로 못박지는 않는다.** 해외 장소는 손으로 적고 거기에는
+    글자가 섞인다(`SW1A 1AA`). 우편번호 하나 때문에 그 장소를 못 담게
+    만들지 않는다. 막는 것은 빈 글자와 너무 긴 값뿐이다.
+  */
+  begin
+    update public.place_profiles
+    set postal_code = '  ' where id = v_profile;
+  exception when others then
+    v_postal := true;
+  end;
+
   reset role;
 
   delete from public.place_profiles where id = v_profile;
@@ -7384,6 +7420,21 @@ begin
   if not v_scheme then
     raise exception
       '검사 124 실패: javascript: 링크가 저장되었습니다. 누르는 순간 실행됩니다.';
+  end if;
+
+  if not v_blank then
+    raise exception
+      '검사 124 실패: 빈 글자 주소가 저장되었습니다. 카카오가 실제로 이렇게 주며, 화면은 주소가 있다고 보고 빈 줄만 띄웁니다.';
+  end if;
+
+  if not v_spaces then
+    raise exception
+      '검사 124 실패: 공백만 든 분류가 저장되었습니다.';
+  end if;
+
+  if not v_postal then
+    raise exception
+      '검사 124 실패: 빈 글자 우편번호가 저장되었습니다.';
   end if;
 end
 $$;
@@ -7476,6 +7527,8 @@ select
   (select count(*) from public.place_profiles)                          as 장소,
   (select count(*) from public.place_profiles
     where latitude is not null)                                         as 좌표_있는_장소,
+  (select count(*) from public.place_profiles
+    where postal_code is not null)                                      as 우편번호_있는_장소,
   (select count(*) from public.place_profiles
     where visit_status = 'want_to_visit'::public.place_visit_status)     as 가볼_곳,
   (select count(*) from public.place_profiles

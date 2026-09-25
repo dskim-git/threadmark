@@ -844,6 +844,7 @@ export type Database = {
           owner_id: string
           phone: string | null
           place_url: string | null
+          postal_code: string | null
           provider: Database["public"]["Enums"]["place_provider"] | null
           road_address: string | null
           source_id: string
@@ -862,6 +863,7 @@ export type Database = {
           owner_id?: string
           phone?: string | null
           place_url?: string | null
+          postal_code?: string | null
           provider?: Database["public"]["Enums"]["place_provider"] | null
           road_address?: string | null
           source_id: string
@@ -882,6 +884,7 @@ export type Database = {
           owner_id?: string
           phone?: string | null
           place_url?: string | null
+          postal_code?: string | null
           provider?: Database["public"]["Enums"]["place_provider"] | null
           road_address?: string | null
           source_id?: string
