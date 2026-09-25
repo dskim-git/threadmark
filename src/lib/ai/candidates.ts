@@ -27,6 +27,11 @@
  *   낱말이 갈래 이름과 맞으면 그 갈래의 자료를 함께 모은다.
  *   (`question.ts`의 `matchingTypes`)
  *
+ * 딸린 정보 표도 뒤진다 (2026-09-25)
+ *   가수 이름, 장르, 배우, 학술지, 채널 이름, 그리고 **자기가 왜 그 책을
+ *   골랐는지 쓴 글**까지 검색이 한 번도 본 적이 없었다. 무엇을 어떻게
+ *   뒤지는지는 `profile-search.ts`에 적었다.
+ *
  * 무엇인지 함께 넘긴다
  *   후보에 넣는 것만으로는 모자랐다. **제목만 넘기면 `브레이킹 배드`가
  *   드라마인지 논문인지 AI가 알 수 없다.** 갈래 이름을 함께 넘긴다.
@@ -47,6 +52,10 @@ import {
 } from "@/lib/sources/types";
 import { createClient } from "@/lib/supabase/server";
 
+import {
+  PROFILE_SEARCH_TARGETS,
+  summarizeProfile,
+} from "./profile-search";
 import { matchingTypes } from "./question";
 import type { AskItem } from "./types";
 
@@ -116,7 +125,40 @@ export async function gatherCandidates(
   */
   const types = matchingTypes(keywords, SOURCE_TYPE_LABELS);
 
-  const [captureResult, sourceResult, typedResult] = await Promise.all([
+  /*
+    딸린 정보 표를 표마다 따로 묻는다. 까닭은 `profile-search.ts`에 적었다.
+    돌려받는 것은 자료 번호와 걸린 값들이다.
+  */
+  const profileQueries = PROFILE_SEARCH_TARGETS.flatMap((target) => {
+    const columns = ["source_id", ...target.text, ...target.arrays].join(",");
+    const queries = [];
+
+    if (target.text.length > 0) {
+      const filter = keywords
+        .map((keyword) => buildIlikeFilter(target.text, keyword))
+        .join(",");
+
+      queries.push(supabase.from(target.table).select(columns).or(filter));
+    }
+
+    /*
+      배열 칸은 낱말이 통째로 같은지로 찾는다. `overlaps`가 그 일을 한다.
+      글자를 이어 붙여 만들지 않으므로 중괄호를 손으로 막을 일이 없다.
+    */
+    for (const column of target.arrays) {
+      queries.push(
+        supabase
+          .from(target.table)
+          .select(columns)
+          .overlaps(column, keywords as string[]),
+      );
+    }
+
+    return queries;
+  });
+
+  const [captureResult, sourceResult, typedResult, ...profileResults] =
+    await Promise.all([
     supabase
       .from("captures")
       .select(
@@ -142,6 +184,7 @@ export async function gatherCandidates(
           .order("created_at", { ascending: false })
           .limit(MAX_SOURCES)
       : Promise.resolve({ data: [], error: null }),
+    ...profileQueries,
   ]);
 
   if (captureResult.error) {
@@ -162,6 +205,85 @@ export async function gatherCandidates(
     console.error(
       "[ThreadMark] AI 후보(갈래) 조회 실패:",
       typedResult.error.message,
+    );
+  }
+
+  /*
+    딸린 정보에서 걸린 자료 번호와, 걸린 값들을 모은다.
+
+    한 자료가 여러 표에서 걸릴 수 있다. 값은 이어 붙이고 겹치는 것은
+    한 번만 둔다.
+  */
+  const profileHits = new Map<string, string>();
+
+  for (const result of profileResults) {
+    if (result.error) {
+      console.error(
+        "[ThreadMark] AI 후보(딸린 정보) 조회 실패:",
+        result.error.message,
+      );
+
+      continue;
+    }
+
+    /*
+      칸 목록을 **실행 중에 만들기 때문에** 타입이 따라오지 못한다.
+      `profile-search.ts`의 목록을 보고 고르는 값이라 컴파일 시점에는
+      무엇이 올지 알 수 없다. 이 저장소의 다른 곳도 같은 자리에서
+      `as unknown as`를 쓴다. 모양은 아래에서 하나씩 확인한다.
+    */
+    const rows = (result.data ?? []) as unknown as Record<string, unknown>[];
+
+    for (const row of rows) {
+      const sourceId = row.source_id;
+
+      if (typeof sourceId !== "string") {
+        continue;
+      }
+
+      const summary = summarizeProfile(row);
+
+      if (summary.length === 0) {
+        continue;
+      }
+
+      const already = profileHits.get(sourceId);
+
+      profileHits.set(
+        sourceId,
+        already && !already.includes(summary)
+          ? `${already} · ${summary}`
+          : (already ?? summary),
+      );
+    }
+  }
+
+  /*
+    딸린 정보에서만 걸린 자료는 아직 `sources`를 읽지 않았다. 번호로 한 번에
+    읽어 온다. 이미 다른 길로 걸린 것은 뺀다.
+  */
+  const alreadyFound = new Set([
+    ...(sourceResult.data ?? []).map((row) => row.id),
+    ...(typedResult.data ?? []).map((row) => row.id),
+  ]);
+
+  const missingIds = [...profileHits.keys()].filter(
+    (id) => !alreadyFound.has(id),
+  );
+
+  const byProfile =
+    missingIds.length > 0
+      ? await supabase
+          .from("sources")
+          .select("id, type, title, subtitle, description, created_at")
+          .is("deleted_at", null)
+          .in("id", missingIds.slice(0, MAX_SOURCES))
+      : { data: [], error: null };
+
+  if (byProfile.error) {
+    console.error(
+      "[ThreadMark] AI 후보(딸린 정보의 자료) 조회 실패:",
+      byProfile.error.message,
     );
   }
 
@@ -226,6 +348,7 @@ export async function gatherCandidates(
 
   for (const row of [
     ...(sourceResult.data ?? []),
+    ...(byProfile.data ?? []),
     ...(typedResult.data ?? []),
   ]) {
     if (seenSources.has(row.id)) {
@@ -250,12 +373,21 @@ export async function gatherCandidates(
     */
     const head = `[${label}] ${row.title}`;
 
+    /*
+      딸린 정보에서 걸린 값을 함께 넘긴다. **`밤편지`라는 제목만 보면
+      그것이 아이유의 곡인지 알 수 없다.** 걸린 값 자체가 판단의 근거다.
+    */
+    const profile = profileHits.get(row.id);
+    const lines = [head, text, profile].filter(
+      (line): line is string => typeof line === "string" && line.length > 0,
+    );
+
     push({
       kind: "source",
       value: `source:${row.id}`,
       href: `/sources/${row.id}`,
       origin: `${row.title} (${label})`,
-      text: text.length > 0 ? `${head}\n${text}` : head,
+      text: lines.join("\n"),
     });
   }
 
