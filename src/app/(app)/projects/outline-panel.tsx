@@ -10,6 +10,8 @@ import type {
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
 import { ItemPicker } from "./item-picker";
+import { NodeSuggest } from "./node-suggest";
+import { SuggestPanel } from "./suggest-panel";
 import { PlacedPeek } from "./placed-peek";
 import { removePlacement, savePlacementNote } from "./placement-actions";
 import {
@@ -44,6 +46,8 @@ export function OutlinePanel({
   placements,
   tree,
   linked,
+  /** AI 설정이 되어 있는가. 서버에서 정해 넘긴다. */
+  aiConfigured,
 }: {
   projectId: string;
   items: readonly OutlineItem[];
@@ -53,6 +57,7 @@ export function OutlinePanel({
   tree: PickerTree;
   /** 이 프로젝트에 이어둔 것. `자리 못 찾은 것`을 세는 기준이다. */
   linked: readonly PlacementChoice[];
+  aiConfigured: boolean;
 }) {
   /*
     자리별로 한 번에 나눈다.
@@ -252,6 +257,18 @@ export function OutlinePanel({
                     )}
                   />
 
+                  {/*
+                    **이 자리에 어울리는 것을 담아둔 것 전부에서 찾는다.**
+                    (19-D-2, 사용자 요청) 고르는 창 바로 아래에 둔다.
+                    무엇을 놓을지 모를 때 누르는 것이라, 고르는 창을 열어
+                    훑어본 다음이 그 순간이다.
+                  */}
+                  <NodeSuggest
+                    projectId={projectId}
+                    nodeId={item.id}
+                    configured={aiConfigured}
+                  />
+
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-black/[.06] pt-3 dark:border-white/[.08]">
                     <MoveButton
                       projectId={projectId}
@@ -359,6 +376,17 @@ export function OutlinePanel({
               </li>
             ))}
           </ul>
+
+          {/*
+            **여기에 둔다.** 이 칸이 곧 "어디에 놓지"를 묻는 자리다.
+            자리마다 단추를 달면 뼈대가 스물한 자리일 때 스물한 번 물을 수
+            있게 되고, 한 달에 예순 번뿐이다. (19-D)
+          */}
+          <SuggestPanel
+            projectId={projectId}
+            unplacedCount={unplaced.length}
+            configured={aiConfigured}
+          />
         </section>
       ) : null}
 

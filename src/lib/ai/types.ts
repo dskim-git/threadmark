@@ -13,6 +13,14 @@ export type AskItem = {
   index: number;
   /** 자료인가 기록인가. 화면에서 어디로 보낼지 가른다. */
   kind: "source" | "capture";
+  /**
+   * `source:<id>` 또는 `capture:<id>`.
+   *
+   * **`href`로는 모자란다.** 기록의 `href`는 그 기록이 달린 **자료**의
+   * 화면을 가리킨다. 기록 자체를 가리키는 값이 따로 있어야 뼈대의 자리에
+   * 놓을 수 있다. (19-D의 `이 자리에 어울리는 것`)
+   */
+  value: string;
   /** 눌렀을 때 갈 곳. 없으면 누를 수 없다. */
   href: string | null;
   /** 어디서 나온 것인가. 사람이 읽을 한 줄. */

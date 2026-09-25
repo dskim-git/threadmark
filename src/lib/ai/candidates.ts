@@ -16,6 +16,21 @@
  *   19절이 "벡터 검색 전후 모두 owner_id와 공유 권한을 검사한다"고 못 박은
  *   것이 그 이야기다. 지금은 그 길이 없어서 RLS 하나로 충분하다.
  *
+ * 갈래 이름으로도 찾는다 (2026-09-25, 사용자가 찾음)
+ *   **`드라마`라는 낱말은 어디에도 저장되어 있지 않다.** 드라마 자료의
+ *   제목은 작품 이름이고 갈래는 `media`라는 값으로만 담긴다. 이름
+ *   `영화·드라마`는 코드에만 있다.
+ *
+ *   그래서 `내가 재미있게 보는 드라마는`이라는 자리에 담아둔 드라마가
+ *   있는데도 아무것도 추천되지 않았다. 글자로만 뒤지면 갈래를 물을 수 없다.
+ *
+ *   낱말이 갈래 이름과 맞으면 그 갈래의 자료를 함께 모은다.
+ *   (`question.ts`의 `matchingTypes`)
+ *
+ * 무엇인지 함께 넘긴다
+ *   후보에 넣는 것만으로는 모자랐다. **제목만 넘기면 `브레이킹 배드`가
+ *   드라마인지 논문인지 AI가 알 수 없다.** 갈래 이름을 함께 넘긴다.
+ *
  * 왜 기록을 자료보다 먼저 넣는가
  *   19절: "전체 PDF보다 사용자가 저장한 Capture를 우선 임베딩한다."
  *   임베딩이 아니라 넘기는 순서에도 같은 뜻이 든다. 자료의 제목과 설명은
@@ -25,8 +40,14 @@
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import { buildIlikeFilter } from "@/lib/search/query";
+import {
+  SOURCE_TYPE_LABELS,
+  getSourceTypeLabel,
+  isSourceType,
+} from "@/lib/sources/types";
 import { createClient } from "@/lib/supabase/server";
 
+import { matchingTypes } from "./question";
 import type { AskItem } from "./types";
 
 /** 기록은 최대 몇 개까지 모을까. */
@@ -89,11 +110,17 @@ export async function gatherCandidates(
     )
     .join(",");
 
-  const [captureResult, sourceResult] = await Promise.all([
+  /*
+    낱말이 갈래 이름과 맞으면 그 갈래를 통째로 모은다. 맞는 것이 없으면
+    이 질의는 아예 하지 않는다.
+  */
+  const types = matchingTypes(keywords, SOURCE_TYPE_LABELS);
+
+  const [captureResult, sourceResult, typedResult] = await Promise.all([
     supabase
       .from("captures")
       .select(
-        "id, capture_type, content, original_text, source_id, created_at, sources (title, deleted_at)",
+        "id, capture_type, content, original_text, source_id, created_at, sources (title, type, deleted_at)",
       )
       .is("deleted_at", null)
       .or(captureFilter)
@@ -101,11 +128,20 @@ export async function gatherCandidates(
       .limit(MAX_CAPTURES),
     supabase
       .from("sources")
-      .select("id, title, subtitle, description, created_at")
+      .select("id, type, title, subtitle, description, created_at")
       .is("deleted_at", null)
       .or(sourceFilter)
       .order("created_at", { ascending: false })
       .limit(MAX_SOURCES),
+    types.length > 0
+      ? supabase
+          .from("sources")
+          .select("id, type, title, subtitle, description, created_at")
+          .is("deleted_at", null)
+          .in("type", types)
+          .order("created_at", { ascending: false })
+          .limit(MAX_SOURCES)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (captureResult.error) {
@@ -119,6 +155,13 @@ export async function gatherCandidates(
     console.error(
       "[ThreadMark] AI 후보(자료) 조회 실패:",
       sourceResult.error.message,
+    );
+  }
+
+  if (typedResult.error) {
+    console.error(
+      "[ThreadMark] AI 후보(갈래) 조회 실패:",
+      typedResult.error.message,
     );
   }
 
@@ -144,7 +187,11 @@ export async function gatherCandidates(
       content: string | null;
       original_text: string | null;
       source_id: string | null;
-      sources: { title: string; deleted_at: string | null } | null;
+      sources: {
+        title: string;
+        type: string;
+        deleted_at: string | null;
+      } | null;
     };
 
     /*
@@ -162,24 +209,53 @@ export async function gatherCandidates(
 
     push({
       kind: "capture",
+      value: `capture:${record.id}`,
       href: record.source_id ? `/sources/${record.source_id}` : null,
-      origin: record.sources?.title ?? "자료에 붙지 않은 기록",
+      origin: record.sources
+        ? `${record.sources.title} (${getSourceTypeLabel(record.sources.type)})`
+        : "자료에 붙지 않은 기록",
       text,
     });
   }
 
-  for (const row of sourceResult.data ?? []) {
+  /*
+    낱말로 찾은 것과 갈래로 모은 것을 합친다. 겹치는 것은 한 번만 넣는다.
+    낱말로 찾은 쪽을 앞에 둔다. 그쪽이 더 또렷하게 걸린 것이다.
+  */
+  const seenSources = new Set<string>();
+
+  for (const row of [
+    ...(sourceResult.data ?? []),
+    ...(typedResult.data ?? []),
+  ]) {
+    if (seenSources.has(row.id)) {
+      continue;
+    }
+
+    seenSources.add(row.id);
+
+    const label = isSourceType(row.type)
+      ? getSourceTypeLabel(row.type)
+      : "기타";
+
     const text = [row.subtitle, row.description]
       .filter((value): value is string => typeof value === "string")
       .join("\n")
       .trim();
 
+    /*
+      **갈래 이름을 앞에 붙인다.** 제목만 넘기면 `브레이킹 배드`가
+      드라마인지 논문인지 AI가 알 수 없다. 설명이 비어 있는 자료도
+      제목과 갈래만으로 뜻이 있다.
+    */
+    const head = `[${label}] ${row.title}`;
+
     push({
       kind: "source",
+      value: `source:${row.id}`,
       href: `/sources/${row.id}`,
-      origin: row.title,
-      // 설명이 비어 있는 자료도 제목만으로 뜻이 있다.
-      text: text.length > 0 ? `${row.title}\n${text}` : row.title,
+      origin: `${row.title} (${label})`,
+      text: text.length > 0 ? `${head}\n${text}` : head,
     });
   }
 

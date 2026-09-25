@@ -18,8 +18,14 @@ import { createClient } from "@/lib/supabase/server";
 
 import { monthStart } from "./limits";
 
-/** 장부에 남길 갈래. 데이터베이스의 `ai_feature`와 같은 값이다. */
-export type AiFeature = "translation" | "search";
+/**
+ * 장부에 남길 갈래. 데이터베이스의 `ai_feature`와 같은 값이다.
+ *
+ * **여기와 데이터베이스가 어긋나면 장부에 못 쓴다.** 값을 더하려면
+ * 마이그레이션을 따로 하나 만들고(`ALTER TYPE ... ADD VALUE`는 같은
+ * 트랜잭션에서 쓸 수 없다), 그것을 올린 뒤 여기에 더한다.
+ */
+export type AiFeature = "translation" | "search" | "placement";
 
 /** 부른 결과. 데이터베이스의 `ai_call_outcome`과 같은 값이다. */
 export type AiOutcome = "ok" | "failed";

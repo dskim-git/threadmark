@@ -1481,7 +1481,7 @@ export type Database = {
     }
     Enums: {
       ai_call_outcome: "ok" | "failed"
-      ai_feature: "translation" | "search"
+      ai_feature: "translation" | "search" | "placement"
       app_role: "admin"
       book_holding: "paper" | "ebook" | "borrowed"
       book_reading_status: "unread" | "reading" | "finished"
@@ -1663,7 +1663,7 @@ export const Constants = {
   public: {
     Enums: {
       ai_call_outcome: ["ok", "failed"],
-      ai_feature: ["translation", "search"],
+      ai_feature: ["translation", "search", "placement"],
       app_role: ["admin"],
       book_holding: ["paper", "ebook", "borrowed"],
       book_reading_status: ["unread", "reading", "finished"],

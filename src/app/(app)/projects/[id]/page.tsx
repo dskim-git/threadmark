@@ -32,6 +32,8 @@ import {
 } from "../actions";
 import { Panel, Reveal } from "@/app/(app)/panel";
 
+import { isAiSearchConfigured } from "@/lib/ai/anthropic";
+
 import { OutlinePanel } from "../outline-panel";
 
 export const metadata: Metadata = {
@@ -165,6 +167,7 @@ export default async function ProjectDetailPage({
         items={outline}
         placements={placements}
         tree={pickerTree}
+        aiConfigured={isAiSearchConfigured()}
         linked={[
           ...linkedSources.map((source) => ({
             value: `source:${source.id}`,

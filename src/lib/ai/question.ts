@@ -202,3 +202,50 @@ export function extractKeywords(question: string): string[] {
 
   return found.slice(0, MAX_KEYWORDS);
 }
+
+/**
+ * 낱말이 자료 갈래의 이름과 맞는지 본다. (19-D-2를 쓰다가 찾음)
+ *
+ * 왜 필요한가
+ *   **`드라마`라는 낱말은 어디에도 저장되어 있지 않다.** 드라마 자료의
+ *   제목은 작품 이름이고(`브레이킹 배드`), 갈래는 `media`라는 값으로만
+ *   담긴다. `영화·드라마`라는 이름은 코드에만 있다.
+ *
+ *   그래서 `내가 재미있게 보는 드라마는`이라는 자리에 아무것도 추천되지
+ *   않았다. 담아둔 드라마가 있는데도 그랬다. 사용자가 찾았다.
+ *
+ *   **글자로 찾는 것만으로는 갈래를 물을 수 없다.** 그 자리를 여기서 메운다.
+ *
+ * 왜 짧은 낱말을 조심하는가
+ *   `이미지`라는 이름은 `이`를 품고 있다. 한 글자짜리 낱말로 갈래를 맞추면
+ *   `이`가 든 물음마다 이미지가 전부 딸려 온다.
+ *
+ *   그래서 **두 글자 이상일 때만 품고 있는지 보고**, 한 글자는 이름과
+ *   똑같을 때만 맞는 것으로 본다. `책`은 그 길로 맞는다.
+ *
+ * 넓어지는 것 자체는 괜찮다. 좁히는 일은 그다음에 AI가 한다.
+ * (AGENTS.md 2절 `좁혀서 못 찾으면 넓혀서 다시 묻는다`)
+ *
+ * 데이터베이스 의존성이 없는 순수 모듈이라 단위 검사로 검증한다.
+ *
+ * @param labels 갈래 값과 그 이름의 짝. 부르는 쪽이 넘긴다.
+ */
+export function matchingTypes<T extends string>(
+  keywords: readonly string[],
+  labels: Readonly<Record<T, string>>,
+): T[] {
+  const found: T[] = [];
+
+  for (const [type, label] of Object.entries(labels) as [T, string][]) {
+    const hit = keywords.some(
+      (keyword) =>
+        keyword === label || (keyword.length >= 2 && label.includes(keyword)),
+    );
+
+    if (hit) {
+      found.push(type);
+    }
+  }
+
+  return found;
+}

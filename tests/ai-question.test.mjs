@@ -20,6 +20,7 @@ import {
   MAX_KEYWORDS,
   MAX_QUESTION_LENGTH,
   extractKeywords,
+  matchingTypes,
   normalizeQuestion,
 } from "../src/lib/ai/question.ts";
 import {
@@ -196,4 +197,72 @@ test("번호를 하나도 적지 않은 답도 받는다", () => {
   // 근거를 밝히지 않은 답이다. 막지 않고 화면이 그 사실을 알린다.
   assert.deepEqual(citedIndices("근거 없이 그냥 답했습니다.", 3), []);
   assert.deepEqual(danglingIndices("근거 없이 그냥 답했습니다.", 3), []);
+});
+
+// -----------------------------------------------------------------------------
+// 갈래 이름으로 맞추기 (2026-09-25, 사용자가 찾음)
+// -----------------------------------------------------------------------------
+
+/** 실제 값과 같은 모양의 짝. 여기 이름이 바뀌면 검사도 함께 본다. */
+const LABELS = {
+  paper: "논문",
+  book: "책",
+  website: "웹사이트",
+  music: "음악",
+  youtube: "YouTube",
+  media: "영화·드라마",
+  pdf: "PDF",
+  image: "이미지",
+  note: "메모",
+};
+
+test("`드라마`가 영화·드라마 갈래와 맞는다", () => {
+  /*
+    **이 검사가 이 대목의 까닭 전부다.** `드라마`라는 낱말은 어디에도
+    저장되어 있지 않다. 제목은 작품 이름이고 갈래는 `media`라는 값이다.
+    담아둔 드라마가 있는데도 추천이 하나도 안 떴고, 사용자가 찾았다.
+  */
+  assert.deepEqual(matchingTypes(["드라마"], LABELS), ["media"]);
+});
+
+test("`영화`도 같은 갈래와 맞는다", () => {
+  // 한 이름이 둘을 덮고 있다. 갈라내는 일은 그다음에 AI가 한다.
+  assert.deepEqual(matchingTypes(["영화"], LABELS), ["media"]);
+});
+
+test("이름과 똑같으면 한 글자여도 맞는다", () => {
+  assert.deepEqual(matchingTypes(["책"], LABELS), ["book"]);
+});
+
+test("한 글자가 이름 안에 든 것만으로는 맞지 않는다", () => {
+  /*
+    `이미지`는 `이`를 품고 있다. 한 글자로 맞추면 `이`가 든 물음마다
+    이미지가 전부 딸려 온다.
+  */
+  assert.deepEqual(matchingTypes(["이"], LABELS), []);
+  assert.deepEqual(matchingTypes(["음"], LABELS), []);
+});
+
+test("맞는 것이 없으면 빈 목록이다", () => {
+  // 그때는 부르는 쪽이 갈래 질의를 아예 하지 않는다.
+  assert.deepEqual(matchingTypes(["모델링", "오류"], LABELS), []);
+});
+
+test("낱말이 여럿이면 맞는 갈래도 여럿이다", () => {
+  const found = matchingTypes(["논문", "책"], LABELS);
+
+  assert.ok(found.includes("paper"));
+  assert.ok(found.includes("book"));
+});
+
+test("물음에서 뽑은 낱말로 바로 이어진다", () => {
+  // 실제로 쓰이는 길을 그대로 밟아 본다.
+  const keywords = extractKeywords("내가 재미있게 보는 드라마는..");
+
+  assert.ok(keywords.includes("드라마"), "조사를 뗀 낱말이 있어야 한다");
+  assert.deepEqual(matchingTypes(keywords, LABELS), ["media"]);
+});
+
+test("낱말이 하나도 없으면 아무 갈래도 맞지 않는다", () => {
+  assert.deepEqual(matchingTypes([], LABELS), []);
 });

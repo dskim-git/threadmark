@@ -28,7 +28,14 @@ export const SOURCE_TYPES = [
 
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
-const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
+/**
+ * 갈래마다의 이름.
+ *
+ * **내보내는 까닭.** 이 이름은 데이터베이스에 없고 여기에만 있다. 그래서
+ * `드라마`로 자료를 찾을 길이 없었다. AI 후보를 모을 때 갈래 이름으로도
+ * 맞춰 보려면 이 짝이 필요하다. (`src/lib/ai/question.ts`의 `matchingTypes`)
+ */
+export const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
   paper: "논문",
   book: "책",
   website: "웹사이트",
