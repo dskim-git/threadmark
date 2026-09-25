@@ -24,7 +24,6 @@ import {
   PLACE_VISIT_STATUSES,
   GOOGLE_ENTERPRISE_PLACE_FIELDS,
   GOOGLE_PLACE_FIELDS,
-  canPickOnMap,
   canSearchByAddress,
   categoryLabel,
   coordinatePair,
@@ -32,6 +31,7 @@ import {
   isMapLoadFailure,
   isPlaceRegion,
   mapProviderForRegion,
+  readGoogleCoordinateAddress,
   readGooglePlaceCandidates,
   readCoordinateAddress,
   mapFailureMessage,
@@ -796,8 +796,6 @@ test("국내만 찾아줄 수 있다", () => {
   */
   assert.ok(canSearchByAddress("domestic"));
   assert.ok(!canSearchByAddress("overseas"));
-  assert.ok(canPickOnMap("domestic"));
-  assert.ok(!canPickOnMap("overseas"));
 });
 
 test("지도는 국내면 카카오맵, 해외면 구글 지도로 그린다", () => {
@@ -820,7 +818,6 @@ test("어느 지도를 그릴지와 찾아줄 수 있는지는 다른 물음이�
     찾는 것은 3차례가 되어야 된다. **그동안 두 값이 갈라져 있어야 한다.**
   */
   assert.equal(canSearchByAddress("overseas"), false);
-  assert.equal(canPickOnMap("overseas"), false);
   assert.equal(mapProviderForRegion("overseas"), "google");
 });
 
@@ -1055,4 +1052,89 @@ test("청한 수보다 많이 와도 그만큼만 남긴다", () => {
   }));
 
   assert.equal(readGooglePlaceCandidates(many, 10).length, 10);
+});
+
+// -----------------------------------------------------------------------------
+// 해외에서 찍은 자리의 주소 (17-3.4절 3차례)
+// -----------------------------------------------------------------------------
+
+test("구글이 좌표로 돌려준 주소를 읽는다", () => {
+  const address = readGoogleCoordinateAddress([
+    {
+      formatted_address: "5 Av. Anatole France, 75007 Paris, France",
+      address_components: [
+        { long_name: "5", short_name: "5", types: ["street_number"] },
+        { long_name: "75007", short_name: "75007", types: ["postal_code"] },
+      ],
+    },
+  ]);
+
+  assert.equal(address.address, "5 Av. Anatole France, 75007 Paris, France");
+  assert.equal(address.postalCode, "75007");
+});
+
+test("해외 주소의 도로명 칸은 비운다", () => {
+  /*
+    **해외에는 도로명과 지번이라는 구분이 없다.** 구글은 주소를 한 줄로
+    준다. 그 한 줄을 도로명 칸에 넣으면 국내 장소와 같은 뜻인 것처럼
+    보이는데 아니다. 이름으로 찾을 때와 같은 판단이다.
+  */
+  const address = readGoogleCoordinateAddress([
+    { formatted_address: "1 Chome-1-2 Oshiage, Sumida City, Tokyo, Japan" },
+  ]);
+
+  assert.equal(address.roadAddress, null);
+  assert.ok(address.address.startsWith("1 Chome"));
+});
+
+test("우편번호가 없어도 주소는 읽는다", () => {
+  // 우편번호가 없는 나라가 있고, 길 한가운데를 찍으면 구글도 주지 않는다.
+  const address = readGoogleCoordinateAddress([
+    {
+      formatted_address: "Serengeti National Park, Tanzania",
+      address_components: [
+        { long_name: "Tanzania", short_name: "TZ", types: ["country"] },
+      ],
+    },
+  ]);
+
+  assert.equal(address.postalCode, null);
+  assert.equal(address.address, "Serengeti National Park, Tanzania");
+});
+
+test("주소가 있는 첫 줄을 쓴다", () => {
+  /*
+    구글은 같은 자리를 건물·길·동네·시 차례로 여러 줄 돌려준다. 앞엣것일수록
+    좁고, 찍은 자리를 말하는 것은 좁은 쪽이다. 앞엣것에 주소가 없으면
+    다음 것을 본다.
+  */
+  const address = readGoogleCoordinateAddress([
+    { address_components: [] },
+    { formatted_address: "좁은 곳" },
+    { formatted_address: "넓은 곳" },
+  ]);
+
+  assert.equal(address.address, "좁은 곳");
+});
+
+test("줄 것이 없으면 null이다", () => {
+  // 바다 한가운데를 찍으면 구글도 줄 것이 없다. 그때는 좌표만 담는다.
+  assert.equal(readGoogleCoordinateAddress([]), null);
+  assert.equal(readGoogleCoordinateAddress(null), null);
+  assert.equal(readGoogleCoordinateAddress(undefined), null);
+  assert.equal(readGoogleCoordinateAddress([{ formatted_address: "  " }]), null);
+});
+
+test("우편번호가 아닌 조각을 우편번호로 읽지 않는다", () => {
+  const address = readGoogleCoordinateAddress([
+    {
+      formatted_address: "어딘가",
+      address_components: [
+        { long_name: "75007", short_name: "75007", types: ["street_number"] },
+        { long_name: "Paris", short_name: "Paris", types: ["locality"] },
+      ],
+    },
+  ]);
+
+  assert.equal(address.postalCode, null);
 });

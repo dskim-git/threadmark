@@ -130,7 +130,7 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
   {
     id: "google-maps",
     name: "Google 지도",
-    role: "해외 장소를 이름으로 찾고 그 지도를 보여줍니다.",
+    role: "해외 장소를 이름이나 지도에서 찾고 그 지도를 보여줍니다.",
     siteUrl: "https://www.google.com/maps",
     /*
       로고를 두지 않는다. 그리고 **이쪽은 그럴 만한 까닭이 더 분명하다.**

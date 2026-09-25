@@ -320,7 +320,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 1098개
+npm test          # node --test, 1104개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 npm run verify:split  # 003이 커서 SQL Editor가 끊길 때 조각낸다 (7절)
@@ -356,7 +356,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 이름으로 찾는다(2차례). `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`는 **브라우저
 전용**이고 HTTP 리퍼러 제한이 걸려 있어 **서버에서 부르면 거부된다.**
 카카오 REST 열쇠와 정반대라 국내 코드를 보고 해외를 만들면 늘 막힌다.
-아직 남은 것은 해외에서 지도 찍기(3차례)다.
+**세 차례가 모두 끝났다.** 지도, 이름으로 찾기, 지도에서 찍기다.
 
 **차례를 쓸 수 있게 되는 순서로 잡는다.** 지도를 먼저 만들었더니 사용자가
 "아직 아무것도 못하는 것 같다"고 했다. 좌표가 있어야 뜨는 지도인데 해외
@@ -1200,7 +1200,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1098개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1104개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (130검사) |

@@ -51,12 +51,31 @@ import { MapError } from "./map-sdk";
  */
 type GoogleLatLngLiteral = { lat: number; lng: number };
 
+type GoogleLatLng = {
+  lat: () => number;
+  lng: () => number;
+};
+
 type GoogleMap = {
   setCenter: (position: GoogleLatLngLiteral) => void;
+  /**
+   * 지도를 누른 것을 듣는다. (17-3.4절 3차례)
+   *
+   * `latLng`이 누른 자리다. **구글이 주는 것은 숫자가 아니라 객체**라
+   * `lat()`·`lng()`로 꺼낸다. 카카오의 `getLat()`과 이름만 다르다.
+   *
+   * 누른 자리가 없는 곳(지도 밖, 로고 위)을 누르면 `latLng`이 비어 온다.
+   */
+  addListener: (
+    type: "click",
+    handler: (event: { latLng?: GoogleLatLng | null }) => void,
+  ) => void;
 };
 
 type GoogleMarker = {
   setMap: (map: GoogleMap | null) => void;
+  /** 찍은 자리로 옮긴다. **새로 만들지 않는다.** 만들면 표시가 쌓인다. */
+  setPosition: (position: GoogleLatLngLiteral) => void;
 };
 
 export type GooglePlacesLibrary = {
@@ -80,8 +99,28 @@ export type GooglePlacesLibrary = {
   };
 };
 
+/**
+ * 좌표를 주소로 바꾸는 것. (17-3.4절 3차례)
+ *
+ * **라이브러리를 따로 받지 않아도 된다.** `Geocoder`는 기본에 들어 있다.
+ * 주소 스크립트에 `libraries=geocoding`을 붙이고 싶어지는데, 그 이름은
+ * 새 방식(`importLibrary`)의 것이라 옛 `libraries` 칸이 모른다.
+ */
+type GoogleGeocoderResult = {
+  formatted_address?: unknown;
+  address_components?: unknown;
+};
+
+export type GoogleGeocoder = {
+  geocode: (request: {
+    location: GoogleLatLngLiteral;
+    language?: string;
+  }) => Promise<{ results?: GoogleGeocoderResult[] }>;
+};
+
 export type GoogleMaps = {
   places?: GooglePlacesLibrary;
+  Geocoder?: new () => GoogleGeocoder;
   Map: new (
     container: HTMLElement,
     options: {
@@ -107,7 +146,8 @@ export type GoogleMaps = {
    */
   Marker: new (options: {
     position: GoogleLatLngLiteral;
-    map: GoogleMap;
+    /** 비워두면 지도에 붙지 않는다. 찍기 전에는 보이지 않아야 한다. */
+    map?: GoogleMap;
     title?: string;
   }) => GoogleMarker;
 };

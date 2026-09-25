@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { findGoogleAddressAtPoint } from "@/lib/places/google-geocode";
+import { loadGoogleMaps } from "@/lib/places/google-map-sdk";
 import {
   loadKakaoMaps,
   readMapFailure,
 } from "@/lib/places/map-sdk";
 import {
   mapFailureMessage,
+  mapProviderForRegion,
   type CoordinateAddress,
   type MapLoadFailure,
 } from "@/lib/places/places";
@@ -40,15 +43,26 @@ export type PickedPoint = {
  * 아래 입력 칸들은 볼 일이 없다. 칸 안에 지도를 하나 더 그리면 화면이
  * 길어져 무엇을 하는 중인지 알기 어려워진다. `띄워놓고 찾기`(16-A)와 같은
  * 판단이다.
+ *
+ * **국내와 해외가 다른 지도를 쓴다.** (17-3.4절 3차례) 카카오맵은 해외
+ * 자료가 부실해 찍을 것이 안 보이고, 좌표를 주소로 바꾸는 것도 국내만
+ * 된다. 해외는 구글 지도를 그리고 구글에 주소를 묻는다.
+ *
+ * **묻는 자리가 정반대다.** 국내는 우리 서버가 카카오에 묻고(Server
+ * Action), 해외는 이 브라우저가 구글에 직접 묻는다. 구글 열쇠에 리퍼러
+ * 제한이 걸려 있어 서버에서 부르면 거부되기 때문이다.
  */
 export function PlacePicker({
   /** 창을 열 때 지도가 놓일 자리. 이미 담아둔 좌표가 있으면 그곳이다. */
   startLatitude,
   startLongitude,
+  region,
   onPicked,
 }: {
   startLatitude: number | null;
   startLongitude: number | null;
+  /** 국내인지 해외인지. 어느 지도를 그리고 어디에 물을지 정한다. */
+  region: string;
   onPicked: (point: PickedPoint) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -67,6 +81,7 @@ export function PlacePicker({
         <PickerWindow
           startLatitude={startLatitude}
           startLongitude={startLongitude}
+          region={region}
           onClose={() => setOpen(false)}
           onPicked={(point) => {
             onPicked(point);
@@ -88,14 +103,17 @@ export function PlacePicker({
 function PickerWindow({
   startLatitude,
   startLongitude,
+  region,
   onClose,
   onPicked,
 }: {
   startLatitude: number | null;
   startLongitude: number | null;
+  region: string;
   onClose: () => void;
   onPicked: (point: PickedPoint) => void;
 }) {
+  const overseas = mapProviderForRegion(region) === "google";
   const box = useRef<HTMLDivElement | null>(null);
   const [failure, setFailure] = useState<MapLoadFailure | null>(null);
   const [picked, setPicked] = useState<{
@@ -123,96 +141,175 @@ function PickerWindow({
     let alive = true;
 
     /*
-      담아둔 좌표가 있으면 그 자리에서 시작한다. 없으면 서울시청이다.
+      담아둔 좌표가 있으면 그 자리에서 시작한다.
 
-      **아무 데나 두지 않는다.** 지도가 바다에서 시작하면 사용자가 먼저
-      할 일이 "우리 나라 찾기"가 된다. 시작 자리는 찍힌 것이 아니므로
-      표시를 두지 않는다.
+      **없을 때 어디서 시작할지가 국내와 해외에서 다르다.**
+
+      국내는 서울시청이다. 지도가 바다에서 시작하면 사용자가 먼저 할 일이
+      "우리 나라 찾기"가 된다.
+
+      해외는 그렇게 정할 자리가 없다. **어느 나라인지 우리가 모른다.**
+      한 곳을 골라두면 열에 아홉은 틀린 대륙에서 시작하고, 엉뚱한 곳에서
+      빠져나오는 것이 넓은 데서 찾아 들어오는 것보다 길다. 그래서 넓게
+      펴서 시작한다.
+
+      시작 자리는 찍힌 것이 아니므로 표시를 두지 않는다.
     */
+    const started = startLatitude !== null && startLongitude !== null;
     const startLat = startLatitude ?? 37.5666805;
     const startLng = startLongitude ?? 126.9784147;
 
-    loadKakaoMaps()
-      .then((maps) => {
-        const container = box.current;
+    /**
+     * 찍은 자리를 받아 주소까지 알아본다.
+     *
+     * **두 지도가 같은 일을 한다.** 다른 것은 어디에 묻느냐뿐이라 여기
+     * 한 곳에 둔다. 나눠 두면 한쪽만 고쳐지고, 그것은 오류 없이 "해외만
+     * 주소가 안 채워진다"로 나타난다.
+     */
+    const take = (lat: number, lng: number) => {
+      setPicked({ latitude: lat, longitude: lng });
+      setAddress(null);
+      setAsking(true);
+      setNotice(null);
 
-        if (!alive || !container) {
+      /*
+        찍자마자 주소를 물어본다. **누르고 나서 또 누르게 하지 않는다.**
+        찍는 것이 곧 "여기다"라는 뜻이고, 주소는 그 결과로 따라오는 값이다.
+
+        국내는 우리 서버가 카카오에 묻고, 해외는 이 브라우저가 구글에
+        직접 묻는다. 돌려주는 모양을 같게 맞춰 두어 아래가 한 벌로 끝난다.
+      */
+      const asked = overseas
+        ? findGoogleAddressAtPoint(lat, lng)
+        : findAddressAtPoint(lat, lng);
+
+      void asked.then((result) => {
+        if (!alive) {
           return;
         }
 
-        container.innerHTML = "";
+        setAsking(false);
 
-        const map = new maps.Map(container, {
-          center: new maps.LatLng(startLat, startLng),
-          level: 3,
-        });
+        if (!result.ok) {
+          setNotice(result.message);
 
-        /*
-          찍은 자리에 표시를 하나 둔다. **표시를 새로 만들지 않고 옮긴다.**
-          매번 만들면 찍은 자리마다 표시가 쌓여 어느 것이 지금 자리인지
-          알 수 없어진다.
-        */
-        const marker = new maps.Marker({ position: new maps.LatLng(startLat, startLng) });
-
-        // 담아둔 좌표가 있으면 그 자리를 이미 찍힌 것으로 본다.
-        if (startLatitude !== null && startLongitude !== null) {
-          marker.setMap(map);
-          setPicked({ latitude: startLatitude, longitude: startLongitude });
+          return;
         }
 
-        maps.event.addListener(map, "click", (event) => {
-          const point = event.latLng;
-          const lat = point.getLat();
-          const lng = point.getLng();
-
-          marker.setPosition(point);
-          marker.setMap(map);
-
-          setPicked({ latitude: lat, longitude: lng });
-          setAddress(null);
-          setAsking(true);
-          setNotice(null);
-
-          /*
-            찍자마자 주소를 물어본다. **누르고 나서 또 누르게 하지 않는다.**
-            찍는 것이 곧 "여기다"라는 뜻이고, 주소는 그 결과로 따라오는
-            값이다.
-          */
-          void findAddressAtPoint(lat, lng).then((result) => {
-            if (!alive) {
-              return;
-            }
-
-            setAsking(false);
-
-            if (!result.ok) {
-              setNotice(result.message);
-
-              return;
-            }
-
-            setAddress(result.address);
-            setNotice(
-              result.address === null
-                ? "그 자리의 주소를 찾지 못했습니다. 좌표만 담고 주소는 손으로 적으셔도 됩니다."
-                : null,
-            );
-          });
-        });
-
-        map.relayout();
-        map.setCenter(new maps.LatLng(startLat, startLng));
-      })
-      .catch((error: unknown) => {
-        if (alive) {
-          setFailure(readMapFailure(error));
-        }
+        setAddress(result.address);
+        setNotice(
+          result.address === null
+            ? "그 자리의 주소를 찾지 못했습니다. 좌표만 담고 주소는 손으로 적으셔도 됩니다."
+            : null,
+        );
       });
+    };
+
+    const drawKakao = async () => {
+      const maps = await loadKakaoMaps();
+      const container = box.current;
+
+      if (!alive || !container) {
+        return;
+      }
+
+      container.innerHTML = "";
+
+      const map = new maps.Map(container, {
+        center: new maps.LatLng(startLat, startLng),
+        level: 3,
+      });
+
+      /*
+        찍은 자리에 표시를 하나 둔다. **표시를 새로 만들지 않고 옮긴다.**
+        매번 만들면 찍은 자리마다 표시가 쌓여 어느 것이 지금 자리인지
+        알 수 없어진다.
+      */
+      const marker = new maps.Marker({
+        position: new maps.LatLng(startLat, startLng),
+      });
+
+      // 담아둔 좌표가 있으면 그 자리를 이미 찍힌 것으로 본다.
+      if (started) {
+        marker.setMap(map);
+        setPicked({ latitude: startLat, longitude: startLng });
+      }
+
+      maps.event.addListener(map, "click", (event) => {
+        const point = event.latLng;
+
+        marker.setPosition(point);
+        marker.setMap(map);
+
+        take(point.getLat(), point.getLng());
+      });
+
+      map.relayout();
+      map.setCenter(new maps.LatLng(startLat, startLng));
+    };
+
+    const drawGoogle = async () => {
+      const maps = await loadGoogleMaps();
+      const container = box.current;
+
+      if (!alive || !container) {
+        return;
+      }
+
+      container.innerHTML = "";
+
+      const center = started
+        ? { lat: startLat, lng: startLng }
+        : /*
+            담아둔 자리가 없을 때. 위도 20도쯤이 대륙이 고르게 보이는
+            자리다. 특정 나라를 가운데 두지 않는다.
+          */
+          { lat: 20, lng: 0 };
+
+      const map = new maps.Map(container, {
+        center,
+        // 담아둔 자리가 있으면 골목까지, 없으면 대륙이 다 보이게.
+        zoom: started ? 16 : 2,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      });
+
+      const marker = new maps.Marker({ position: center });
+
+      if (started) {
+        marker.setMap(map);
+        setPicked({ latitude: startLat, longitude: startLng });
+      }
+
+      map.addListener("click", (event) => {
+        const point = event.latLng;
+
+        // 지도 밖이나 로고 위를 누르면 자리가 비어 온다. 그때는 아무 일도 없다.
+        if (!point) {
+          return;
+        }
+
+        const lat = point.lat();
+        const lng = point.lng();
+
+        marker.setPosition({ lat, lng });
+        marker.setMap(map);
+
+        take(lat, lng);
+      });
+    };
+
+    (overseas ? drawGoogle() : drawKakao()).catch((error: unknown) => {
+      if (alive) {
+        setFailure(readMapFailure(error));
+      }
+    });
 
     return () => {
       alive = false;
     };
-  }, [startLatitude, startLongitude]);
+  }, [startLatitude, startLongitude, overseas]);
 
   return (
     <div

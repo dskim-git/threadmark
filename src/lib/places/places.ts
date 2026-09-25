@@ -122,8 +122,12 @@ export function getPlaceRegionLabel(value: unknown): string {
   | | 국내 | 해외 |
   | --- | --- | --- |
   | 이름으로 찾기 | 카카오 | **구글** |
+  | 지도에서 찍기 | 카카오 | **구글** |
   | 주소로 찾기 | 카카오 | 아직 |
-  | 지도에서 찍기 | 카카오 | 아직 |
+
+  주소로 찾기만 남았다. 그 길은 우편번호가 오는 유일한 자리이고 도로명과
+  지번을 갈라서 주는데, **해외에는 그 구분 자체가 없다.** 만들 것이
+  남았다기보다 해외에는 없는 길이다.
 
   모르는 값에는 국내로 답한다. `region`의 기본값이 `domestic`이고
   데이터베이스가 `not null`로 같은 것을 지킨다.
@@ -150,15 +154,17 @@ export function canSearchByAddress(value: unknown): boolean {
   return isPlaceRegion(value) ? value === "domestic" : true;
 }
 
-/**
- * 지도에서 찍어 담을 수 있는가. **아직 국내만 된다.**
- *
- * 찍은 좌표를 주소로 바꾸는 일을 카카오의 `coord2address`가 한다. 해외는
- * 구글 Geocoding으로 같은 일을 할 수 있고 3차례에서 만든다. (17-3.4절)
- */
-export function canPickOnMap(value: unknown): boolean {
-  return isPlaceRegion(value) ? value === "domestic" : true;
-}
+/*
+  지도에서 찍는 길에는 함수를 두지 않는다. **양쪽 다 되기 때문이다.**
+  (17-3.4절 3차례) 국내는 카카오맵을 그리고 카카오의 `coord2address`에
+  묻고, 해외는 구글 지도를 그리고 구글 Geocoding에 묻는다.
+
+  이름으로 찾기와 같은 자리다. 늘 참을 돌려주는 함수를 두면, 읽는 사람은
+  어딘가에 막히는 경우가 있는 줄 알고 그것을 찾는다.
+
+  어느 지도를 그리고 어디에 물을지는 화면이 `mapProviderForRegion`으로
+  정한다.
+*/
 
 /**
  * 그 쪽 장소의 지도를 어느 것으로 그리는가. (17-3.4절)
@@ -914,4 +920,82 @@ export function readGooglePlaceCandidates(
     .map(readGooglePlaceCandidate)
     .filter((candidate): candidate is PlaceCandidate => candidate !== null)
     .slice(0, limit);
+}
+
+/**
+ * 구글이 좌표로 돌려준 주소를 읽는다. (17-3.4절 3차례)
+ *
+ * **도로명 주소를 비운다.** 해외에는 도로명과 지번이라는 구분 자체가 없다.
+ * 구글은 주소를 한 줄로 준다. 그 한 줄을 도로명 칸에 넣으면 국내 장소와
+ * 같은 뜻인 것처럼 보이는데 아니다. 지번 칸에 넣는다. 이름으로 찾을 때와
+ * 같은 판단이다. (`readGooglePlaceCandidate`)
+ *
+ * **우편번호는 조각에서 꺼낸다.** 구글은 한 줄짜리 주소와 별개로 조각
+ * 목록을 함께 주고, 그 안에 우편번호가 `postal_code` 갈래로 들어 있다.
+ * 한 줄 안에도 들어 있지만 거기서 뽑아내려면 나라마다 다른 자리를
+ * 짐작해야 한다. **짐작하지 않고 구글이 갈라준 것을 쓴다.**
+ *
+ * **가장 앞엣것을 쓴다.** 구글은 같은 자리를 건물·길·동네·시 차례로 여러
+ * 줄 돌려주는데, 앞엣것일수록 좁다. 찍은 자리를 말하는 것은 좁은 쪽이다.
+ * 앞엣것에 주소가 없으면 다음 것을 본다.
+ */
+export function readGoogleCoordinateAddress(
+  value: unknown,
+): CoordinateAddress | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+
+    const row = entry as Record<string, unknown>;
+    const address = placeText(row.formatted_address, MAX_ADDRESS_LENGTH);
+
+    if (address === null) {
+      continue;
+    }
+
+    return {
+      roadAddress: null,
+      address,
+      postalCode: readPostalComponent(row.address_components),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 주소 조각에서 우편번호를 꺼낸다.
+ *
+ * **없는 곳이 많다.** 우편번호가 없는 나라도 있고, 건물이 아니라 길
+ * 한가운데를 찍으면 구글도 주지 않는다. 없으면 비운다.
+ */
+function readPostalComponent(value: unknown): string | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+
+    const row = entry as Record<string, unknown>;
+
+    if (!Array.isArray(row.types) || !row.types.includes("postal_code")) {
+      continue;
+    }
+
+    const found = postalCode(row.long_name) ?? postalCode(row.short_name);
+
+    if (found !== null) {
+      return found;
+    }
+  }
+
+  return null;
 }

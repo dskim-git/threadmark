@@ -8,7 +8,6 @@ import type { AddressCandidate, PlaceCandidate } from "@/lib/places/kakao";
 import {
   PLACE_REGIONS,
   PLACE_VISIT_STATUSES,
-  canPickOnMap,
   canSearchByAddress,
   categoryLabel,
   getPlaceRegionLabel,
@@ -385,7 +384,26 @@ export function PlacePanel({
 
   /** 지도에서 찍은 자리로 칸을 채운다. **이름은 건드리지 않는다.** */
   function usePickedPoint(point: PickedPoint) {
-    setProvider("kakao");
+    /*
+      **어디서 왔는지를 그대로 적는다.** 국내는 카카오가, 해외는 구글이
+      좌표를 주소로 바꿔준다. 데이터베이스가 `국내는 카카오, 해외는 구글`을
+      짝으로 묶어 두었고(`place_profiles_region_provider_match`), 틀리게
+      적으면 저장할 때 걸린다. 그때 화면에는 "저장하지 못했습니다" 한 줄만
+      뜨고 어느 값이 문제였는지 알 수 없다.
+    */
+    setProvider(overseas ? "google" : "kakao");
+
+    /*
+      **장소 번호를 비운다.** 앞서 후보를 눌러 채웠다면 그 번호는 그 가게를
+      가리키는데, 지도에서 다른 자리를 찍은 뒤에는 **좌표와 주소가 그 가게의
+      것이 아니다.** 번호만 남겨두면 "이 값들은 그 가게에서 왔다"는 틀린
+      주장이 남고, 나중에 그 번호로 다시 받아오면 엉뚱한 곳이 온다.
+
+      국내·해외를 바꿀 때 비우는 것과 같은 생각이다.
+    */
+    setExternalId("");
+    setPlaceUrl("");
+
     setLat(String(point.latitude));
     setLng(String(point.longitude));
 
@@ -416,7 +434,6 @@ export function PlacePanel({
   */
   const overseas = region === "overseas";
   const addressSearchable = canSearchByAddress(region);
-  const pickable = canPickOnMap(region);
   const hasPair = lat !== "" && lng !== "";
   const latNumber = Number(lat);
   const lngNumber = Number(lng);
@@ -487,7 +504,7 @@ export function PlacePanel({
           */}
           <p className="text-xs leading-5 text-zinc-500">
             {overseas
-              ? "이름으로 찾을 수 있습니다. 구글 지도에서 가져옵니다. 주소로 찾기와 지도에서 찍기는 아직 국내만 됩니다."
+              ? "이름으로 찾거나 지도에서 찍어 담을 수 있습니다. 구글 지도에서 가져옵니다. 주소로 찾기는 국내만 됩니다."
               : "이름이나 주소로 찾을 수 있고, 지도에서 찍어 담을 수도 있습니다."}
           </p>
         </div>
@@ -529,13 +546,12 @@ export function PlacePanel({
               적으려다 막힌 그 자리에 있어야 한다. 아래에 두면 찾다가
               포기한 사람이 거기까지 내려가지 않는다.
             */}
-            {pickable ? (
-              <PlacePicker
-                startLatitude={canLink ? latNumber : null}
-                startLongitude={canLink ? lngNumber : null}
-                onPicked={usePickedPoint}
-              />
-            ) : null}
+            <PlacePicker
+              startLatitude={canLink ? latNumber : null}
+              startLongitude={canLink ? lngNumber : null}
+              region={region}
+              onPicked={usePickedPoint}
+            />
           </div>
         </label>
 
