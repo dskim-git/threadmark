@@ -48,6 +48,14 @@ export const EXPORTED_TABLES = [
   "capture_tags",
   "project_outline_nodes",
   "project_node_items",
+  /*
+    AI를 언제 얼마나 불렀는가. **이용자 자신의 기록이므로 담는다.**
+
+    운영에 관한 것이 아니다. `admin_audit_logs`는 우리가 무엇을 했는가이고
+    이것은 이용자가 무엇을 했는가다. 담아둔 글은 여기 들어 있지 않고
+    부른 횟수와 글자 수만 있다.
+  */
+  "ai_usage_events",
 ] as const;
 
 /**

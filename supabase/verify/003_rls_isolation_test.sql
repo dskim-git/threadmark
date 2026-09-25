@@ -6836,6 +6836,270 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 117. 남의 AI 사용 기록은 보이지 않는다
+-- -----------------------------------------------------------------------------
+-- 이 장부는 "누가 얼마나 썼는가"다. 남의 것이 보이면 남이 무엇을 하고
+-- 있는지가 보인다. 담은 글이 없어도 횟수만으로 드러나는 것이 있다.
+do $$
+declare
+  v_owner uuid;
+  v_other uuid;
+  v_row   uuid;
+  v_seen  integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.ai_usage_events
+    (owner_id, feature, provider, model, input_tokens, output_tokens, outcome)
+  values
+    (v_owner, 'search'::public.ai_feature, 'anthropic', 'claude-opus-5',
+     100, 20, 'ok'::public.ai_call_outcome)
+  returning id into v_row;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.ai_usage_events where id = v_row;
+
+  reset role;
+
+  delete from public.ai_usage_events where id = v_row;
+
+  if v_seen > 0 then
+    raise exception
+      '검사 117 실패: 다른 사용자의 AI 사용 기록이 보였습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 118. 소유자를 클라이언트가 정하지 못한다
+-- -----------------------------------------------------------------------------
+-- 남의 이름으로 기록을 남길 수 있으면 **남의 한도를 대신 써버릴 수 있다.**
+-- 값을 명시해 보내도 트리거가 지금 로그인한 사람으로 바꾼다.
+do $$
+declare
+  v_owner  uuid;
+  v_other  uuid;
+  v_row    uuid;
+  v_actual uuid;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 일부러 남(v_owner)의 것이라고 적어 보낸다.
+  insert into public.ai_usage_events
+    (owner_id, feature, provider, model, outcome)
+  values
+    (v_owner, 'search'::public.ai_feature, 'anthropic', 'claude-opus-5',
+     'ok'::public.ai_call_outcome)
+  returning id into v_row;
+
+  reset role;
+
+  select owner_id into v_actual
+  from public.ai_usage_events where id = v_row;
+
+  delete from public.ai_usage_events where id = v_row;
+
+  if v_actual <> v_other then
+    raise exception
+      '검사 118 실패: 보낸 owner_id가 그대로 들어갔습니다. 남의 한도를 대신 쓸 수 있습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 119. 내 기록은 남기고 읽을 수 있다
+-- -----------------------------------------------------------------------------
+-- **막는 것만 검사하면 과잉 차단을 놓친다.** (AGENTS.md 5절 6번)
+-- 장부에 아무것도 못 넣으면 AI 기능 자체가 돌지 않는데, 그때 나는 오류는
+-- "권한이 없다"가 아니라 그냥 기능이 안 되는 것으로 보인다.
+do $$
+declare
+  v_owner uuid;
+  v_other uuid;
+  v_row   uuid;
+  v_seen  integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.ai_usage_events
+    (feature, provider, model, input_tokens, output_tokens, outcome)
+  values
+    ('search'::public.ai_feature, 'anthropic', 'claude-opus-5',
+     1200, 300, 'ok'::public.ai_call_outcome)
+  returning id into v_row;
+
+  select count(*) into v_seen
+  from public.ai_usage_events where id = v_row;
+
+  reset role;
+
+  delete from public.ai_usage_events where id = v_row;
+
+  if v_row is null or v_seen <> 1 then
+    raise exception
+      '검사 119 실패: 본인의 AI 사용 기록을 남기거나 읽지 못했습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 120. 자기 기록도 고칠 수 없다
+-- -----------------------------------------------------------------------------
+-- **고칠 수 있는 장부는 장부가 아니다.** 글자 수를 0으로 바꾸면 한도가
+-- 비켜 간다. 정책이 없는 것과 권한이 없는 것을 함께 걸어 두었고,
+-- 여기서 실제로 막히는지 본다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_row     uuid;
+  v_blocked boolean := false;
+  v_changed integer := 0;
+  v_tokens  integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.ai_usage_events
+    (owner_id, feature, provider, model, input_tokens, output_tokens, outcome)
+  values
+    (v_other, 'search'::public.ai_feature, 'anthropic', 'claude-opus-5',
+     5000, 800, 'ok'::public.ai_call_outcome)
+  returning id into v_row;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.ai_usage_events
+      set input_tokens = 0, output_tokens = 0
+    where id = v_row;
+    get diagnostics v_changed = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  select input_tokens into v_tokens
+  from public.ai_usage_events where id = v_row;
+
+  delete from public.ai_usage_events where id = v_row;
+
+  if not v_blocked or v_changed > 0 or v_tokens <> 5000 then
+    raise exception
+      '검사 120 실패: 자기 AI 사용 기록을 고칠 수 있었습니다. 한도를 비켜 갈 수 있습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 121. 자기 기록도 지울 수 없다
+-- -----------------------------------------------------------------------------
+-- 지울 수 있으면 한도에 걸린 사람이 장부를 비우고 다시 쓰면 그만이다.
+-- 고치기(120)를 막고 지우기를 열어두면 막은 뜻이 없어진다. 둘은 한 쌍이다.
+do $$
+declare
+  v_owner    uuid;
+  v_other    uuid;
+  v_row      uuid;
+  v_blocked  boolean := false;
+  v_removed  integer := 0;
+  v_survived integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.ai_usage_events
+    (owner_id, feature, provider, model, outcome)
+  values
+    (v_other, 'search'::public.ai_feature, 'anthropic', 'claude-opus-5',
+     'ok'::public.ai_call_outcome)
+  returning id into v_row;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    delete from public.ai_usage_events where id = v_row;
+    get diagnostics v_removed = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  select count(*) into v_survived
+  from public.ai_usage_events where id = v_row;
+
+  delete from public.ai_usage_events where id = v_row;
+
+  if not v_blocked or v_removed > 0 or v_survived <> 1 then
+    raise exception
+      '검사 121 실패: 자기 AI 사용 기록을 지울 수 있었습니다. 장부를 비우고 다시 쓸 수 있습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -6904,6 +7168,15 @@ select
   */
   (select pg_catalog.max(watch_synced_at)::date
      from public.media_profiles)                                        as 볼_곳_받은_날,
+  /*
+    AI를 부른 횟수. **무엇을 세는 칸인지 이름이 말하게 한다.**
+    (VERIFICATION 4-30절) 앞의 둘은 통째로 센 것이고 마지막만 이번 달이다.
+  */
+  (select count(*) from public.ai_usage_events)                         as AI_부른_횟수,
+  (select count(*) from public.ai_usage_events
+    where outcome = 'failed'::public.ai_call_outcome)                   as AI_실패한_횟수,
+  (select count(*) from public.ai_usage_events
+    where created_at >= pg_catalog.date_trunc('month', now()))          as AI_이번달_횟수,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

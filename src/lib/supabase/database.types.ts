@@ -50,6 +50,42 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_usage_events: {
+        Row: {
+          created_at: string
+          feature: Database["public"]["Enums"]["ai_feature"]
+          id: string
+          input_tokens: number
+          model: string
+          outcome: Database["public"]["Enums"]["ai_call_outcome"]
+          output_tokens: number
+          owner_id: string
+          provider: string
+        }
+        Insert: {
+          created_at?: string
+          feature: Database["public"]["Enums"]["ai_feature"]
+          id?: string
+          input_tokens?: number
+          model: string
+          outcome: Database["public"]["Enums"]["ai_call_outcome"]
+          output_tokens?: number
+          owner_id?: string
+          provider: string
+        }
+        Update: {
+          created_at?: string
+          feature?: Database["public"]["Enums"]["ai_feature"]
+          id?: string
+          input_tokens?: number
+          model?: string
+          outcome?: Database["public"]["Enums"]["ai_call_outcome"]
+          output_tokens?: number
+          owner_id?: string
+          provider?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           description: string | null
@@ -1444,6 +1480,8 @@ export type Database = {
       }
     }
     Enums: {
+      ai_call_outcome: "ok" | "failed"
+      ai_feature: "translation" | "search"
       app_role: "admin"
       book_holding: "paper" | "ebook" | "borrowed"
       book_reading_status: "unread" | "reading" | "finished"
@@ -1624,6 +1662,8 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_call_outcome: ["ok", "failed"],
+      ai_feature: ["translation", "search"],
       app_role: ["admin"],
       book_holding: ["paper", "ebook", "borrowed"],
       book_reading_status: ["unread", "reading", "finished"],

@@ -74,6 +74,8 @@ const PROTECTED_TABLES = [
   "youtube_profiles",
   "media_profiles",
   "media_watch_providers",
+  // 16-A-1. AI를 부른 기록. 고칠 수도 지울 수도 없는 장부라 정책이 둘뿐이다.
+  "ai_usage_events",
 ];
 
 /**
@@ -422,6 +424,76 @@ test("격리 검사가 모든 앱 테이블을 다룬다", () => {
     missing,
     [],
     `이 표의 격리 검사가 003_rls_isolation_test.sql에 없다: ${missing.join(", ")}`,
+  );
+});
+
+/**
+ * 소유자를 정하는 트리거는 auth.uid()가 있을 때만 덮어쓴다.
+ *
+ * **2026-09-25에 이 자리에서 막혔다.** `ai_usage_events`의 트리거를
+ * 이렇게 썼다.
+ *
+ *     new.owner_id := auth.uid();
+ *     if new.owner_id is null then raise exception ...
+ *
+ * 로그인하지 않은 컨텍스트에서 넣는 길이 통째로 막혔다. 003 격리 검사가
+ * 검사용 줄을 미리 심을 때가 그 경우이고, 검사가 거기서 멈췄다.
+ *
+ * **앱에서는 드러나지 않는 고장이다.** 앱은 언제나 로그인한 세션으로
+ * 넣으므로 `auth.uid()`가 늘 있다. 이 파일의 다른 검사들도 잡지 못했다.
+ * 글자가 있는지만 보기 때문이다. 실제로 돌려봐야만 나왔다.
+ *
+ * 집안의 다른 트리거 열일곱 개는 전부 감싼 모양이었다. **하나만 달랐고,
+ * 다른 줄 알 방법이 없었다.** 그래서 검사로 적는다.
+ *
+ * 감싸지 않아도 보안은 같다. 지키려는 것은 "로그인한 사용자가 남의 이름으로
+ * 남기지 못한다"이고, 로그인한 세션에서는 `auth.uid()`가 늘 있어 반드시
+ * 덮어쓴다. `auth.uid()`가 없는 쪽은 `postgres`와 `service_role`뿐이며
+ * 그쪽은 이미 무엇이든 할 수 있다.
+ *
+ * **지금 살아 있는 정의만 본다.** `create or replace`로 고친 함수는 앞
+ * 파일에 옛 정의가 그대로 남아 있다. 옛 정의까지 보면 고쳐놓고도 실패한다.
+ * (AGENTS.md 6절 `지금 살아 있는 정의부터 찾는다`)
+ */
+test("소유자 트리거는 auth.uid()가 있을 때만 덮어쓴다", () => {
+  /** 함수 이름 -> 마지막으로 나온 본문. 파일 이름 순서가 곧 적용 순서다. */
+  const latest = new Map();
+
+  for (const name of migrationFiles) {
+    const text = readFileSync(path.join(migrationsDir, name), "utf8");
+    const pattern =
+      /create\s+or\s+replace\s+function\s+public\.(\w+)\s*\([^)]*\)([\s\S]*?)\n\$\$;/g;
+
+    for (const [, functionName, body] of text.matchAll(pattern)) {
+      latest.set(functionName, { body, file: name });
+    }
+  }
+
+  const offenders = [];
+
+  for (const [functionName, { body, file }] of latest) {
+    /*
+      주석은 떼고 본다. 이 커밋의 설명글에도 나쁜 모양이 인용되어 있어,
+      떼지 않으면 설명을 적었다는 이유로 실패한다.
+    */
+    const code = body
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+
+    if (!/new\.owner_id\s*:=\s*auth\.uid\(\)/.test(code)) {
+      continue;
+    }
+
+    if (!/if\s+auth\.uid\(\)\s+is\s+not\s+null\s+then/.test(code)) {
+      offenders.push(`${functionName} (${file})`);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `이 트리거가 auth.uid()를 확인하지 않고 owner_id를 덮어쓴다. 로그인하지 않은 컨텍스트에서 넣는 길이 막힌다: ${offenders.join(", ")}`,
   );
 });
 
