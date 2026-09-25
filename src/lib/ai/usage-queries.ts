@@ -13,7 +13,7 @@
  *   코드가 해야 하고, 그 한 줄을 빠뜨리면 남의 장부가 보인다.
  */
 
-import { requireActiveAccount } from "@/lib/auth/account";
+import { requireActiveAccount, requireAdminAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
 import {
@@ -22,15 +22,21 @@ import {
   monthStart,
   type AiCallDecision,
 } from "./limits";
+import {
+  emptyTally,
+  sumGrantsByOwner,
+  tallyByOwner,
+  type AiFeature,
+  type FeatureTally,
+} from "./usage-summary";
 
 /**
- * 장부에 남길 갈래. 데이터베이스의 `ai_feature`와 같은 값이다.
+ * 장부에 남길 갈래. 값은 `usage-summary.ts`가 들고 있다.
  *
- * **여기와 데이터베이스가 어긋나면 장부에 못 쓴다.** 값을 더하려면
- * 마이그레이션을 따로 하나 만들고(`ALTER TYPE ... ADD VALUE`는 같은
- * 트랜잭션에서 쓸 수 없다), 그것을 올린 뒤 여기에 더한다.
+ * 거기 두는 까닭은 그 파일이 아무것도 import하지 않는 잎사귀라 단위 검사가
+ * 직접 부를 수 있기 때문이다. (AGENTS.md 2절)
  */
-export type AiFeature = "translation" | "search" | "placement";
+export type { AiFeature };
 
 /** 부른 결과. 데이터베이스의 `ai_call_outcome`과 같은 값이다. */
 export type AiOutcome = "ok" | "failed";
@@ -176,4 +182,217 @@ export async function decideAiCallNow(
   const granted = await sumAiGrantsThisMonth(now);
 
   return decideAiCall(used, limitWithGrants(granted));
+}
+
+/**
+ * 관리자가 보는 한 사람의 이번 달. (19-E.4)
+ */
+export type AdminUserUsage = {
+  /** 이번 달에 몇 번 불렀는가. */
+  used: number;
+  /** 갈래별 횟수. */
+  byFeature: Record<AiFeature, number>;
+  /** 우리가 모르는 갈래로 부른 횟수. `used`에 이미 들어 있다. */
+  unknownFeatureCalls: number;
+  /** 이번 달에 더해받은 허용량의 합. 되돌린 줄까지 더한 값이다. */
+  granted: number;
+  /** 쓸 수 있는 횟수. 기본 한도 + 허용량. */
+  limit: number;
+  /** 남은 횟수. */
+  remaining: number;
+  /** 이번 달 허용량 줄. 최근 것이 앞이다. */
+  grants: readonly AdminGrantRow[];
+};
+
+/** 허용량 한 줄. 누가 언제 왜 더해줬는지를 화면이 그대로 보여준다. */
+export type AdminGrantRow = {
+  id: string;
+  extraCalls: number;
+  reason: string;
+  /** 누가 줬는지. 그 계정이 지워졌으면 null이다. */
+  grantedBy: string | null;
+  createdAt: string;
+};
+
+/** 이번 달에 아무 일도 없었던 사람. */
+export const EMPTY_USER_USAGE: AdminUserUsage = buildUserUsage(
+  emptyTally(),
+  0,
+  [],
+);
+
+/*
+  한 번에 받아오는 줄 수와, 그 이상은 받지 않는 한계.
+
+  PostgREST는 한 번에 돌려주는 줄 수에 상한이 있어서, 그냥 받으면 **넘치는
+  만큼이 조용히 빠진다.** 오류가 나지 않고 합만 덜 나온다. 그래서 끝까지
+  받았는지를 직접 확인하며 나눠 받는다.
+
+  한계에 닿으면 숫자를 보여주지 않고 못 읽었다고 말한다. 덜 센 숫자를
+  보여주는 것이 아무것도 안 보여주는 것보다 나쁘다. 한 사람이 한 달에 쓸 수
+  있는 횟수를 생각하면 실제로 닿을 일은 없다.
+*/
+const USAGE_PAGE_SIZE = 1000;
+const USAGE_MAX_ROWS = 50000;
+
+/**
+ * 이번 달 사용량과 허용량을 사람별로 모아 온다. (19-E.4)
+ *
+ * **`service_role`로 읽지 않는다.** 관리자가 남의 장부를 읽는 일은
+ * `ai_usage_events_select_admin`과 `ai_usage_grants_select_admin` 정책이
+ * 이미 열어 두었다. 우회하면 소유자 확인을 코드가 해야 하고, 그 한 줄을
+ * 빠뜨리면 남의 것이 보인다. 17-A에서 같은 자리에 빠진 적이 있다.
+ *
+ * 관리자가 아니면 여기까지 오지 못한다. 화면이 이미 확인하지만 여기서도
+ * 확인한다. 레이아웃의 확인만 믿지 않는다. (보안 원칙 5)
+ *
+ * **읽지 못하면 null이다.** 빈 표가 아니다. 빈 표를 돌려주면 "아무도 안
+ * 썼다"와 "못 읽었다"가 같아 보인다. (보안 원칙 7)
+ *
+ * 줄이 하나도 없는 사람은 **열쇠 자체가 없다.** 부르는 쪽이
+ * `EMPTY_USER_USAGE`로 채운다. 이 함수는 누가 있는지 모른다.
+ */
+export async function listUsageByUser(
+  now: Date = new Date(),
+): Promise<Map<string, AdminUserUsage> | null> {
+  await requireAdminAccount("/admin/users");
+
+  const supabase = await createClient();
+  const since = monthStart(now).toISOString();
+
+  const eventRows: { owner_id: string; feature: string }[] = [];
+  let readAllEvents = false;
+
+  for (let from = 0; from < USAGE_MAX_ROWS; from += USAGE_PAGE_SIZE) {
+    /*
+      `id` 차례로 받는다. 만든 때로 나누면 같은 시각의 줄이 나뉘는 자리에서
+      한 줄이 두 번 오거나 아예 빠질 수 있다. `id`는 겹치지 않는다.
+    */
+    const { data, error } = await supabase
+      .from("ai_usage_events")
+      .select("owner_id, feature")
+      .gte("created_at", since)
+      .order("id", { ascending: true })
+      .range(from, from + USAGE_PAGE_SIZE - 1);
+
+    if (error || !data) {
+      console.error(
+        "[ThreadMark] 유저별 AI 사용량 조회 실패:",
+        error?.message ?? "값이 없습니다",
+      );
+
+      return null;
+    }
+
+    eventRows.push(...data);
+
+    if (data.length < USAGE_PAGE_SIZE) {
+      readAllEvents = true;
+      break;
+    }
+  }
+
+  if (!readAllEvents) {
+    console.error(
+      "[ThreadMark] 이번 달 AI 사용 기록이 너무 많아 끝까지 읽지 못했습니다.",
+    );
+
+    return null;
+  }
+
+  const grantRows: {
+    id: string;
+    owner_id: string;
+    extra_calls: number;
+    reason: string;
+    granted_by: string | null;
+    created_at: string;
+  }[] = [];
+  let readAllGrants = false;
+
+  for (let from = 0; from < USAGE_MAX_ROWS; from += USAGE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("ai_usage_grants")
+      .select("id, owner_id, extra_calls, reason, granted_by, created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + USAGE_PAGE_SIZE - 1);
+
+    if (error || !data) {
+      console.error(
+        "[ThreadMark] 유저별 AI 허용량 조회 실패:",
+        error?.message ?? "값이 없습니다",
+      );
+
+      return null;
+    }
+
+    grantRows.push(...data);
+
+    if (data.length < USAGE_PAGE_SIZE) {
+      readAllGrants = true;
+      break;
+    }
+  }
+
+  if (!readAllGrants) {
+    console.error(
+      "[ThreadMark] 이번 달 AI 허용량이 너무 많아 끝까지 읽지 못했습니다.",
+    );
+
+    return null;
+  }
+
+  const tallies = tallyByOwner(eventRows);
+  const sums = sumGrantsByOwner(grantRows);
+
+  const summaries = new Map<string, AdminUserUsage>();
+
+  for (const ownerId of new Set([...tallies.keys(), ...sums.keys()])) {
+    summaries.set(
+      ownerId,
+      buildUserUsage(
+        tallies.get(ownerId) ?? emptyTally(),
+        sums.get(ownerId) ?? 0,
+        grantRows
+          .filter((row) => row.owner_id === ownerId)
+          .map((row) => ({
+            id: row.id,
+            extraCalls: row.extra_calls,
+            reason: row.reason,
+            grantedBy: row.granted_by,
+            createdAt: row.created_at,
+          })),
+      ),
+    );
+  }
+
+  return summaries;
+}
+
+/**
+ * 센 것과 더해준 것을 한도 셈에 넣어 화면이 쓸 모양으로 만든다.
+ *
+ * **한도 셈을 여기서 다시 쓰지 않는다.** `decideAiCall`과 `limitWithGrants`를
+ * 그대로 부른다. 화면에 보이는 남은 횟수와 실제로 막는 자리가 다른 셈을
+ * 쓰면, 한쪽만 고쳐도 아무도 모른다. `decideAiCallNow`가 쓰는 것과 같은
+ * 함수를 쓴다.
+ */
+function buildUserUsage(
+  tally: FeatureTally,
+  granted: number,
+  grants: readonly AdminGrantRow[],
+): AdminUserUsage {
+  const decision = decideAiCall(tally.total, limitWithGrants(granted));
+
+  return {
+    used: tally.total,
+    byFeature: tally.byFeature,
+    unknownFeatureCalls: tally.unknown,
+    granted,
+    limit: decision.limit,
+    remaining: decision.remaining,
+    grants,
+  };
 }

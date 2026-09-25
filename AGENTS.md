@@ -320,7 +320,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 770개
+npm test          # node --test, 1086개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 ```
@@ -592,6 +592,40 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
   기본값은 타입을, 트리거는 실제 보장을 맡는다. 둘 다 있어야 한다.
   `sources`가 2026-09-21에 겪고(`20260921093000`), `paper_profiles`가
   2026-09-23에 똑같이 겪었다(`20260923093000`). 표를 만들 때마다 되풀이된다.
+
+- **`db push`가 통과했다고 그 함수가 도는 것은 아니다.** plpgsql 본문은 만들 때
+  다 보지 않는다. 안의 SQL 식은 **그 줄이 처음 돌 때** 파싱된다. 그래서 틀린
+  식이 들어 있어도 마이그레이션은 아무 말 없이 올라가고, 사람이 그 단추를
+  누르는 순간 터진다.
+
+  19-E에서 겪었다. `pg_catalog.current_user`라고 적었고 `db push`는 통과했는데,
+  허용량을 더할 때마다 `missing FROM-clause entry for table "pg_catalog"`가
+  났다. (`20260926120000`)
+
+  **`current_user`는 함수가 아니라 낱말이다.** 앞에 스키마를 붙이면
+  `pg_catalog`라는 표의 칸을 찾는 것으로 읽힌다. `set search_path = ''`이어도
+  붙이지 않는다. 붙여야 하는 것은 `now()`·`jsonb_build_object()`처럼 진짜
+  함수들이다. 저장소의 다른 가드 함수들은 처음부터 그냥 `current_user`로
+  쓰고 있었다. **같은 방식이라고 주석에 적어놓고 실제로는 다르게 썼다.**
+
+  그래서 **함수를 새로 만든 마이그레이션은 003을 돌려봐야 올린 것이 된다.**
+  003의 검사는 실제로 한 줄 넣어보므로 이런 것이 거기서 걸린다.
+
+- **감사 기록에 새 갈래를 남기면 `admin_audit_logs`의 허용 목록에도 더한다.**
+  `action` 칸에 `check (action in (...))`이 걸려 있다. 목록에 없는 값을 넣으면
+  제약이 거부하고, **그 트리거를 부른 INSERT까지 통째로 되돌아간다.**
+
+  19-E에서 그대로 겪었다. `ai_usage_granted`를 목록에 더하지 않은 채 트리거만
+  만들었고, **관리자 화면에서 허용량을 더하는 일이 통째로 막혔다.** 허용량
+  줄은 하나도 남지 않고 화면에는 "더하지 못했습니다"만 나온다. 감사 기록을
+  남기려다 본래 하려던 일을 못 하게 된 것이다. (`20260926110000`)
+
+  003의 검사 127이 잡는 것인데 아직 돌려보지 않았고 **쓰는 사람이 먼저
+  찾았다.** 검사가 다 통과해도 실제로 쓰면 문제가 나온다.
+
+  목록 자체는 그대로 둔다. 없으면 오타 한 글자가 새 갈래가 되어 조용히 쌓이고,
+  화면의 `actionLabel`이 모르는 값을 영문 그대로 보여준다. 막는 쪽이 맞았다.
+  **빠뜨린 것은 목록이 아니라 한 줄이다.**
 
 - **가드 함수를 `create or replace`로 고칠 때는 지금 살아 있는 정의부터 찾는다.**
   `create or replace function`은 본문을 통째로 갈아끼운다. 처음 만든 파일을
@@ -1154,7 +1188,7 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1074개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1086개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (130검사) |
