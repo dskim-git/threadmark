@@ -17,11 +17,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAP_FAILURES,
   MAX_ADDRESS_LENGTH,
   PLACE_PROVIDERS,
   PLACE_VISIT_STATUSES,
   categoryLabel,
   coordinatePair,
+  isMapLoadFailure,
+  mapFailureMessage,
   getPlaceProviderLabel,
   getPlaceVisitStatusLabel,
   googleMapsUrl,
@@ -675,4 +678,69 @@ test("빈 우편번호는 없음이다", () => {
 test("너무 긴 우편번호는 자른다", () => {
   // 제약조건이 스무 글자까지다. 길이에서 막히면 장소 전체가 저장되지 않는다.
   assert.equal(postalCode("0".repeat(30)).length, 20);
+});
+
+// -----------------------------------------------------------------------------
+// 지도가 안 뜰 때
+// -----------------------------------------------------------------------------
+
+test("까닭마다 다른 말을 한다", () => {
+  /*
+    **"지도를 보여드리지 못합니다"만 말하면 무엇을 고쳐야 하는지 알 수
+    없다.** 이 저장소가 도메인 등록을 빠뜨려 두 번 막혔고(12-A·12-C),
+    그때마다 화면은 아무 말도 하지 않았다.
+  */
+  const said = MAP_FAILURES.map((reason) => mapFailureMessage(reason));
+
+  assert.equal(new Set(said).size, MAP_FAILURES.length, "같은 말을 두 번 한다");
+});
+
+test("어느 까닭에도 링크로 가라고 말한다", () => {
+  /*
+    **지도가 안 떠도 장소 기능은 돌아간다.** 주소는 보이고 링크는 눌린다.
+    그 사실을 안내문이 말해야 한다. 안 말하면 사용자는 장소가 망가진 줄 안다.
+  */
+  for (const reason of MAP_FAILURES) {
+    assert.ok(
+      mapFailureMessage(reason).includes("링크"),
+      `${reason}: 링크로 가라고 말하지 않는다`,
+    );
+  }
+});
+
+test("모르는 까닭에도 빈 말을 하지 않는다", () => {
+  /*
+    **빈 자리는 고장처럼 보인다.** 사용자는 자기가 뭘 잘못했는지 찾게 된다.
+  */
+  for (const unknown of [null, undefined, "", "무엇인가", 3]) {
+    assert.ok(
+      mapFailureMessage(unknown).length > 0,
+      `${String(unknown)}: 할 말이 없다`,
+    );
+  }
+});
+
+test("아는 까닭만 까닭으로 본다", () => {
+  assert.deepEqual(
+    [...MAP_FAILURES],
+    ["no-key", "script-failed", "draw-failed"],
+  );
+  assert.ok(isMapLoadFailure("no-key"));
+  assert.ok(!isMapLoadFailure("domain-not-registered"));
+  assert.ok(!isMapLoadFailure(""));
+});
+
+test("스크립트 실패를 한 가지 원인으로 단정하지 않는다", () => {
+  /*
+    가장 잦은 원인은 도메인 등록 누락이다. 그런데 인터넷이 끊겼거나 확장
+    기능이 막은 것일 수도 있다. **하나로 단정하면 엉뚱한 곳을 고치게 된다.**
+
+    그리고 도메인 등록은 **운영자가 할 일이지 쓰는 사람이 할 일이 아니다.**
+    화면에 "도메인을 등록하세요"라고 적으면 이용자가 할 수 없는 일을
+    시키는 셈이다. 그 사정은 코드 주석에 적혀 있다.
+  */
+  const said = mapFailureMessage("script-failed");
+
+  assert.ok(said.includes("인터넷") || said.includes("확장"));
+  assert.ok(!said.includes("도메인"), "이용자가 할 수 없는 일을 시킨다");
 });

@@ -516,3 +516,52 @@ export function readAddressCandidates(
     .filter((candidate): candidate is AddressCandidate => candidate !== null)
     .slice(0, limit);
 }
+
+/**
+ * 지도가 뜨지 못한 까닭. (17-2.5절)
+ *
+ * **까닭을 구분해서 담는 이유가 있다.** "지도를 보여드리지 못합니다"만
+ * 말하면 무엇을 고쳐야 하는지 알 수 없다. 이 저장소가 도메인 등록을
+ * 빠뜨려 두 번 막혔고(12-A·12-C), 그때마다 화면은 아무 말도 하지 않았다.
+ */
+export const MAP_FAILURES = ["no-key", "script-failed", "draw-failed"] as const;
+
+export type MapLoadFailure = (typeof MAP_FAILURES)[number];
+
+/**
+ * 까닭마다 사람에게 할 말.
+ *
+ * **무엇을 하면 되는지까지 적는다.** 까닭만 말하면 읽는 사람이 다음
+ * 동작을 짐작해야 한다. `script-failed`가 특히 그렇다. 가장 잦은 원인은
+ * 도메인 등록 누락이지만, 인터넷이나 확장 기능일 수도 있어서 둘을 함께
+ * 말한다. **하나로 단정하면 엉뚱한 곳을 고치게 된다.**
+ *
+ * 화면에 이 글이 뜨더라도 **주소와 지도 링크는 그대로 보인다.** 지도를
+ * 못 그리는 것이 장소를 못 쓸 이유는 아니다.
+ */
+const MAP_FAILURE_MESSAGES: Record<MapLoadFailure, string> = {
+  "no-key":
+    "지도를 보여드릴 준비가 아직 안 됐습니다. 아래 링크로 열어 보세요.",
+  "script-failed":
+    "지도를 불러오지 못했습니다. 인터넷 연결이나 브라우저 확장 기능 때문일 수 있습니다. 아래 링크로 열어 보세요.",
+  "draw-failed":
+    "지도를 그리지 못했습니다. 새로고침해 보시고, 계속 그러면 아래 링크로 열어 보세요.",
+};
+
+export function isMapLoadFailure(value: unknown): value is MapLoadFailure {
+  return (
+    typeof value === "string" && (MAP_FAILURES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * 지도가 안 뜰 때 화면에 띄울 글.
+ *
+ * 모르는 까닭에는 그리기 실패로 말한다. **비워 두지 않는다.** 빈 자리는
+ * 고장처럼 보이고, 사용자는 자기가 뭘 잘못했는지 찾게 된다.
+ */
+export function mapFailureMessage(value: unknown): string {
+  return MAP_FAILURE_MESSAGES[
+    isMapLoadFailure(value) ? value : "draw-failed"
+  ];
+}

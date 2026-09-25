@@ -15,14 +15,19 @@ import {
 import type { PlaceProfile } from "@/lib/places/queries";
 import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 
+import { PlaceMap } from "./place-map";
+
 import { findAddresses, findPlaces, savePlace } from "./place-actions";
 
 /**
  * 장소 칸. 이름으로 찾아 고르고 채운다. (설계 문서 17-1절)
  *
- * **지도를 그리지 않는다.** 좌표까지 담아두고 화면에는 카카오맵·구글
- * 지도로 가는 링크만 둔다. 지도를 그리려면 열쇠와 도메인 등록이 따로
- * 필요하고, 이 저장소는 도메인 등록을 빠뜨려 두 번 막혔다. (17-1.2절)
+ * **지도는 주소 아래에 그린다.** (17-2.1절, 사용자가 정함) 찾아 고른
+ * 주소가 맞는 곳인지는 글자로 봐서는 알 수 없다.
+ *
+ * **지도 아래에 카카오맵·구글 지도 링크를 남긴다.** (17-2.2절) 우리 지도로는
+ * 길찾기를 할 수 없다. 답사지를 담는 사람이 마지막에 하는 일은 거기까지
+ * 가는 것이다.
  *
  * **후보를 늘어놓고 사람이 고른다.** `경복궁`으로 물으면 549건이 오고
  * 그 안에 `다이소 경복궁역점`, `온유어마크 경복궁`이 섞여 있다.
@@ -709,6 +714,76 @@ export function PlacePanel({
           ) : null}
         </dl>
 
+        {/*
+          지도. **주소·좌표 아래다.** (2026-09-25, 사용자가 정함)
+
+          지도는 주소를 확인하는 수단이다. 찾아 고른 주소가 맞는 곳인지는
+          글자로 봐서는 알 수 없고 지도를 봐야 안다. 멀리 두면 눈을 두 번
+          옮겨야 한다. (17-2.1절)
+
+          **좌표가 없으면 그리지 않는다.** 그릴 것이 없다. 빈 상자를 그리면
+          고장처럼 보인다.
+
+          저장 단추보다 위에 둔다. **저장하기 전에 확인하는 것**이 이
+          지도의 일이다. 단추 아래에 두면 누른 뒤에 보게 된다.
+        */}
+        {canLink ? (
+          <PlaceMap
+            /*
+              좌표를 `key`로 준다.
+
+              **다른 장소를 고르면 지도를 처음부터 다시 만든다.** 안 그러면
+              앞 장소에서 지도가 실패했을 때 그 안내문이 새 장소에도 남는다.
+              그 칸 안에서 손으로 되돌리는 것보다 이 편이 짧고 틀릴 데가 없다.
+            */
+            key={`${latNumber},${lngNumber}`}
+            latitude={latNumber}
+            longitude={lngNumber}
+            name={name.trim() === "" ? "담아둔 곳" : name}
+          />
+        ) : null}
+
+        {/*
+          지도로 가는 링크. **지도 아래에 남긴다.** (2026-09-25, 사용자가 정함)
+
+          지도가 생겼어도 없애지 않는다. **우리 지도로는 못 하는 일이 있다.**
+          길찾기, 휴대폰 지도 앱으로 열기, 거리뷰가 그렇다. 답사지를 담는
+          사람이 마지막에 하는 일은 거기까지 가는 것이고, 그 일을 우리가
+          할 수 없으므로 길을 남긴다. (17-2.2절)
+
+          **좌표가 있을 때만 보여준다.** 좌표 없이 이름으로 보내면 같은
+          이름의 다른 곳이 열린다.
+
+          둘을 나란히 둔다. 구글 지도는 한국에서 길찾기가 안 되고, 카카오맵은
+          해외가 부실하다. **어느 쪽이 나은지는 그 장소가 어디인지에
+          달렸으므로 사용자가 고른다.** (17-1.3절)
+        */}
+        {canLink ? (
+          <div className="flex flex-wrap items-center gap-4">
+            <a
+              href={kakaoMapUrl(latNumber, lngNumber, name)}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
+            >
+              카카오맵에서 열기 →
+            </a>
+
+            <a
+              href={googleMapsUrl(latNumber, lngNumber)}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
+            >
+              구글 지도에서 열기 →
+            </a>
+
+            <span className="text-xs text-zinc-500">
+              길찾기는 이쪽에서 됩니다.
+            </span>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
@@ -717,40 +792,9 @@ export function PlacePanel({
             저장
           </button>
 
-          {/*
-            지도로 가는 링크. (17-1.2절)
-
-            **좌표가 있을 때만 보여준다.** 좌표 없이 이름으로 보내면 같은
-            이름의 다른 곳이 열린다. 없는데 단추를 두면 눌러보고 나서야
-            안 되는 것을 알게 된다.
-
-            둘을 나란히 둔다. 구글 지도는 한국에서 길찾기가 안 되고, 카카오맵은
-            해외가 부실하다. **어느 쪽이 나은지는 그 장소가 어디인지에
-            달렸으므로 사용자가 고른다.** (17-1.3절)
-          */}
-          {canLink ? (
-            <>
-              <a
-                href={kakaoMapUrl(latNumber, lngNumber, name)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
-              >
-                카카오맵에서 보기 →
-              </a>
-
-              <a
-                href={googleMapsUrl(latNumber, lngNumber)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
-              >
-                구글 지도에서 보기 →
-              </a>
-            </>
-          ) : (
+          {canLink ? null : (
             <span className="text-xs text-zinc-500">
-              좌표를 채우면 지도로 가는 링크가 생깁니다.
+              좌표를 채우면 지도와 링크가 생깁니다.
             </span>
           )}
         </div>
