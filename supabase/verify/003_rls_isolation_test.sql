@@ -7556,6 +7556,362 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 126. 일반 사용자는 허용량을 스스로 더할 수 없다
+-- -----------------------------------------------------------------------------
+-- **이것이 이 표에서 가장 중요한 검사다.** 스스로 더할 수 있으면 한도가
+-- 뜻이 없어진다. 막히면 그만이지만, 열려 있으면 **한도가 있는 척하는
+-- 상태**가 된다.
+--
+-- 정책과 트리거가 두 겹으로 막는다. 정책은 나중에 누군가 고칠 수 있고
+-- 그때 이 표가 조용히 열리므로, 트리거에서 한 번 더 본다.
+do $$
+declare
+  v_other   uuid;
+  v_owner   uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.ai_usage_grants (owner_id, extra_calls, reason)
+    values (v_other, 100, '스스로 더한 허용량');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.ai_usage_grants where owner_id = v_other;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 126 실패: 일반 사용자가 자기 AI 허용량을 더할 수 있었습니다. 한도가 뜻이 없어집니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 127. 관리자는 허용량을 더할 수 있고, 누가 줬는지가 남는다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 검사하면 과잉 차단을 놓친다. (보안 원칙 6) 여기가 막히면
+-- 한도에 걸린 사람을 풀어줄 길이 아예 없어진다.
+--
+-- **누가 줬는지는 보낸 값을 믿지 않는다.** 남의 이름으로 풀어준 기록을
+-- 남길 수 있으면 "누가 풀어줬나"에 답할 수 없다. 트리거가 채운다.
+-- (검사 118과 같은 생각이다)
+--
+-- **감사 기록에도 남는지 본다.** 관리자가 한 일은 전부 그 표에 남는 것이
+-- 이 저장소의 규칙이다.
+do $$
+declare
+  v_admin   uuid;
+  v_other   uuid;
+  v_grant   uuid;
+  v_actor   uuid;
+  v_logged  integer;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_admin limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 일부러 남(v_other)이 줬다고 적어 보낸다. 트리거가 관리자로 바꿔야 한다.
+  insert into public.ai_usage_grants
+    (owner_id, granted_by, extra_calls, reason)
+  values (v_other, v_other, 50, 'RLS 격리 검사용 허용량')
+  returning id into v_grant;
+
+  select granted_by into v_actor
+  from public.ai_usage_grants where id = v_grant;
+
+  reset role;
+
+  select count(*) into v_logged
+  from public.admin_audit_logs
+  where action = 'ai_usage_granted' and target_user_id = v_other;
+
+  delete from public.admin_audit_logs
+  where action = 'ai_usage_granted' and target_user_id = v_other;
+  delete from public.ai_usage_grants where id = v_grant;
+
+  if v_grant is null then
+    raise exception
+      '검사 127 실패: 관리자가 허용량을 더하지 못했습니다. 한도에 걸린 사람을 풀어줄 길이 없어집니다.';
+  end if;
+
+  if v_actor is distinct from v_admin then
+    raise exception
+      '검사 127 실패: 누가 줬는지가 보낸 값 그대로 들어갔습니다. 남의 이름으로 풀어준 기록을 남길 수 있습니다. (지금 %)',
+      v_actor;
+  end if;
+
+  if v_logged = 0 then
+    raise exception
+      '검사 127 실패: 허용량을 더한 일이 감사 기록에 남지 않았습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 128. 허용량도 고칠 수 없고 지울 수 없다
+-- -----------------------------------------------------------------------------
+-- 장부와 같다. (검사 120·121) 고칠 수 있으면 "50번 줬다"를 "500번"으로
+-- 바꿀 수 있고, 지울 수 있으면 풀어준 사실 자체가 사라진다.
+--
+-- **관리자도 못 한다.** 잘못 줬으면 음수로 한 줄 더 남긴다. 지우는 것이
+-- 아니라 되돌린 기록을 남기는 것이다.
+do $$
+declare
+  v_admin    uuid;
+  v_other    uuid;
+  v_grant    uuid;
+  v_changed  boolean := false;
+  v_removed  boolean := false;
+  v_calls    integer;
+  v_survived integer;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_admin limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.ai_usage_grants (owner_id, extra_calls, reason)
+  values (v_other, 50, 'RLS 격리 검사용 허용량')
+  returning id into v_grant;
+
+  begin
+    update public.ai_usage_grants
+    set extra_calls = 500 where id = v_grant;
+  exception when others then
+    v_changed := true;
+  end;
+
+  begin
+    delete from public.ai_usage_grants where id = v_grant;
+  exception when others then
+    v_removed := true;
+  end;
+
+  reset role;
+
+  select extra_calls into v_calls
+  from public.ai_usage_grants where id = v_grant;
+
+  select count(*) into v_survived
+  from public.ai_usage_grants where id = v_grant;
+
+  delete from public.admin_audit_logs
+  where action = 'ai_usage_granted' and target_user_id = v_other;
+  delete from public.ai_usage_grants where id = v_grant;
+
+  if not v_changed or v_calls is distinct from 50 then
+    raise exception
+      '검사 128 실패: 허용량을 고칠 수 있었습니다. 준 것과 적힌 것이 달라집니다. (지금 %)',
+      v_calls;
+  end if;
+
+  if not v_removed or v_survived <> 1 then
+    raise exception
+      '검사 128 실패: 허용량을 지울 수 있었습니다. 풀어준 사실이 사라집니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 129. 본인은 자기 허용량을 보고 남의 것은 보지 못한다
+-- -----------------------------------------------------------------------------
+-- **본인이 봐야 하는 까닭이 있다.** 화면이 `60번 중 3번 남음`을 보여주는데,
+-- 허용량을 못 읽으면 관리자가 풀어준 뒤에도 그 숫자가 안 바뀐다. 사용자는
+-- 왜 되는지 모르고 쓴다.
+--
+-- 남의 것은 보이면 안 된다. 누가 왜 풀어졌는지는 그 사람 일이다.
+do $$
+declare
+  v_admin  uuid;
+  v_other  uuid;
+  v_third  uuid;
+  v_grant  uuid;
+  v_mine   integer;
+  v_theirs integer := -1;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_admin limit 1;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.ai_usage_grants (owner_id, extra_calls, reason)
+  values (v_other, 50, 'RLS 격리 검사용 허용량')
+  returning id into v_grant;
+
+  reset role;
+
+  -- 받은 사람이 자기 것을 본다.
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_mine
+  from public.ai_usage_grants where id = v_grant;
+
+  reset role;
+
+  /*
+    제삼자가 남의 것을 보려 한다. 관리자가 아닌 다른 사용자를 찾는다.
+    없으면 그 확인은 건너뛴다. (계정이 둘뿐인 경우)
+  */
+  select p.id into v_third
+  from public.profiles p
+  where p.id <> v_admin and p.id <> v_other
+  limit 1;
+
+  if v_third is not null then
+    set local role authenticated;
+    perform set_config(
+      'request.jwt.claims',
+      json_build_object('sub', v_third, 'role', 'authenticated')::text,
+      true
+    );
+
+    select count(*) into v_theirs
+    from public.ai_usage_grants where id = v_grant;
+
+    reset role;
+  end if;
+
+  delete from public.admin_audit_logs
+  where action = 'ai_usage_granted' and target_user_id = v_other;
+  delete from public.ai_usage_grants where id = v_grant;
+
+  if v_mine <> 1 then
+    raise exception
+      '검사 129 실패: 받은 사람이 자기 허용량을 읽지 못했습니다. 풀어준 뒤에도 남은 횟수가 안 바뀝니다.';
+  end if;
+
+  if v_third is not null and v_theirs <> 0 then
+    raise exception
+      '검사 129 실패: 남의 허용량이 보였습니다. (%건)', v_theirs;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 130. 관리자는 남의 AI 사용 기록을 볼 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 19-E.4절. 유저별 사용량을 보여주려면 관리자가 남의 장부를 읽어야 한다.
+--
+-- **`service_role`을 쓰지 않으려고 정책을 열었다.** (17-A에서 배운 것)
+-- 우회하면 소유자 확인을 코드가 해야 하고, 그 한 줄을 빠뜨리면 남의 것이
+-- 보인다. 정책으로 열면 데이터베이스가 지킨다.
+--
+-- **읽기만 열렸는지 함께 본다.** 관리자도 남의 장부에 줄을 넣거나 고칠 수
+-- 없다. 그러지 못해야 장부의 뜻이 그대로다. (검사 120·121)
+do $$
+declare
+  v_admin   uuid;
+  v_other   uuid;
+  v_row     uuid;
+  v_seen    integer;
+  v_changed boolean := false;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_admin limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.ai_usage_events
+    (owner_id, feature, provider, model, input_tokens, output_tokens, outcome)
+  values
+    (v_other, 'search'::public.ai_feature, 'anthropic', 'claude-opus-5',
+     900, 120, 'ok'::public.ai_call_outcome)
+  returning id into v_row;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.ai_usage_events where id = v_row;
+
+  begin
+    update public.ai_usage_events
+    set input_tokens = 0 where id = v_row;
+  exception when others then
+    v_changed := true;
+  end;
+
+  reset role;
+
+  delete from public.ai_usage_events where id = v_row;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 130 실패: 관리자가 남의 AI 사용 기록을 읽지 못했습니다. 유저별 사용량을 보여줄 수 없습니다.';
+  end if;
+
+  if not v_changed then
+    raise exception
+      '검사 130 실패: 관리자가 남의 AI 사용 기록을 고칠 수 있었습니다. 장부가 장부가 아니게 됩니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -7651,6 +8007,15 @@ select
     where visit_status = 'want_to_visit'::public.place_visit_status)     as 가볼_곳,
   (select count(*) from public.place_profiles
     where visit_status = 'visited'::public.place_visit_status)           as 가본_곳,
+  /*
+    한도에 더해준 허용량. (19-E)
+
+    **두 칸으로 센다.** 준 줄 수와 이번 달에 더해진 합이다. 합만 보면
+    음수로 되돌린 것이 섞여 0이 되고, **아무 일도 없었던 것처럼 보인다.**
+  */
+  (select count(*) from public.ai_usage_grants)                         as 허용량_기록,
+  (select coalesce(sum(extra_calls), 0) from public.ai_usage_grants
+    where created_at >= pg_catalog.date_trunc('month', now()))          as 이번달_더한_횟수,
   coalesce(
     pg_catalog.current_setting('threadmark.check19', true),
     '건너뜀'

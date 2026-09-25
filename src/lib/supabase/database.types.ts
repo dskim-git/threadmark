@@ -86,6 +86,33 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_usage_grants: {
+        Row: {
+          created_at: string
+          extra_calls: number
+          granted_by: string | null
+          id: string
+          owner_id: string
+          reason: string
+        }
+        Insert: {
+          created_at?: string
+          extra_calls: number
+          granted_by?: string | null
+          id?: string
+          owner_id: string
+          reason: string
+        }
+        Update: {
+          created_at?: string
+          extra_calls?: number
+          granted_by?: string | null
+          id?: string
+          owner_id?: string
+          reason?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           description: string | null

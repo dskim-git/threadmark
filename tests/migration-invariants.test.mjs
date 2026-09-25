@@ -78,6 +78,13 @@ const PROTECTED_TABLES = [
   "ai_usage_events",
   // 17-1. 장소. 좌표가 들어오는 자리라 범위와 짝을 제약조건이 지킨다.
   "place_profiles",
+  /*
+    19-E. AI 한도에 더해주는 허용량.
+
+    **`owner_id`에 기본값이 없는 유일한 표다.** 관리자가 남의 줄을 만드는
+    표라 기본값을 걸면 관리자 자신에게 붙는다. 고칠 수도 지울 수도 없다.
+  */
+  "ai_usage_grants",
 ];
 
 /**

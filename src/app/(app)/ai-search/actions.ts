@@ -7,10 +7,9 @@ import {
 } from "@/lib/ai/anthropic";
 import { citedIndices, danglingIndices } from "@/lib/ai/answer";
 import { gatherCandidates } from "@/lib/ai/candidates";
-import { decideAiCall } from "@/lib/ai/limits";
 import { extractKeywords, normalizeQuestion } from "@/lib/ai/question";
 import {
-  countAiCallsThisMonth,
+  decideAiCallNow,
   recordAiUsage,
 } from "@/lib/ai/usage-queries";
 
@@ -56,13 +55,9 @@ function fail(question: string, error: string, remaining: number | null): AskSta
 export async function countAiRemaining(): Promise<number | null> {
   await requireActiveAccount();
 
-  const used = await countAiCallsThisMonth();
+  const decision = await decideAiCallNow();
 
-  if (used === null) {
-    return null;
-  }
-
-  return decideAiCall(used).remaining;
+  return decision === null ? null : decision.remaining;
 }
 
 export async function askAboutMyNotes(
@@ -94,9 +89,9 @@ export async function askAboutMyNotes(
     한도를 먼저 본다. 후보를 모으는 것은 돈이 들지 않지만, 한도에 걸린
     사람에게 "찾았는데 못 물어봅니다"를 보여줄 이유가 없다.
   */
-  const used = await countAiCallsThisMonth();
+  const decision = await decideAiCallNow();
 
-  if (used === null) {
+  if (decision === null) {
     /*
       장부를 읽지 못했다. **모르면 거부한다.** (AGENTS.md 5절 7번)
       통과시키면 한도가 없는 것과 같아진다.
@@ -107,8 +102,6 @@ export async function askAboutMyNotes(
       null,
     );
   }
-
-  const decision = decideAiCall(used);
 
   if (!decision.allowed) {
     return fail(

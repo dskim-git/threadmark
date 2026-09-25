@@ -66,7 +66,7 @@ npm run build    # production 빌드
 | --- | --- | --- |
 | `supabase/verify/001_verify_auth_approval.sql` | 스키마·RLS·정책·함수·트리거·권한과 운영 상태 불변조건 | 23개 항목 표 |
 | `supabase/verify/002_verify_first_admin.sql` | 관리자 부트스트랩 결과와 감사 트리거 동작 | 8개 항목 표 |
-| `supabase/verify/003_rls_isolation_test.sql` | 실제 역할로 전환해 RLS와 가드 트리거가 막는지 | 125개 검사, 통과 메시지 또는 실패 지점 |
+| `supabase/verify/003_rls_isolation_test.sql` | 실제 역할로 전환해 RLS와 가드 트리거가 막는지 | 130개 검사, 통과 메시지 또는 실패 지점 |
 
 001의 검사 9(허용 목록 밖의 DEFINER 함수 없음)는 12-B 작업 중에 `soft_delete_capture`와
 `soft_delete_project`가 목록에서 빠져 있는 것을 발견해 함께 채웠다. 10·11단계에서 추가된

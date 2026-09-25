@@ -3,7 +3,6 @@
 import { z } from "zod";
 
 import { isAiSearchConfigured } from "@/lib/ai/anthropic";
-import { decideAiCall } from "@/lib/ai/limits";
 import {
   MAX_PLACEMENT_ITEMS,
   MAX_PLACEMENT_NODES,
@@ -12,7 +11,7 @@ import {
 } from "@/lib/ai/placement";
 import { askWhereToPlace } from "@/lib/ai/placement-anthropic";
 import {
-  countAiCallsThisMonth,
+  decideAiCallNow,
   recordAiUsage,
 } from "@/lib/ai/usage-queries";
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -70,17 +69,15 @@ export async function suggestPlacements(
     한도를 먼저 본다. 모으는 것은 돈이 들지 않지만, 한도에 걸린 사람에게
     "모았는데 못 물어봅니다"를 보여줄 이유가 없다.
   */
-  const used = await countAiCallsThisMonth();
+  const decision = await decideAiCallNow();
 
-  if (used === null) {
+  if (decision === null) {
     // 모르면 거부한다. (AGENTS.md 5절 7번)
     return fail(
       "얼마나 쓰셨는지 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
       null,
     );
   }
-
-  const decision = decideAiCall(used);
 
   if (!decision.allowed) {
     return fail(

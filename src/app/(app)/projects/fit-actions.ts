@@ -4,11 +4,10 @@ import { z } from "zod";
 
 import { isAiSearchConfigured } from "@/lib/ai/anthropic";
 import { gatherCandidates } from "@/lib/ai/candidates";
-import { decideAiCall } from "@/lib/ai/limits";
 import { askWhatFitsHere } from "@/lib/ai/placement-anthropic";
 import { extractKeywords } from "@/lib/ai/question";
 import {
-  countAiCallsThisMonth,
+  decideAiCallNow,
   recordAiUsage,
 } from "@/lib/ai/usage-queries";
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -72,9 +71,9 @@ export async function suggestForNode(
     );
   }
 
-  const used = await countAiCallsThisMonth();
+  const decision = await decideAiCallNow();
 
-  if (used === null) {
+  if (decision === null) {
     // 모르면 거부한다. (AGENTS.md 5절 7번)
     return fail(
       nodeId.data,
@@ -82,8 +81,6 @@ export async function suggestForNode(
       null,
     );
   }
-
-  const decision = decideAiCall(used);
 
   if (!decision.allowed) {
     return fail(

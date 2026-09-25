@@ -146,3 +146,36 @@ export function decideAiCall(
     used: knownUsed,
   };
 }
+
+/**
+ * 관리자가 더해준 허용량을 한도에 얹는다. (19-E, 2026-09-25 사용자 요청)
+ *
+ * **리셋이 아니다.** `ai_usage_events`는 고칠 수도 지울 수도 없는 장부이고
+ * (003의 검사 120·121), 리셋을 만들면 그 보장을 우리 손으로 뚫는 일이 된다.
+ *
+ * 그래서 장부는 그대로 두고 **쓸 수 있는 횟수를 늘린다.** 관리자가 보는
+ * 결과는 같다. 단추를 누르면 그 사람이 다시 쓴다. 다만 **누가 얼마 썼고
+ * 누가 언제 왜 풀어줬는지가 둘 다 남는다.**
+ *
+ * 음수를 받는다
+ *   잘못 줬을 때 되돌리는 길이다. 줄을 지우는 대신 음수로 한 줄 더 남긴다.
+ *   그래서 합이 음수가 될 수 있고, **그때 한도를 기본값보다 낮추지 않는다.**
+ *   되돌리기가 사람을 기본 한도 아래로 떨어뜨리는 것은 뜻이 아니다.
+ *
+ * 모르면 더하지 않는다
+ *   허용량을 못 읽었으면 0으로 본다. **막는 쪽으로 기운다.** (보안 원칙 7)
+ *   못 읽었는데 넉넉히 준 것으로 보면 한도가 헐거워진다.
+ */
+export function limitWithGrants(
+  granted: number | null,
+  limit: number = AI_MONTHLY_CALL_LIMIT,
+): number {
+  const safeLimit = Number.isInteger(limit) && limit >= 0 ? limit : 0;
+
+  if (granted === null || !Number.isInteger(granted)) {
+    return safeLimit;
+  }
+
+  // 되돌리기가 기본 한도 아래로 끌어내리지 않는다.
+  return Math.max(safeLimit, safeLimit + granted);
+}
