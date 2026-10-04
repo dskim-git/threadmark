@@ -5,6 +5,10 @@ import {
   parseMusicTimeLocator,
   type MusicTimeLocator,
 } from "./music-locator";
+import {
+  parseAudioTimeLocator,
+  type AudioTimeLocator,
+} from "./audio-locator";
 import { parseImageLocator, type ImageLocator } from "./image-locator";
 import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
 import {
@@ -60,6 +64,13 @@ export type Capture = {
    * 목록에서 세어 `2장`을 만든다. (`describeImagePage`)
    */
   imageLocation: ImageLocator | null;
+  /**
+   * 음성에서 온 기록의 자리. 시점이거나 구간이다. (설계 문서 17-4절)
+   *
+   * **어느 파일의 몇 초인지가 담겨 있다.** 그림처럼 세지 않아도 되는 까닭은
+   * 시간이 목록의 차례에 매달리지 않기 때문이다. (`describeAudioTime`)
+   */
+  audioLocation: AudioTimeLocator | null;
   /**
    * 음악에서 온 기록의 자리. 재생 시점이거나 구간이다. (설계 문서 13.4절)
    *
@@ -136,6 +147,7 @@ function toCapture(row: CaptureRow): Capture[] {
       // locator는 JSONB라 무엇이든 들어갈 수 있다. 읽는 쪽이 모양을 확인한다.
       pdfLocation: parsePdfLocator(row.locator),
       imageLocation: parseImageLocator(row.locator),
+      audioLocation: parseAudioTimeLocator(row.locator),
       musicLocation: parseMusicTimeLocator(row.locator),
       videoLocation: parseVideoTimeLocator(row.locator),
       mediaLocation: parseMediaTimeLocator(row.locator),

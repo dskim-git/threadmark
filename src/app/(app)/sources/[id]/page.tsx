@@ -1065,6 +1065,19 @@ export default async function SourceDetailPage({
             >
               그림판에서 그리기
             </Link>
+            {/*
+              녹음. (설계 문서 17절, 17-V 3차례)
+
+              **그림판과 같은 자리에 둔다.** 녹음한 것이 파일로 붙는 일이라
+              올리기·고르기·그림판과 같은 칸이다. 둘 다 "브라우저에서 만든
+              파일 하나를 이 자료에 붙인다"는 같은 일이다.
+            */}
+            <Link
+              href={`/sources/${source.id}/record`}
+              className="h-11 rounded-full border border-solid border-black/[.08] px-5 text-sm font-medium leading-[2.75rem] text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              녹음하기
+            </Link>
             </div>
           </Reveal>
         ) : (

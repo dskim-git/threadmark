@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
 import { imageLocatorSchema } from "@/lib/captures/image-locator";
+import { audioTimeLocatorSchema } from "@/lib/captures/audio-locator";
 import {
   pdfPageLocatorSchema,
   pdfSelectionLocatorSchema,
@@ -419,6 +420,63 @@ export async function createImagePageCapture(
 
   if (error) {
     console.error("[ThreadMark] 그림 메모 생성 실패:", error.message);
+
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  revalidatePath(`/sources/${sourceId}`);
+
+  return { ok: true };
+}
+
+const audioMemoSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  memo: z
+    .string()
+    .trim()
+    .min(1, "메모를 입력해 주세요.")
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`),
+  locator: audioTimeLocatorSchema,
+});
+
+/**
+ * 녹음의 한 자리에 메모를 남긴다. (설계 문서 17-4절, 2026-10-04, 사용자 요청)
+ *
+ * 시점이거나 구간이다. 가리는 것은 `locator.endSeconds`이고, 그 판단은
+ * `audio-locator.ts`가 한다. **여기서는 담기만 한다.**
+ *
+ * `createImagePageCapture`와 같은 모양이다. 갈래가 `note`로 고정되는 까닭도
+ * 같다. 자리에 붙는 메모는 **처음부터 "내가 한 말"만 담는 자리**이고,
+ * 원문을 옮기는 칸이 없다. (설계 문서 2.4절)
+ */
+export async function createAudioTimeCapture(
+  input: unknown,
+): Promise<PdfCaptureResult> {
+  await requireActiveAccount();
+
+  const parsed = audioMemoSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: firstIssueMessage(parsed.error) };
+  }
+
+  const { sourceId, memo, locator } = parsed.data;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
+    source_id: sourceId,
+    capture_type: "note",
+    content: memo,
+    locator,
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 음성 메모 생성 실패:", error.message);
 
     return {
       ok: false,

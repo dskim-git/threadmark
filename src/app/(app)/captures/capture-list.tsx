@@ -5,6 +5,10 @@ import { Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { PlacedWhere } from "@/app/(app)/projects/placed-where";
 import type { Capture } from "@/lib/captures/queries";
+import {
+  describeAudioTime,
+  formatAudioTimeParam,
+} from "@/lib/captures/audio-locator";
 import { describeMediaTime } from "@/lib/captures/media-locator";
 import { describeMusicTime } from "@/lib/captures/music-locator";
 import { VideoTimeChip } from "./video-time-chip";
@@ -200,6 +204,26 @@ export function CaptureList({
                     </Link>
                   );
                 })()
+              ) : null}
+
+              {/*
+                음성의 자리. 시점이거나 구간이다. (설계 문서 17-4절)
+
+                **음악과 달리 누를 수 있다.** 음악은 들려줄 파일이 우리에게
+                없어서 글자만 보여주는데, 녹음은 Drive에 그 파일이 있고
+                재생기도 있다. 눌러서 **그 자리로 가 있게** 한다.
+
+                `?t=`에 자리를 싣는 까닭이 그것이다. 파일만 열어 주면 어디를
+                가리키는지 알 수 없어 처음부터 다시 들으며 찾게 된다.
+                16-2에서 상자를 주소에 실은 것과 같다.
+              */}
+              {capture.audioLocation && capture.sourceId ? (
+                <Link
+                  href={`/sources/${capture.sourceId}/reader?file=${capture.audioLocation.sourceFileId}&t=${formatAudioTimeParam(capture.audioLocation)}`}
+                  className="rounded-full border border-black/[.08] px-2.5 py-0.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                >
+                  {describeAudioTime(capture.audioLocation)}으로
+                </Link>
               ) : null}
 
               {/*

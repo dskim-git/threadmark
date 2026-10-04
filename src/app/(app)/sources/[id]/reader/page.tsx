@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { createCapture } from "@/app/(app)/captures/actions";
-import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
+import { parseAudioTimeParam } from "@/lib/captures/audio-locator";
 import { parseRegionParam } from "@/lib/captures/image-locator";
 import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -258,51 +257,24 @@ export default async function ReaderPage({
             </p>
           ) : showAudio ? (
             /*
-              음성은 들으면서 적는다. (17-V 2차례)
+              음성은 들으면서 그 자리에 메모한다. (17-4절, 사용자 요청)
 
-              메모 칸에 **이미 있는 `CaptureForm`을 그대로 쓴다.** 자료에
-              메모를 다는 길이고, 그래서 **새 Server Action도 새 `locator`도
-              만들지 않았다.** 시점을 담기로 정하면 그때 그 둘이 함께
-              필요해진다. (`audio-reader-view.tsx`)
+              **2차례에서는 메모 칸에 `CaptureForm`을 썼다.** 자리를 가리키는
+              길이 없어 자료에 그냥 붙이는 메모였다. 4차례에서 `locator`를
+              정하면서 **PDF·그림이 쓰는 `PageMemoPanel`로 바꿨다.** 세 화면이
+              같은 칸을 쓰고 자리를 부르는 말만 다르다.
             */
             <AudioReaderView
               key={selected.id}
+              sourceId={source.id}
+              fileId={selected.id}
+              fileChecksum={selected.checksum}
               src={`/api/source-files/${selected.id}/content`}
-              memoSlot={
-                <section className="rounded-2xl border border-zinc-200 px-5 py-5 dark:border-white/10">
-                  <h2 className="mb-4 text-sm font-medium text-black dark:text-zinc-50">
-                    들으면서 적기
-                  </h2>
-
-                  <CaptureForm
-                    action={createCapture}
-                    submitLabel="기록하기"
-                    /*
-                      적은 뒤 이 화면으로 돌아온다. 별로 거른 자리로
-                      돌려보내지 않는 까닭은 **새 기록에는 별이 없어서**
-                      방금 적은 것이 안 보이기 때문이다. 자료 화면에서
-                      같은 판단을 했다.
-                    */
-                    returnTo={readerHref(source.id, selected.id, startPage, false)}
-                    compact
-                    values={{
-                      sourceId: source.id,
-                      /*
-                        `일반 메모`로 시작한다. 자료 화면은 `직접 인용`으로
-                        시작하는데, 그쪽은 글이 있는 자료가 많아서다.
-                        **소리에는 옮겨 적을 글이 없다.** 인용으로 시작하면
-                        원문 칸이 열린 채로 뜨고, 거기 무엇을 적어야 하는지
-                        알 수 없다. 전사문은 4차례에서 따로 담는다.
-                      */
-                      captureType: "note",
-                      content: "",
-                      originalText: "",
-                      translatedText: "",
-                      translationLanguage: "",
-                    }}
-                  />
-                </section>
-              }
+              /*
+                기록을 눌러 들어왔을 때 갈 자리. **모양이 어긋나면 null이다.**
+                주소는 사람이 손으로 고칠 수 있는 자리다. (16-2와 같은 생각)
+              */
+              initial={parseAudioTimeParam(firstValue(query.t))}
               capturesSlot={
                 <div className="flex flex-col gap-3">
                   <StarFilter
