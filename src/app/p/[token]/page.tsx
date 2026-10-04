@@ -31,9 +31,15 @@ export const metadata: Metadata = {
  * 로그인 화면으로 튕긴다.
  *
  * 무엇이 나오는가
- *   **내가 쓴 글과 서지 정보뿐이다.** 인용한 원문·번역문·초록과 올린
- *   파일은 나오지 않는다. 그 목록은 `src/lib/sharing/public-fields.ts`
- *   한 곳에 있고, 읽는 문(`public_project`)이 그 목록대로 칸을 고른다.
+ *   **내가 쓴 글과 자료 제목뿐이다.** 인용한 원문·번역문·초록, 밖에서
+ *   받아온 서지 정보, 표지 그림, 올린 파일은 나오지 않는다. 그 목록은
+ *   `src/lib/sharing/public-fields.ts` 한 곳에 있고, 읽는
+ *   문(`public_project`)이 그 목록대로 칸을 고른다.
+ *
+ *   **2026-10-04에 서지가 빠졌다.** 그전에는 저자·학술지·가수·주소가
+ *   나갔다. 그 값들은 밖에서 받아온 것이고 **공급자마다 쓰는 조건이
+ *   다르다.** 상업적으로 바뀔 때 한꺼번에 확인하기로 했다.
+ *   (VERIFICATION 4-60절)
  *
  * 이 화면이 하는 일은 **그리는 것뿐이다.** 무엇을 보여줄지 고르지 않는다.
  * 화면이 고르기 시작하면 화면이 하나 늘 때 빠뜨린다. (16-B.8 2차례)
@@ -87,7 +93,7 @@ export default async function PublicProjectPage({
       */}
       <section className="mt-8 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
         <p className="text-xs font-medium text-zinc-700 dark:text-zinc-200">
-          이 글에는 공개한 사람이 직접 쓴 메모와 자료의 서지 정보만 담겨
+          이 글에는 공개한 사람이 직접 쓴 글과 자료 제목만 담겨
           있습니다.
         </p>
         <ul className="mt-2 flex flex-col gap-1">
@@ -211,8 +217,12 @@ export default async function PublicProjectPage({
 /**
  * 자료 하나와 그에 붙인 메모.
  *
- * **서지는 있는 것만 보여준다.** 유형마다 담기는 칸이 달라서 빈 줄이 쉽게
- * 생기고, 빈 줄이 늘면 "담긴 것이 없다"처럼 보인다.
+ * **딸린 정보는 있는 것만 보여준다.** 비어 있는 칸이 빈 줄로 남으면 "담긴
+ * 것이 없다"처럼 보인다.
+ *
+ * 지금 나오는 딸린 정보는 **책을 왜 골랐는지와 읽고 나서** 둘뿐이다.
+ * 나머지 서지는 2026-10-04에 빠졌다. 그래도 이 함수는 **목록이 늘어도
+ * 그대로 도는 모양**으로 둔다. 화면이 무엇을 보여줄지 고르지 않는다.
  */
 function SourceCard({ source }: { source: PublicSource }) {
   const facts = Object.values(source.profiles)

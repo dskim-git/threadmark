@@ -89,12 +89,29 @@ test("문이 돌려준 것을 화면이 쓸 모양으로 바꾼다", () => {
   assert.equal(project.outline[0].items[0].note, "근거로 쓴다");
 });
 
-test("서지는 있는 것만 남는다", () => {
-  // 비어 있는 딸린 정보를 빈 객체로 넘기면 화면에 빈 줄이 생긴다.
-  const project = readPublicProject(goodPayload());
+test("딸린 정보는 책만 읽는다", () => {
+  /*
+    **2026-10-04에 책 하나만 남았다.** 나머지 여섯 표의 서지는 밖에서
+    받아온 값이고, 공급자 이용 정책을 확인하는 동안 안 내보낸다.
+    (VERIFICATION 4-60절)
 
-  assert.ok(project.sources[0].profiles.paper);
-  assert.equal(project.sources[0].profiles.book, null);
+    문이 아직 논문 서지를 돌려주더라도 **여기서 떨어진다.** 마이그레이션이
+    덜 적용된 데이터베이스를 보고 있을 수 있다.
+  */
+  const payload = goodPayload();
+
+  payload.sources[0].book = { why_chosen: "수업에 쓰려고" };
+
+  const project = readPublicProject(payload);
+  const profiles = project.sources[0].profiles;
+
+  assert.ok(profiles.book, "책 정보가 안 읽혔다");
+  assert.equal(profiles.book.why_chosen, "수업에 쓰려고");
+
+  // 논문 서지는 문이 돌려줘도 읽지 않는다.
+  assert.ok(!("paper" in profiles), "논문 서지를 아직 읽는다");
+  assert.ok(!("place" in profiles), "장소를 아직 읽는다");
+  assert.ok(!("media" in profiles), "작품 정보를 아직 읽는다");
 });
 
 // -----------------------------------------------------------------------------
@@ -119,7 +136,7 @@ test("원문이 섞여 있으면 화면을 그리지 않는다", () => {
 test("초록이 섞여 있으면 화면을 그리지 않는다", () => {
   const payload = goodPayload();
 
-  payload.sources[0].paper.abstract = "밖에서 받아온 남의 글";
+  payload.sources[0].paper = { abstract: "밖에서 받아온 남의 글" };
 
   assert.equal(readPublicProject(payload), null);
 });

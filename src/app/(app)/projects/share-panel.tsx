@@ -61,7 +61,7 @@ export function SharePanel({
       help="sharing"
       hint={
         liveUrl === null
-          ? "이 프로젝트를 링크로 공개할 수 있습니다. 공개되는 것은 직접 쓴 메모와 자료의 서지 정보뿐입니다."
+          ? "이 프로젝트를 링크로 공개할 수 있습니다. 공개되는 것은 직접 쓴 글과 자료 제목뿐입니다."
           : "지금 공개되어 있습니다. 이 링크를 아는 사람은 로그인하지 않아도 볼 수 있습니다."
       }
     >
@@ -72,7 +72,7 @@ export function SharePanel({
       */}
       <div className="flex flex-col gap-1 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900/40">
         <p className="text-xs font-medium text-zinc-700 dark:text-zinc-200">
-          나가는 것 — 직접 쓴 메모, 뼈대와 원고, 자료 제목과 서지 정보
+          나가는 것 — 직접 쓴 메모, 뼈대와 원고, 자료 제목
         </p>
         {WITHHELD_NOTICE.map((line) => (
           <p

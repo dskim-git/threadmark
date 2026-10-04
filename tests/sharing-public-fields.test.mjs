@@ -593,22 +593,77 @@ test("내가 쓴 글은 나간다", () => {
   }
 });
 
-test("참고문헌에 적는 값은 나간다", () => {
-  // 16-B.3절이 `서지(저자·학술지·연도·DOI)`라고 적은 그 넷이다.
-  const bibliography = [
+test("밖에서 받아온 서지는 나가지 않는다", () => {
+  /*
+    **이 검사도 2026-10-04에 뒤집혔다.** 그전에는 `참고문헌에 적는 값은
+    나간다`였고, 16-B.3절의 두 번째 기준이 그것이었다.
+
+    그 기준이 **밖에서 받아온 값을 공개 쪽으로 들였다.** 그리고 그 값들은
+    저작권 말고 **공급자의 이용 정책**이 따로 걸리는 자리였다. 카카오맵에서
+    그것을 확인했다. (VERIFICATION 4-60절)
+
+    공급자마다 약관을 읽고 문의해야 하는 일이라, 상업적으로 바뀔 때
+    한꺼번에 확인하기로 했다. 그동안은 안 내보낸다.
+
+    **검사를 뒤집을 때는 까닭을 남긴다.** 까닭 없이 뒤집힌 검사는, 다음
+    사람이 "원래 나가야 하는 것인데 누가 잘못 막았나" 하고 되돌린다.
+  */
+  const fromProviders = [
     ["paper_profiles", "authors"],
     ["paper_profiles", "journal_name"],
     ["paper_profiles", "publication_year"],
     ["paper_profiles", "doi"],
+    ["book_profiles", "authors"],
+    ["book_profiles", "publisher"],
+    ["book_profiles", "isbn13"],
+    ["website_profiles", "site_name"],
+    ["youtube_profiles", "channel_name"],
+    ["music_profiles", "artist"],
+    ["media_profiles", "original_title"],
+    ["media_profiles", "cast_names"],
   ];
 
-  for (const [table, column] of bibliography) {
+  for (const [table, column] of fromProviders) {
     assert.equal(
       isPublicField(table, column),
-      true,
-      `${table}.${column}이 공개 목록에서 빠졌다. 참고문헌에 적는 값이다`,
+      false,
+      `${table}.${column}이 공개 목록에 있다. 밖에서 받아온 값이고 공급자 이용 정책을 확인하는 중이다`,
     );
   }
+});
+
+test("내가 쓴 글과 자료 제목은 나간다", () => {
+  /*
+    **막는 것만 보면 과잉 차단을 놓친다.** (보안 원칙 6)
+
+    서지를 빼고 남은 것이 이 기능의 전부다. 여기가 막히면 공개 페이지가
+    통째로 빈다. 기준이 하나로 줄었으므로 이 검사가 그 기준이다.
+  */
+  assert.equal(isPublicField("sources", "title"), true, "자료 제목이 빠졌다");
+  assert.equal(isPublicField("captures", "content"), true, "내 메모가 빠졌다");
+  assert.equal(isPublicField("book_profiles", "why_chosen"), true);
+  assert.equal(isPublicField("book_profiles", "verdict"), true);
+  assert.equal(isPublicField("project_outline_nodes", "body"), true);
+  assert.equal(isPublicField("project_node_items", "note"), true);
+});
+
+test("내가 쓴 칸이 있는 딸린 정보 표만 공개 목록에 남는다", () => {
+  /*
+    딸린 정보 표 일곱 중 `book_profiles` 하나만 남았다. 그 표에
+    `why_chosen`과 `verdict`가 있기 때문이다.
+
+    **이 검사가 다음 사람에게 기준을 말해준다.** 딸린 정보 표를 공개
+    목록에 넣고 싶어지면, 그 표에 **내가 쓴 칸**이 있는지 먼저 본다.
+  */
+  const profileTables = PUBLIC_PROJECT_FIELDS.map((entry) => entry.table)
+    .filter((table) => table.endsWith("_profiles"))
+    .sort();
+
+  assert.deepEqual(
+    profileTables,
+    ["book_profiles"],
+    "딸린 정보 표가 공개 목록에 늘었다. 그 표에 내가 쓴 칸이 있는지 확인하고 이 검사를 고친다",
+  );
 });
 
 test("장소의 주소와 좌표는 나가지 않는다", () => {
@@ -704,14 +759,39 @@ test("나가는 칸만 남긴다", () => {
   assert.deepEqual(picked, { content: "내 메모" });
 });
 
-test("원문이 섞여 들어와도 떨어진다", () => {
+test("서지가 섞여 들어와도 떨어진다", () => {
+  /*
+    **논문 서지는 통째로 안 나간다.** (2026-10-04) 그래서 초록만 떨어지는
+    것이 아니라 학술지 이름도 떨어진다. 그전에는 학술지 이름이 남는 것을
+    확인하는 검사였다.
+
+    `paper_profiles`는 공개 목록에 없으므로 **모르는 표와 같이 다뤄진다.**
+    빈 객체가 돌아온다. 모르면 거부한다.
+  */
   const picked = pickPublicFields("paper_profiles", {
     journal_name: "Nature",
     abstract: "밖에서 받아온 남의 글",
   });
 
-  assert.ok(!("abstract" in picked));
-  assert.equal(picked.journal_name, "Nature");
+  assert.deepEqual(picked, {});
+});
+
+test("내가 쓴 글은 그대로 남는다", () => {
+  /*
+    책 정보는 공개 목록에 남아 있다. **서지는 떨어지고 내가 쓴 글만
+    남는지** 본다. 한 표 안에서 갈리는 유일한 자리다.
+  */
+  const picked = pickPublicFields("book_profiles", {
+    why_chosen: "수업에 쓰려고 골랐다",
+    verdict: "읽고 나서 생각이 바뀌었다",
+    publisher: "밖에서 받아온 출판사",
+    isbn13: "9788901234567",
+  });
+
+  assert.deepEqual(picked, {
+    why_chosen: "수업에 쓰려고 골랐다",
+    verdict: "읽고 나서 생각이 바뀌었다",
+  });
 });
 
 test("모르는 표는 아무것도 내보내지 않는다", () => {

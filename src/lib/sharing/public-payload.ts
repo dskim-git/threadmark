@@ -31,23 +31,26 @@ export type PublicNote = {
 };
 
 /**
- * 자료에 딸린 서지. 유형마다 있는 것이 다르다.
+ * 자료에 딸린 정보 가운데 **공개되는 것.**
  *
- * **장소가 없다.** 2026-10-04에 공개 목록에서 뺐다. 주소와 좌표는 카카오
- * 로컬 API에서 받아온 값이고, 그 API의 이용 정책이 저장과 활용을 제한한다.
- * 확정 답을 받는 동안 공개하지 않는다. (`public-fields.ts`의
- * `WITHHELD_TABLES`, VERIFICATION 4-60절)
+ * **책 하나뿐이다.** 2026-10-04에 나머지를 전부 뺐다.
  *
- * 문이 아직 그 값을 돌려주더라도 **여기서 떨어진다.** 마이그레이션이 덜
- * 적용된 데이터베이스를 보고 있을 수 있어서다.
+ * 처음에는 일곱 표의 서지가 모두 나갔다. 16-B.3절의 두 번째 기준이
+ * `참고문헌에 적는 값이면 나간다`였기 때문이다. 그 기준이 **밖에서
+ * 받아온 값을 공개 쪽으로 들였고**, 그 값들은 저작권 말고 **공급자의
+ * 이용 정책**이 따로 걸리는 자리였다. (VERIFICATION 4-60절)
+ *
+ * 공급자마다 약관을 읽고 문의해야 하는 일이라, 상업적으로 바뀔 때
+ * 한꺼번에 확인하기로 했다. 그동안은 안 내보낸다.
+ *
+ * `book`만 남은 까닭은 그 표에 `why_chosen`과 `verdict`가 있어서다.
+ * **내가 쓴 글이다.** 저자·출판사·ISBN은 그 표에서도 빠졌다.
+ *
+ * 문이 아직 다른 값을 돌려주더라도 **여기서 떨어진다.** 마이그레이션이
+ * 덜 적용된 데이터베이스를 보고 있을 수 있어서다.
  */
 export type PublicProfiles = {
-  paper: Record<string, unknown> | null;
   book: Record<string, unknown> | null;
-  website: Record<string, unknown> | null;
-  youtube: Record<string, unknown> | null;
-  music: Record<string, unknown> | null;
-  media: Record<string, unknown> | null;
 };
 
 /** 공개 화면이 보여주는 자료 하나. */
@@ -213,14 +216,12 @@ export function readPublicProject(value: unknown): PublicProject | null {
         subtitle: text(row.subtitle),
         description: text(row.description),
         captures: notes(row.captures),
+        /*
+          **책만 읽는다.** 논문·장소·웹사이트·영상·곡·작품은 읽지 않는다.
+          문이 돌려주더라도 여기서 떨어진다.
+        */
         profiles: {
-          paper: record(row.paper),
           book: record(row.book),
-          // 장소는 읽지 않는다. 문이 돌려주더라도 여기서 떨어진다.
-          website: record(row.website),
-          youtube: record(row.youtube),
-          music: record(row.music),
-          media: record(row.media),
         },
       })),
     outline: outline
@@ -263,5 +264,6 @@ export function readPublicProject(value: unknown): PublicProject | null {
  */
 export const WITHHELD_NOTICE = [
   "인용한 원문과 번역문, 논문 초록은 공개되지 않습니다.",
+  "밖에서 받아온 서지 정보(저자·학술지·출판사·가수·주소 등)는 공개되지 않습니다.",
   "표지 그림과 올린 파일은 올린 사람만 볼 수 있습니다.",
 ] as const;
