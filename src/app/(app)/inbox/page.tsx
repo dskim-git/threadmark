@@ -10,7 +10,10 @@ import { HelpButton } from "@/app/(app)/help-button";
 import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
 import { countCaptureStars, listInboxCaptures } from "@/lib/captures/queries";
-import { listProjectChips } from "@/lib/projects/queries";
+import {
+  listProjectChips,
+  listProjectsForCaptures,
+} from "@/lib/projects/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import {
   getTagBySlug,
@@ -60,10 +63,11 @@ export default async function InboxPage({
     listTagsWithCounts(),
   ]);
 
-  // 기록 id를 다 안 뒤에야 태그를 물어볼 수 있다. 한 번에 묶어서 가져온다.
-  const captureTags = await listTagsForCaptures(
-    captures.map((capture) => capture.id),
-  );
+  // 기록 id를 다 안 뒤에야 태그와 프로젝트를 물어볼 수 있다. 둘을 함께 묶는다.
+  const [captureTags, captureProjects] = await Promise.all([
+    listTagsForCaptures(captures.map((capture) => capture.id)),
+    listProjectsForCaptures(captures.map((capture) => capture.id)),
+  ]);
 
   const notice = firstValue(params.notice);
   const error = firstValue(params.error);
@@ -211,6 +215,7 @@ export default async function InboxPage({
           returnTo={returnTo}
           projects={projects}
           captureTags={captureTags}
+          captureProjects={captureProjects}
           allTags={allTags}
           emptyText={
             activeTag

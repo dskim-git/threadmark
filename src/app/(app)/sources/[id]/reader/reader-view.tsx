@@ -301,7 +301,7 @@ export function ReaderView({
     router.refresh();
   }
 
-  async function handleSaveQuote(memo: string) {
+  async function handleSaveQuote(memo: string, tidiedText?: string) {
     if (!quote) {
       return;
     }
@@ -311,7 +311,13 @@ export function ReaderView({
     const result = await createPdfSelectionCapture({
       sourceId,
       memo,
+      /*
+        **집은 그대로를 담은 자리는 그대로 보낸다.** 다듬은 글은 따로
+        간다. 담기는 값은 다듬은 쪽이고, 집은 값은 `locator`에 남아
+        "이게 정말 논문에 있던 말인가"를 되짚을 수 있게 한다. (2026-10-04)
+      */
       locator: quote.locator,
+      tidiedText,
     });
 
     setSave({ phase: "idle" });
@@ -361,6 +367,7 @@ export function ReaderView({
 
     const result = await createPdfTranslationCapture({
       sourceId,
+      tidiedText: input.tidiedText,
       memo: input.memo,
       locator: quote.locator,
       targetLanguage: input.targetLanguage,
@@ -537,7 +544,9 @@ export function ReaderView({
                         busy={save.phase === "saving"}
                         translationEnabled={translationEnabled}
                         onTranslate={handleTranslate}
-                        onSave={(memo) => void handleSaveQuote(memo)}
+                        onSave={(memo, tidiedText) =>
+                          void handleSaveQuote(memo, tidiedText)
+                        }
                         onSaveWithTranslation={(input) =>
                           void handleSaveTranslation(input)
                         }

@@ -282,3 +282,61 @@ export async function countProjects(): Promise<number> {
 
   return count ?? 0;
 }
+
+/**
+ * 기록마다 이어진 프로젝트. 기록 번호로 찾는다. (2026-10-04)
+ *
+ * **기록 하나씩 묻지 않는다.** 목록이 쉰 건이면 질의가 쉰 번 나간다.
+ * 한 번에 묻고 기록 번호로 갈라 담는다. `listTagsForCaptures`가 태그에
+ * 대해 하는 것과 같은 모양이다.
+ *
+ * 왜 필요해졌나
+ *   기록 카드가 **고치는 칸을 늘 펼쳐 두고 있었다.** 사용자가 "한눈에
+ *   들어오지 못하고 산만하다"고 했다. 접고 나니 읽기 상태에서 보여줄 것이
+ *   필요해졌고, 그중 하나가 **이 기록이 어느 프로젝트에 이어져 있는가**다.
+ *
+ *   그전까지 카드에 그 값이 없었다. 프로젝트를 고르는 칸은 있었는데
+ *   **이미 이어진 것은 보여주지 않았다.** 접기 전에는 "고르는 칸이 있으니
+ *   이어진 것도 보이겠지"로 넘어갔던 자리다.
+ *
+ * 지워진 프로젝트는 뺀다. 이름이 남아 있어도 들어갈 수 없는 곳이다.
+ */
+export async function listProjectsForCaptures(
+  captureIds: readonly string[],
+): Promise<Record<string, ProjectChip[]>> {
+  if (captureIds.length === 0) {
+    return {};
+  }
+
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("capture_projects")
+    .select("capture_id, projects (id, name, color, deleted_at)")
+    .in("capture_id", captureIds as string[]);
+
+  if (error) {
+    console.error("[ThreadMark] 기록의 프로젝트 조회 실패:", error.message);
+
+    return {};
+  }
+
+  const byCapture: Record<string, ProjectChip[]> = {};
+
+  for (const row of data ?? []) {
+    const project = row.projects;
+
+    if (!project || project.deleted_at !== null) {
+      continue;
+    }
+
+    const list = byCapture[row.capture_id] ?? [];
+
+    list.push({ id: project.id, name: project.name, color: project.color });
+    byCapture[row.capture_id] = list;
+  }
+
+  return byCapture;
+}

@@ -23,6 +23,13 @@ import type { ProjectChip } from "@/lib/projects/queries";
 
 import type { Tag } from "@/lib/tags/queries";
 
+import {
+  CaptureEditButton,
+  CaptureEditing,
+  WhenEditing,
+  WhenReading,
+} from "./capture-editing";
+
 import { StarButton } from "../star-button";
 import { TagEditor } from "../tag-editor";
 import { deleteCapture, toggleCaptureStar } from "./actions";
@@ -36,6 +43,21 @@ import { deleteCapture, toggleCaptureStar } from "./actions";
  *
  * 세 가지가 같은 모양으로 나란히 놓이면, 나중에 이 기록을 다시 읽을 때
  * 어디까지가 원문이고 어디부터가 내 생각인지 구분할 수 없다.
+ *
+ * **읽는 모양과 고치는 모양을 가른다.** (2026-10-04, 사용자가 쓰다가 말함)
+ *
+ *   읽을 때   갈래·쪽·날짜 · 원문 · 내 메모 · 달린 태그 · 이어진 프로젝트
+ *   고칠 때   위의 것 + 태그 칸 · 수정 · 삭제 · 자리에 놓기 · 프로젝트에 잇기
+ *
+ * 그전까지는 고치는 도구가 **늘 펼쳐져 있었다.** 기록 셋만 있어도 화면이
+ * 도구로 뒤덮여 "한눈에 들어오지 않고 산만하다"는 말을 들었다.
+ *
+ * 도구는 하나씩 늘었다. 태그, 자리에 놓기, 프로젝트에 잇기. 더할 때마다
+ * "하나쯤이야"였고 **다 모이고 나서야 보였다.** 한 번에 하나씩 더하는
+ * 자리에서는 더한 뒤의 전체를 보기 어렵다.
+ *
+ * **이 칸 하나가 기록·자료·읽기 세 화면을 모두 그린다.** 그래서 여기만
+ * 고치면 전체에 걸린다. 화면마다 따로 그렸다면 한 곳을 빠뜨렸을 것이다.
  */
 export function CaptureList({
   captures,
@@ -45,6 +67,7 @@ export function CaptureList({
   fileChecksums,
   imageFileIds,
   captureTags,
+  captureProjects,
   allTags,
   videoSeekable = false,
 }: {
@@ -78,6 +101,17 @@ export function CaptureList({
    * 빼기 위해서다. 넘기려면 allTags도 함께 넘겨야 쓰던 태그를 눌러서 달 수 있다.
    */
   captureTags?: Record<string, Tag[]>;
+  /**
+   * 기록마다 이어진 프로젝트. 기록 번호로 찾는다. (2026-10-04)
+   *
+   * **읽는 상태에서 보여준다.** 고치는 칸을 접고 나니 "이 기록이 어디에
+   * 묶여 있나"가 안 보였다. 그것은 읽을 때 알아야 하는 것이지 고칠 때만
+   * 필요한 것이 아니다.
+   *
+   * 넘기지 않으면 그 줄을 그리지 않는다. 읽어오는 비용이 아까운 화면이
+   * 있을 수 있고, **없는 것을 빈 줄로 그리지 않는다.**
+   */
+  captureProjects?: Record<string, ProjectChip[]>;
   /** 내가 쓴 태그 전부. */
   allTags?: readonly Tag[];
   /**
@@ -100,8 +134,8 @@ export function CaptureList({
   return (
     <ul className="flex flex-col gap-4">
       {captures.map((capture) => (
+        <CaptureEditing key={capture.id}>
         <li
-          key={capture.id}
           className="flex flex-col gap-4 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -218,6 +252,15 @@ export function CaptureList({
             </div>
 
             <div className="flex items-center gap-1">
+              {/*
+                고치기 단추. **날짜 왼쪽이다.** (2026-10-04, 사용자가 정함)
+
+                오른쪽 끝 묶음은 기록마다 같은 자리에 있어서 목록을 훑을 때
+                눈이 그 자리를 찾아간다. 별이 그 자리에 있는 것과 같은
+                까닭으로 여기 둔다.
+              */}
+              <CaptureEditButton />
+
               <span className="text-xs text-zinc-500">
                 {formatDateTime(capture.createdAt)}
               </span>
@@ -236,13 +279,57 @@ export function CaptureList({
             </div>
           </div>
 
+          {/*
+            원문. **자료가 한 말이다.** (설계 문서 2.4절)
+
+            2026-10-04에 모양을 고쳤다. 사용자가 "원문과 내 메모가 모두
+            동일한 색상이나 폰트라서 구분이 안 간다"고 했다. 맞는 말이었다.
+            이 칸의 바탕은 `bg-zinc-50`이고 카드 바탕은 `bg-white`인데,
+            그 둘의 차이가 **어두운 화면에서는 거의 보이지 않았다.**
+
+            이 앱이 "가장 중요한 약속"이라고 적어둔 구분이다. 화면이 그것을
+            못 지키면 담을 때 갈라 둔 뜻이 없어진다.
+
+            **두 가지로 가른다. 하나만으로는 모자란다.**
+
+              글꼴  원문은 `font-serif`. 인쇄된 글이라는 느낌이 그 자체로
+                    "내가 쓴 것이 아니다"를 말한다.
+              바탕  한 단 더 진하게. 왼쪽 선도 굵게.
+
+            글꼴 하나로 두지 않는 까닭은, 글꼴 설정에서 `한 글꼴`을 고르면
+            `--font-serif`와 `--font-sans`가 같은 값이 되기 때문이다.
+            그때는 바탕과 선만 남는다. **둘 중 하나는 늘 살아 있어야 한다.**
+          */}
           {capture.originalText ? (
-            <figure className="flex flex-col gap-1">
-              <figcaption className="text-xs font-medium text-zinc-500">
+            <figure className="flex flex-col gap-1.5">
+              <figcaption className="flex flex-wrap items-baseline gap-2 text-xs font-medium tracking-wide text-zinc-500">
                 원문
+                {/*
+                  집은 그대로가 아니면 밝힌다. (2026-10-04)
+
+                  띄어쓰기나 빠진 마침표를 고친 것이 보통인데, **밝히지
+                  않으면 이 글이 원문 그대로인지 알 수 없다.** 이 앱이
+                  인용을 담는 까닭이 "나중에 확인할 수 있게"인데, 확인할 수
+                  없으면 담은 뜻이 없다.
+
+                  집은 그대로는 `locator`에 남아 있어서 마우스를 올리면
+                  보인다. 지우지 않고 밝히는 쪽을 골랐다.
+                */}
+                {capture.pdfLocation &&
+                "selectedText" in capture.pdfLocation &&
+                capture.pdfLocation.selectedText !== capture.originalText ? (
+                  <span
+                    title={`집은 그대로: ${capture.pdfLocation.selectedText}`}
+                    className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-normal text-zinc-500 dark:bg-white/[.08] dark:text-zinc-400"
+                  >
+                    다듬음
+                  </span>
+                ) : null}
               </figcaption>
-              <blockquote className="border-l-2 border-zinc-300 bg-zinc-50 py-2 pl-4 text-sm leading-7 text-zinc-800 dark:border-zinc-700 dark:bg-white/[.04] dark:text-zinc-200">
-                <p className="whitespace-pre-wrap">{capture.originalText}</p>
+              <blockquote className="rounded-r-lg border-l-[3px] border-zinc-400 bg-zinc-100 py-3 pl-4 pr-3 dark:border-zinc-600 dark:bg-white/[.07]">
+                <p className="whitespace-pre-wrap font-serif text-[0.9375rem] leading-8 text-zinc-800 dark:text-zinc-200">
+                  {capture.originalText}
+                </p>
               </blockquote>
             </figure>
           ) : null}
@@ -254,7 +341,12 @@ export function CaptureList({
                   .filter((part) => part !== null)
                   .join(" · ")}
               </p>
-              <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-700 dark:text-zinc-300">
+              {/*
+                옮긴 글은 **원문의 파생물**이라 원문 쪽 모양을 따른다.
+                내 글과 같은 모양으로 두면 기계가 만든 글이 내 생각처럼
+                읽힌다. 다만 원문 그 자체는 아니므로 바탕은 칠하지 않는다.
+              */}
+              <p className="whitespace-pre-wrap font-serif text-[0.9375rem] leading-8 text-zinc-700 dark:text-zinc-300">
                 {capture.translatedText}
               </p>
               {/*
@@ -276,12 +368,24 @@ export function CaptureList({
             </div>
           ) : null}
 
+          {/*
+            내 메모. **내가 쓴 글이다.**
+
+            원문과 반대로 간다. 바탕을 칠하지 않고 본문 글꼴 그대로 둔다.
+            **이 카드에서 가장 평범하게 보이는 것이 내 글이어야 한다.**
+            담아둔 것을 다시 읽을 때 눈이 머무는 곳이 여기다.
+
+            원문이 함께 있을 때만 `내 메모` 딱지를 붙인다. 메모만 있으면
+            가릴 것이 없어서 딱지가 하는 일이 없다.
+          */}
           {capture.content ? (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               {capture.originalText ? (
-                <p className="text-xs font-medium text-zinc-500">내 메모</p>
+                <p className="text-xs font-medium tracking-wide text-accent dark:text-accent-dark">
+                  내 메모
+                </p>
               ) : null}
-              <p className="whitespace-pre-wrap text-sm leading-7 text-black dark:text-zinc-100">
+              <p className="whitespace-pre-wrap text-[0.9375rem] leading-8 text-black dark:text-zinc-100">
                 {capture.content}
               </p>
             </div>
@@ -293,16 +397,58 @@ export function CaptureList({
             본문 아래, 고치기·삭제 줄 위에 둔다. 기록을 읽고 나서 "이게
             무엇에 대한 것이었지"를 붙이는 순서가 자연스럽다.
           */}
-          {captureTags && allTags ? (
-            <TagEditor
-              target="capture"
-              id={capture.id}
-              tags={captureTags[capture.id] ?? []}
-              allTags={allTags}
-              returnTo={returnTo}
-              compact
-            />
-          ) : null}
+          {/*
+            읽는 동안 보여줄 것. **달린 태그와 이어진 프로젝트뿐이다.**
+
+            고치는 칸을 숨기고 나니 "이 기록이 무엇에 묶여 있나"가 안
+            보였다. 그것은 기록을 읽을 때 알아야 하는 것이지 고칠 때만
+            필요한 것이 아니다.
+
+            **하나도 없으면 줄 자체를 그리지 않는다.** 빈 줄이 있으면
+            무언가 들어갈 자리가 비어 있는 것처럼 보인다.
+          */}
+          <WhenReading>
+            {(captureTags?.[capture.id]?.length ?? 0) > 0 ||
+            (captureProjects?.[capture.id]?.length ?? 0) > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(captureTags?.[capture.id] ?? []).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-700 dark:bg-white/[.08] dark:text-zinc-300"
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+
+                {(captureProjects?.[capture.id] ?? []).map((project) => (
+                  /*
+                    프로젝트는 눌러서 갈 수 있게 둔다. 태그와 다른 점이다.
+                    태그는 이름이고 프로젝트는 **갈 수 있는 자리**다.
+                  */
+                  <Link
+                    key={project.id}
+                    href={`/projects/${project.id}`}
+                    className="rounded-full border border-black/[.08] px-2.5 py-0.5 text-xs text-zinc-600 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-400 dark:hover:bg-white/[.06]"
+                  >
+                    {project.name}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </WhenReading>
+
+          <WhenEditing>
+            {captureTags && allTags ? (
+              <TagEditor
+                target="capture"
+                id={capture.id}
+                tags={captureTags[capture.id] ?? []}
+                allTags={allTags}
+                returnTo={returnTo}
+                compact
+              />
+            ) : null}
+          </WhenEditing>
 
           {/*
             단추 줄.
@@ -316,6 +462,7 @@ export function CaptureList({
             없는데 밀어붙이느라 그 칸이 한 글자 너비까지 줄어든다.
             좁으면 **줄을 바꿔 아래로 내려가는 편**이 낫다.
           */}
+          <WhenEditing>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-black/[.06] pt-3 dark:border-white/[.1]">
             <Link
               href={`/captures/${capture.id}/edit`}
@@ -395,7 +542,9 @@ export function CaptureList({
               </Reveal>
             ) : null}
           </div>
+          </WhenEditing>
         </li>
+        </CaptureEditing>
       ))}
     </ul>
   );

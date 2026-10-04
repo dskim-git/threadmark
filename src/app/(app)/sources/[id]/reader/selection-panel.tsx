@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { PdfSelectionLocator } from "@/lib/captures/pdf-locator";
 import { MAX_TEXT_LENGTH } from "@/lib/captures/schema";
+import { heavilyChanged } from "@/lib/captures/tidy-quote";
 import {
   DEFAULT_TRANSLATION_LANGUAGE,
   MAX_TRANSLATION_INPUT_LENGTH,
@@ -20,9 +21,32 @@ import {
  *   가운데 옮긴 글 — 기계가 만든 것. 고칠 수 있다.
  *   아래쪽 내 메모 — 내가 한 말. 비워도 된다.
  *
- * 고른 문장을 고칠 수 없게 둔 것이 중요하다. 인용은 원문 그대로여야 하고,
- * 여기서 손댈 수 있으면 나중에 "이게 정말 논문에 있던 말인가"를 확인할 수 없다.
- * 다듬고 싶다면 그것은 인용이 아니라 바꾸어 쓰기이며, 메모란에 적을 일이다.
+ * 고른 문장은 **기본적으로 고칠 수 없다.** 인용은 원문 그대로여야 하고,
+ * 마음대로 손댈 수 있으면 나중에 "이게 정말 논문에 있던 말인가"를 확인할
+ * 수 없다. 다듬는 것과 바꾸어 쓰는 것은 다르고, 바꾸어 쓴 것은 메모란에
+ * 적을 일이다.
+ *
+ * **다만 다듬는 길을 하나 열어 두었다.** (2026-10-04, 사용자 요청)
+ *
+ *   > 가끔 pdf에서 긁어온 원문을 약간 수정해서 저장해야 할 때가 있어.
+ *   > (띄어쓰기가 이상하다던가 마침표까지 드래그가 안되었다던가)
+ *
+ *   그 둘은 **원문이 그런 것이 아니라 드래그가 그렇게 집은 것**이다.
+ *   PDF의 글자는 보이지 않는 조각 수백 개라 줄이 바뀌는 자리에서 띄어쓰기가
+ *   끼거나 끝의 마침표가 빠진다. 고치면 원문에서 멀어지는 것이 아니라
+ *   **가까워진다.**
+ *
+ *   그리고 이 규칙은 이미 반쪽만 걸려 있었다. 저장한 뒤 `수정` 화면에서는
+ *   원문 칸이 열려 있고 데이터베이스도 막지 않는다. **고치려면 일부러 한
+ *   번 저장해야 하는 상태**였고, 그것이 더 나쁘다.
+ *
+ * 어떻게 뜻을 지키나
+ *   - 기본은 읽기만 한다. **눌러야 열린다.** 열어두면 "다시 써도 되는 칸"이 된다.
+ *   - 다듬어도 **집은 그대로는 `locator.selectedText`에 남는다.** 담기는
+ *     값과 집은 값이 갈라져 있어 되짚어 볼 수 있다.
+ *   - 고른 자리(`rects`, 앞뒤 문맥)는 건드리지 않는다. **그것이 안전망이다.**
+ *     글자를 다듬어도 원문의 그 자리로 갈 수 있다.
+ *   - 되돌리는 단추를 둔다.
  *
  * 반대로 옮긴 글은 고칠 수 있다. 9.4절이 "번역 결과는 사용자가 수정할 수
  * 있게 한다"고 하기 때문이다. 고쳤는지 여부는 저장할 때 함께 남는다.
@@ -50,6 +74,8 @@ type TranslationState =
 
 export type TranslationSaveInput = {
   memo: string;
+  /** 집은 글을 다듬었다면 그 글. 안 다듬었으면 없다. (2026-10-04) */
+  tidiedText?: string;
   machineTranslatedText: string;
   translatedText: string;
   targetLanguage: TranslationLanguageCode;
@@ -104,7 +130,14 @@ export function SelectionPanel({
     | { ok: true; translatedText: string; translatedAt: string }
     | { ok: false; message: string }
   >;
-  onSave: (memo: string) => void;
+  /**
+   * 인용만 저장한다.
+   *
+   * 다듬은 글을 함께 넘긴다. **안 다듬었으면 넘기지 않는다.** 집은 것과
+   * 같은 글을 굳이 보내면, 받는 쪽에서 "다듬었다"와 "그대로다"를 가릴 수
+   * 없다.
+   */
+  onSave: (memo: string, tidiedText?: string) => void;
   onSaveWithTranslation: (input: TranslationSaveInput) => void;
   onDismiss: () => void;
 }) {
@@ -117,6 +150,14 @@ export function SelectionPanel({
     그 사이에 예전 메모가 잠깐 보인다.
   */
   const [memo, setMemo] = useState("");
+
+  /*
+    집은 글을 다듬는 칸. (2026-10-04)
+
+    **`null`이면 안 열린 것이다.** 빈 글자와 가려야 한다. 빈 글자로 두면
+    "열었는데 다 지운 것"과 "안 열었다"를 구분할 수 없다.
+  */
+  const [tidied, setTidied] = useState<string | null>(null);
   const [language, setLanguage] = useState<TranslationLanguageCode>(
     DEFAULT_TRANSLATION_LANGUAGE,
   );
@@ -178,9 +219,85 @@ export function SelectionPanel({
       {/*
         고른 문장은 읽기만 한다. 인용은 원문 그대로여야 한다. (설계 문서 2.4절)
       */}
-      <blockquote className="max-h-40 overflow-auto rounded-lg border-l-2 border-zinc-300 bg-zinc-50 px-3 py-2 text-sm leading-6 text-zinc-800 dark:border-zinc-600 dark:bg-white/[.04] dark:text-zinc-200">
-        {locator.selectedText}
-      </blockquote>
+      {/*
+        모양을 기록 목록의 원문 칸과 맞춘다. (2026-10-04)
+        **고른 그 자리에서 보이는 모양과 저장된 뒤의 모양이 같아야 한다.**
+        다르면 "내가 고른 게 저렇게 들어갔나"를 한 번 더 확인하게 된다.
+      */}
+      {tidied === null ? (
+        <blockquote className="max-h-40 overflow-auto rounded-r-lg border-l-[3px] border-zinc-400 bg-zinc-100 px-3 py-2.5 font-serif text-sm leading-7 text-zinc-800 dark:border-zinc-600 dark:bg-white/[.07] dark:text-zinc-200">
+          {locator.selectedText}
+        </blockquote>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="tidied-quote" className="sr-only">
+            집은 문장 다듬기
+          </label>
+          {/*
+            열렸을 때도 **원문 칸처럼 보이게** 둔다. 같은 글꼴과 같은 왼쪽
+            선이다. 모양이 달라지면 "다른 칸에 옮겨 적는 것"처럼 느껴지고,
+            그러면 다시 쓰고 싶어진다.
+          */}
+          <textarea
+            id="tidied-quote"
+            rows={5}
+            maxLength={MAX_TEXT_LENGTH}
+            value={tidied}
+            disabled={locked}
+            onChange={(event) => setTidied(event.target.value)}
+            className="resize-none rounded-r-lg border-l-[3px] border-zinc-400 bg-zinc-100 px-3 py-2.5 font-serif text-sm leading-7 text-zinc-800 disabled:opacity-60 dark:border-zinc-600 dark:bg-white/[.07] dark:text-zinc-200"
+          />
+
+          {/*
+            얼마나 지웠는지 알린다. **띄어쓰기를 고치는 것과 문장을 새로
+            쓰는 것은 다르다.** 막지는 않는다. 무엇이 인용인지는 쓰는
+            사람이 정할 일이고, 우리는 그 선을 넘고 있다는 것만 말한다.
+          */}
+          {heavilyChanged(locator.selectedText, tidied) ? (
+            <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
+              집은 문장과 많이 달라졌습니다. 다듬는 것을 넘어 고쳐 쓰는
+              것이라면 인용이 아니라 메모란에 적는 편이 맞습니다.
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      {/*
+        다듬기를 켜고 끄는 줄. **기본은 꺼져 있다.**
+
+        되돌리는 단추를 함께 둔다. 집은 그대로로 돌아갈 길이 없으면
+        잘못 지웠을 때 처음부터 다시 골라야 한다.
+      */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button
+          type="button"
+          onClick={() =>
+            setTidied((value) => (value === null ? locator.selectedText : null))
+          }
+          disabled={locked}
+          className="text-xs text-zinc-500 underline underline-offset-2 transition-colors hover:text-black disabled:opacity-50 dark:hover:text-zinc-50"
+        >
+          {tidied === null ? "집은 문장 다듬기" : "다듬기 그만두기"}
+        </button>
+
+        {tidied !== null && tidied !== locator.selectedText ? (
+          <button
+            type="button"
+            onClick={() => setTidied(locator.selectedText)}
+            disabled={locked}
+            className="text-xs text-zinc-500 underline underline-offset-2 transition-colors hover:text-black disabled:opacity-50 dark:hover:text-zinc-50"
+          >
+            집은 그대로 되돌리기
+          </button>
+        ) : null}
+
+        {tidied !== null ? (
+          <span className="text-xs leading-5 text-zinc-500">
+            띄어쓰기나 빠진 문장부호를 고치는 자리입니다. 고른 자리는 그대로
+            남습니다.
+          </span>
+        ) : null}
+      </div>
 
       {/*
         이어 붙인 것을 한 걸음 되돌린다. (15-G)
@@ -354,7 +471,7 @@ export function SelectionPanel({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => onSave(memo)}
+          onClick={() => onSave(memo, tidiedForSave(locator.selectedText, tidied))}
           disabled={locked}
           className={
             translated
@@ -371,6 +488,7 @@ export function SelectionPanel({
             onClick={() =>
               onSaveWithTranslation({
                 memo,
+                tidiedText: tidiedForSave(locator.selectedText, tidied),
                 machineTranslatedText: translated.machineText,
                 translatedText: translated.text,
                 targetLanguage: translated.language,
@@ -386,4 +504,21 @@ export function SelectionPanel({
       </div>
     </div>
   );
+}
+
+/**
+ * 저장할 때 함께 보낼 다듬은 글.
+ *
+ * **안 다듬었거나 집은 것과 같으면 보내지 않는다.** 보내면 받는 쪽에서
+ * 다듬었는지 아닌지를 가릴 수 없다. 담기는 값은 어차피 같지만, 기록을
+ * 나중에 읽을 때 `다듬음`이라고 표시할지가 거기서 갈린다.
+ */
+function tidiedForSave(picked: string, tidied: string | null): string | undefined {
+  const trimmed = tidied?.trim() ?? "";
+
+  if (trimmed.length === 0 || trimmed === picked) {
+    return undefined;
+  }
+
+  return trimmed;
 }

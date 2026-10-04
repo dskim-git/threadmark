@@ -107,6 +107,25 @@ const pdfCaptureSchema = z.object({
     .transform((value) => value.trim())
     .transform((value) => (value.length > 0 ? value : null)),
   locator: pdfSelectionLocatorSchema,
+  /**
+   * 드래그로 집은 글을 손으로 다듬은 것. (2026-10-04, 사용자 요청)
+   *
+   * > 가끔 pdf에서 긁어온 원문을 약간 수정해서 저장해야 할 때가 있어.
+   * > (띄어쓰기가 이상하다던가 마침표까지 드래그가 안되었다던가)
+   *
+   * **없으면 집은 그대로 담는다.** 다듬지 않은 것이 보통이고, 그때
+   * 빈 값을 보내게 하지 않는다.
+   *
+   * 다듬어도 `locator.selectedText`는 **집은 그대로 남는다.** 담기는 값과
+   * 집은 값이 갈라져 있어야 "이게 정말 논문에 있던 말인가"를 나중에
+   * 확인할 수 있다. 설계 문서 2.4절이 지키려던 것이 그것이고, 고치는 길을
+   * 여는 대신 **고치기 전 값을 남기는 쪽**으로 지킨다.
+   */
+  tidiedText: z
+    .string()
+    .trim()
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`)
+    .optional(),
 });
 
 export async function createPdfSelectionCapture(
@@ -120,7 +139,7 @@ export async function createPdfSelectionCapture(
     return { ok: false, message: firstIssueMessage(parsed.error) };
   }
 
-  const { sourceId, memo, locator } = parsed.data;
+  const { sourceId, memo, locator, tidiedText } = parsed.data;
 
   const supabase = await createClient();
 
@@ -128,7 +147,15 @@ export async function createPdfSelectionCapture(
     // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
     source_id: sourceId,
     capture_type: "quote",
-    original_text: locator.selectedText,
+    /*
+      담기는 것은 **다듬은 글**이고, 집은 그대로는 `locator.selectedText`에
+      남는다. 다듬지 않았으면 둘이 같다.
+
+      비어 있으면 집은 것을 쓴다. 다 지우고 저장하는 길을 막는다.
+      원문 없는 인용은 인용이 아니고(2.4절) 제약조건도 그것을 막는다.
+    */
+    original_text:
+      tidiedText && tidiedText.length > 0 ? tidiedText : locator.selectedText,
     content: memo,
     // 어디서 가져온 말인지. 설계 문서 6.3절의 모양이다.
     locator,
@@ -179,6 +206,12 @@ const pdfTranslationSchema = z.object({
     .transform((value) => value.trim())
     .transform((value) => (value.length > 0 ? value : null)),
   locator: pdfSelectionLocatorSchema,
+  /** 집은 글을 손으로 다듬은 것. 인용 저장 쪽과 같다. (2026-10-04) */
+  tidiedText: z
+    .string()
+    .trim()
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`)
+    .optional(),
   targetLanguage: z.string().refine(isTranslationLanguage, {
     message: "옮긴 언어를 알 수 없습니다.",
   }),
@@ -235,7 +268,11 @@ export async function createPdfTranslationCapture(
     // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
     source_id: sourceId,
     capture_type: "translation",
-    original_text: locator.selectedText,
+    /* 담기는 것은 다듬은 글. 집은 그대로는 locator에 남는다. (2026-10-04) */
+    original_text:
+      parsed.data.tidiedText && parsed.data.tidiedText.length > 0
+        ? parsed.data.tidiedText
+        : locator.selectedText,
     translated_text: translatedText,
     translation_language: targetLanguage,
     // 화면이 보낸 값이 아니라 서버 설정에서 읽는다.

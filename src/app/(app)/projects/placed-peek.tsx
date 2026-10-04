@@ -62,24 +62,35 @@ export function PlacedPeek({ item }: { item: PlacedItem }) {
             </Link>
           ) : null}
 
+          {/*
+            원문과 내 메모를 **글꼴과 바탕 둘로 가른다.** (2026-10-04)
+
+            기록 목록(`capture-list.tsx`)과 같은 모양으로 맞춘다. 화면마다
+            다르게 보이면 "원문은 이렇게 생긴 것"이라는 감이 생기지 않는다.
+            까닭은 그쪽에 길게 적어 두었다.
+          */}
           {item.originalText ? (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-zinc-500">원문</span>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium tracking-wide text-zinc-500">
+                원문
+              </span>
               {/*
                 원문은 고칠 수 없는 값이고(2.4절) 여기서도 고르기만 한다.
                 `whitespace-pre-wrap`으로 줄바꿈을 그대로 둔다. 인용은
                 생긴 모양이 뜻의 일부다.
               */}
-              <p className="whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 text-sm leading-7 text-zinc-800 dark:bg-white/[.04] dark:text-zinc-200">
+              <p className="whitespace-pre-wrap rounded-r-lg border-l-[3px] border-zinc-400 bg-zinc-100 py-2.5 pl-3 pr-2.5 font-serif text-sm leading-7 text-zinc-800 dark:border-zinc-600 dark:bg-white/[.07] dark:text-zinc-200">
                 {item.originalText}
               </p>
             </div>
           ) : null}
 
           {item.content ? (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-zinc-500">내 메모</span>
-              <p className="whitespace-pre-wrap text-sm leading-7 text-zinc-800 dark:text-zinc-200">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium tracking-wide text-accent dark:text-accent-dark">
+                내 메모
+              </span>
+              <p className="whitespace-pre-wrap text-sm leading-7 text-black dark:text-zinc-100">
                 {item.content}
               </p>
             </div>

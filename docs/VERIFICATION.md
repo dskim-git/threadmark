@@ -12,7 +12,7 @@
 ```bash
 npm run lint     # 정적 분석
 npx tsc --noEmit # 타입 검사
-npm test         # 1119개 단위 검사
+npm test         # 1137개 단위 검사
 npm run verify:split  # 003이 커서 SQL Editor가 끊길 때 조각낸다 (2-1절)
 npm run build    # production 빌드
 ```

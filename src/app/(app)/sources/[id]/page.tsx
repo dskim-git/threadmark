@@ -24,7 +24,11 @@ import {
 import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
 import { listPaperProjectUses } from "@/lib/papers/project-use-queries";
 import { buildCitation, getPaperProfile } from "@/lib/papers/queries";
-import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
+import {
+  listProjectChips,
+  listProjectsForCaptures,
+  listProjectsForSource,
+} from "@/lib/projects/queries";
 import { listSourceFiles } from "@/lib/sources/files";
 import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 import { listSourceRelations } from "@/lib/sources/relation-queries";
@@ -172,9 +176,10 @@ export default async function SourceDetailPage({
     기록에 달린 태그는 기록 id를 다 안 뒤에야 물어볼 수 있다.
     기록마다 따로 물어보면 왕복이 기록 수만큼 늘어난다.
   */
-  const captureTags = await listTagsForCaptures(
-    captures.map((capture) => capture.id),
-  );
+  const [captureTags, captureProjects] = await Promise.all([
+    listTagsForCaptures(captures.map((capture) => capture.id)),
+    listProjectsForCaptures(captures.map((capture) => capture.id)),
+  ]);
 
   const citation =
     paperProfile !== null
@@ -1086,6 +1091,7 @@ export default async function SourceDetailPage({
           returnTo={returnTo}
           projects={allProjects}
           captureTags={captureTags}
+                    captureProjects={captureProjects}
           allTags={allTags}
           /*
             영상 시점을 눌러 이동할 수 있는 것은 **재생기가 떠 있을 때뿐이다.**

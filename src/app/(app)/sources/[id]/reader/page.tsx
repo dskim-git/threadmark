@@ -10,7 +10,11 @@ import {
   listCapturesForSource,
 } from "@/lib/captures/queries";
 import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
-import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
+import {
+  listProjectChips,
+  listProjectsForCaptures,
+  listProjectsForSource,
+} from "@/lib/projects/queries";
 import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
 import { isImageFile, isReadable, listSourceFiles } from "@/lib/sources/files";
@@ -94,9 +98,10 @@ export default async function ReaderPage({
     일어난다. 여기서 못 달면 나중에 자료 화면으로 돌아가 다시 찾아야 하고,
     그러면 대개 달지 않게 된다.
   */
-  const captureTags = await listTagsForCaptures(
-    captures.map((capture) => capture.id),
-  );
+  const [captureTags, captureProjects] = await Promise.all([
+    listTagsForCaptures(captures.map((capture) => capture.id)),
+    listProjectsForCaptures(captures.map((capture) => capture.id)),
+  ]);
 
   const readable = files.filter(isReadable);
   const requested = firstValue(query.file);
@@ -275,6 +280,7 @@ export default async function ReaderPage({
                     }
                     projects={projectChips}
                     captureTags={captureTags}
+                    captureProjects={captureProjects}
                     allTags={allTags}
                     fileChecksums={Object.fromEntries(
                       files.map((file) => [file.id, file.checksum]),
@@ -349,6 +355,7 @@ export default async function ReaderPage({
                     }
                     projects={projectChips}
                     captureTags={captureTags}
+                    captureProjects={captureProjects}
                     allTags={allTags}
                     fileChecksums={Object.fromEntries(
                       files.map((file) => [file.id, file.checksum]),
