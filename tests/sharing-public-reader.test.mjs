@@ -38,6 +38,7 @@ import {
   NEVER_PUBLIC,
   PUBLIC_PROJECT_FIELDS,
   PUBLIC_ROW_RULES,
+  withheldTableReason,
 } from "../src/lib/sharing/public-fields.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -259,6 +260,40 @@ test("열쇠를 돌려주지 않는다", () => {
     mayRead.map((field) => field.table),
     ["project_public_links"],
     "문이 읽어도 되는 표가 늘었다. 그 표의 값이 나가지 않는지 손으로 확인하고 이 검사를 고친다",
+  );
+});
+
+test("공개 목록에서 뺀 표를 문이 더 읽지 않는다", () => {
+  /*
+    **목록에서 빼는 것만으로는 문이 멈추지 않는다.**
+
+    2026-10-04에 장소를 공개 목록에서 뺐다. 그때 `public-fields.ts`만
+    고치면 문은 여전히 주소와 좌표를 돌려주고, 화면 쪽(`public-payload.ts`)이
+    버리는 것에만 기대게 된다. **한 겹으로 버티는 상태**다.
+
+    그리고 그 상태는 조용하다. 기존 검사들은
+      - `publish ⊆ SQL`  → 뺀 칸은 더 이상 요구하지 않으니 통과
+      - `NEVER_PUBLIC ∩ SQL = ∅` → 장소는 못 박은 자리가 아니니 통과
+    둘 다 통과한다. **목록과 문이 갈라졌는데 아무 소리가 나지 않는다.**
+
+    그래서 뺀 표를 문이 더 읽지 않는지 본다.
+
+    **왜 `WITHHELD_TABLES` 전체를 훑지 않는가.** 그 목록에는 문이 읽어야
+    하는 표도 있다. 열쇠 표로 프로젝트를 찾고, 묶는 표로 무엇이 이
+    프로젝트에 속하는지 가린다. `나가지 않는다`와 `닿지도 않는다`는
+    다르다. (`NEVER_PUBLIC`의 `doorMayRead`와 같은 구분이다)
+
+    장소는 **닿지도 않는 쪽**이다. 주소를 안 내보낸다면 문이 그 표를 읽을
+    일이 없다.
+  */
+  assert.ok(
+    withheldTableReason("place_profiles"),
+    "장소가 공개 목록에서 빠져 있지 않다. 이 검사가 헛돈다",
+  );
+
+  assert.ok(
+    !sql.includes("public.place_profiles"),
+    "공개 목록에서 뺀 장소를 문이 아직 읽는다. 지도 제공자의 이용 정책을 확인하는 중이다",
   );
 });
 

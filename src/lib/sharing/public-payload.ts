@@ -30,11 +30,20 @@ export type PublicNote = {
   content: string;
 };
 
-/** 자료에 딸린 서지. 유형마다 있는 것이 다르다. */
+/**
+ * 자료에 딸린 서지. 유형마다 있는 것이 다르다.
+ *
+ * **장소가 없다.** 2026-10-04에 공개 목록에서 뺐다. 주소와 좌표는 카카오
+ * 로컬 API에서 받아온 값이고, 그 API의 이용 정책이 저장과 활용을 제한한다.
+ * 확정 답을 받는 동안 공개하지 않는다. (`public-fields.ts`의
+ * `WITHHELD_TABLES`, VERIFICATION 4-60절)
+ *
+ * 문이 아직 그 값을 돌려주더라도 **여기서 떨어진다.** 마이그레이션이 덜
+ * 적용된 데이터베이스를 보고 있을 수 있어서다.
+ */
 export type PublicProfiles = {
   paper: Record<string, unknown> | null;
   book: Record<string, unknown> | null;
-  place: Record<string, unknown> | null;
   website: Record<string, unknown> | null;
   youtube: Record<string, unknown> | null;
   music: Record<string, unknown> | null;
@@ -207,7 +216,7 @@ export function readPublicProject(value: unknown): PublicProject | null {
         profiles: {
           paper: record(row.paper),
           book: record(row.book),
-          place: record(row.place),
+          // 장소는 읽지 않는다. 문이 돌려주더라도 여기서 떨어진다.
           website: record(row.website),
           youtube: record(row.youtube),
           music: record(row.music),
