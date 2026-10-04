@@ -1608,6 +1608,7 @@ export type Database = {
       is_active_user: { Args: { check_user_id?: string }; Returns: boolean }
       is_admin: { Args: { check_user_id?: string }; Returns: boolean }
       paper_authors_valid: { Args: { value: Json }; Returns: boolean }
+      public_project: { Args: { p_token: string }; Returns: Json }
       soft_delete_capture: { Args: { capture_id: string }; Returns: boolean }
       soft_delete_project: { Args: { project_id: string }; Returns: boolean }
       soft_delete_source: { Args: { source_id: string }; Returns: boolean }

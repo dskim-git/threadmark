@@ -8451,6 +8451,453 @@ begin
 end
 $$;
 
+
+-- -----------------------------------------------------------------------------
+-- 139. 열쇠가 맞으면 비로그인도 공개된 것을 읽는다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 16-B.5절. **링크를 아는 사람이면 누구나, 로그인하지 않아도.**
+--
+-- 막는 것만 검사하면 과잉 차단을 놓친다. (보안 원칙 6) 여기가 막히면
+-- 공유 기능이 통째로 아무 일도 하지 않고, **그 상태는 조용하다.** 공개
+-- 페이지가 비어 있어도 "아직 안 만들었나" 싶을 뿐이다.
+--
+-- 나가야 하는 것 넷을 본다. 프로젝트 이름, 자료 제목, 내 메모, 그리고
+-- 뼈대에 쓴 원고다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_token   text;
+  v_json    jsonb;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name, description)
+  values (v_owner, 'RLS 검사용 공개 프로젝트', '공개 설명')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 검사용 공개 자료')
+  returning id into v_source;
+
+  insert into public.source_projects (owner_id, source_id, project_id)
+  values (v_owner, v_source, v_project);
+
+  -- 인용이다. 원문과 내 메모가 다른 칸에 있다. (2.4절)
+  insert into public.captures
+    (owner_id, source_id, capture_type, content, original_text)
+  values (
+    v_owner, v_source, 'quote'::public.capture_type,
+    '내가 쓴 공개 메모', '남의 글 원문 공개되면 안 됨'
+  );
+
+  insert into public.project_outline_nodes
+    (owner_id, project_id, title, body)
+  values (v_owner, v_project, '뼈대 자리 제목', '그 자리에 쓴 내 원고');
+
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning token into v_token;
+
+  -- 로그인하지 않은 사람으로 문을 연다.
+  set local role anon;
+  select public.public_project(v_token) into v_json;
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.project_outline_nodes where project_id = v_project;
+  delete from public.captures where source_id = v_source;
+  delete from public.source_projects where source_id = v_source;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_json is null then
+    raise exception
+      '검사 139 실패: 열쇠가 맞는데 비로그인이 아무것도 읽지 못했습니다. 공유 기능이 아무 일도 하지 않습니다.';
+  end if;
+
+  if v_json #>> '{project,name}' is distinct from 'RLS 검사용 공개 프로젝트' then
+    raise exception
+      '검사 139 실패: 프로젝트 이름이 안 나왔습니다. (지금 %)',
+      v_json #>> '{project,name}';
+  end if;
+
+  if not (v_json::text like '%RLS 검사용 공개 자료%') then
+    raise exception
+      '검사 139 실패: 자료 제목이 안 나왔습니다. 무엇에 대한 메모인지 알 수 없습니다.';
+  end if;
+
+  if not (v_json::text like '%내가 쓴 공개 메모%') then
+    raise exception
+      '검사 139 실패: 내 메모가 안 나왔습니다. 16-B가 공유하려는 것이 바로 그것입니다.';
+  end if;
+
+  if not (v_json::text like '%그 자리에 쓴 내 원고%') then
+    raise exception
+      '검사 139 실패: 뼈대에 쓴 원고가 안 나왔습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 140. 원문과 번역문과 초록은 열린 문으로도 나오지 않는다
+-- -----------------------------------------------------------------------------
+-- **이것이 16-B 전체에서 가장 중요한 검사다.** 사용자가 정한 것이다.
+--
+--   > 1차적인 원문이 공개되는 것이 가장 불안정한거잖아. 그 1차적인 원문을
+--   > 보고 2차적으로 생각한 자신의 생각은 그 사람이 허락하면 남에게
+--   > 공유해도 괜찮은거고.
+--
+-- 약관도 이 줄에 기대어 쓰인다. "남의 글은 여전히 나가지 않습니다"가
+-- 저작권 조항 전체를 떠받친다. (16-B.7절)
+--
+-- **글자를 심어놓고 돌아온 글에서 찾는다.** 칸 이름을 보는 것이 아니라
+-- 값이 실제로 섞여 나오는지를 본다. 단위 검사는 SQL 글에서 칸 이름을
+-- 찾을 수 있을 뿐이고, 여기서는 **열쇠로 열어 돌아온 것**을 본다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_token   text;
+  v_json    jsonb;
+  v_text    text;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title, thumbnail_url)
+  values (
+    v_owner, 'paper'::public.source_type, 'RLS 검사용 공개 자료',
+    'https://example.test/표지그림나오면안됨.jpg'
+  )
+  returning id into v_source;
+
+  insert into public.source_projects (owner_id, source_id, project_id)
+  values (v_owner, v_source, v_project);
+
+  -- 번역이다. 원문·번역문·대상 언어가 함께 있어야 담긴다.
+  insert into public.captures
+    (owner_id, source_id, capture_type, content,
+     original_text, translated_text, translation_language)
+  values (
+    v_owner, v_source, 'translation'::public.capture_type,
+    '내가 쓴 메모는 나가도 된다',
+    '원문나오면안됨', '번역문나오면안됨', 'ko'
+  );
+
+  -- 논문 초록. 밖에서 받아온 남의 긴 글이다.
+  insert into public.paper_profiles
+    (owner_id, source_id, journal_name, abstract)
+  values (v_owner, v_source, '학술지이름은나가도된다', '초록나오면안됨');
+
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning token into v_token;
+
+  set local role anon;
+  select public.public_project(v_token) into v_json;
+  reset role;
+
+  v_text := v_json::text;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.paper_profiles where source_id = v_source;
+  delete from public.captures where source_id = v_source;
+  delete from public.source_projects where source_id = v_source;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if v_json is null then
+    raise exception
+      '검사 140 실패: 열쇠가 맞는데 아무것도 안 나왔습니다. 검사 139와 함께 봅니다.';
+  end if;
+
+  -- 나가야 하는 것이 나왔는지 먼저 본다. 안 나왔으면 아래가 헛돈다.
+  if not (v_text like '%내가 쓴 메모는 나가도 된다%') then
+    raise exception
+      '검사 140 실패: 내 메모가 안 나왔습니다. 아래 검사들이 헛돌고 있습니다.';
+  end if;
+
+  if v_text like '%원문나오면안됨%' then
+    raise exception
+      '검사 140 실패: **인용한 원문이 공개되었습니다.** 남의 글입니다. 16-B 전체가 무너집니다.';
+  end if;
+
+  if v_text like '%번역문나오면안됨%' then
+    raise exception
+      '검사 140 실패: **번역문이 공개되었습니다.** 원문의 파생물이라 남의 글입니다.';
+  end if;
+
+  if v_text like '%초록나오면안됨%' then
+    raise exception
+      '검사 140 실패: **초록이 공개되었습니다.** 밖에서 받아온 남의 글입니다.';
+  end if;
+
+  if v_text like '%표지그림나오면안됨%' then
+    raise exception
+      '검사 140 실패: **표지 그림이 공개되었습니다.** 남의 그림입니다.';
+  end if;
+
+  -- 서지는 나가야 한다. 과하게 막은 것도 잡는다. (보안 원칙 6)
+  if not (v_text like '%학술지이름은나가도된다%') then
+    raise exception
+      '검사 140 실패: 학술지 이름이 안 나왔습니다. 참고문헌에 적는 값이라 나가야 합니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 141. 틀린 열쇠, 끈 열쇠, 지운 프로젝트로는 아무것도 나오지 않는다
+-- -----------------------------------------------------------------------------
+-- 16-B.6절. **끄면 그 자리에서 죽는다.**
+--
+-- 그리고 어느 경우인지 **구분해 알리지 않는다.** 전부 `null`이다. 틀린
+-- 열쇠인지 끈 열쇠인지 알려주면 열쇠를 맞혀 보는 사람에게 "거의 맞았다"를
+-- 알려주는 셈이 된다. (보안 원칙 9)
+do $$
+declare
+  v_owner    uuid;
+  v_project  uuid;
+  v_token    text;
+  v_wrong    jsonb;
+  v_revoked  jsonb;
+  v_deleted  jsonb;
+  v_short    jsonb;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning token into v_token;
+
+  set local role anon;
+
+  -- 틀린 열쇠. 모양은 맞지만 값이 다르다.
+  select public.public_project(pg_catalog.repeat('0', 64)) into v_wrong;
+
+  -- 모양조차 아닌 열쇠. 아무 글자나 넣어 본다.
+  select public.public_project('secret') into v_short;
+
+  reset role;
+
+  -- 끈다.
+  update public.project_public_links
+  set revoked_at = pg_catalog.now()
+  where project_id = v_project;
+
+  set local role anon;
+  select public.public_project(v_token) into v_revoked;
+  reset role;
+
+  -- 다시 켜고, 이번에는 프로젝트를 지운다.
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning token into v_token;
+
+  update public.projects set deleted_at = pg_catalog.now()
+  where id = v_project;
+
+  set local role anon;
+  select public.public_project(v_token) into v_deleted;
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_wrong is not null then
+    raise exception
+      '검사 141 실패: 틀린 열쇠로 무언가 나왔습니다.';
+  end if;
+
+  if v_short is not null then
+    raise exception
+      '검사 141 실패: 열쇠 모양이 아닌 값으로 무언가 나왔습니다.';
+  end if;
+
+  if v_revoked is not null then
+    raise exception
+      '검사 141 실패: **끈 열쇠로 아직 열립니다.** 16-B.6절이 금지합니다. 끈 사람은 닫혔다고 믿습니다.';
+  end if;
+
+  if v_deleted is not null then
+    raise exception
+      '검사 141 실패: **지운 프로젝트가 아직 열립니다.** 지운 사람은 확인할 방법이 없습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 142. 기계가 쓴 기록과 지운 것은 열린 문으로도 나오지 않는다
+-- -----------------------------------------------------------------------------
+-- `PUBLIC_ROW_RULES`를 실제로 눌러본다.
+--
+-- **칸을 빼는 것으로는 막을 수 없는 자리다.** `ai_generated`를 안
+-- 내보내도 그 글은 나가고, 다른 메모들과 나란히 놓이면 **내가 생각한
+-- 것이라는 얼굴로** 나간다. 16-B는 "내가 생각한 것"을 공유하는 기능이다.
+--
+-- 지운 것도 같다. 삭제는 표시만 하므로 `deleted_at`을 안 내보내는 것은
+-- 아무것도 막지 않는다. **지운 글이 공개 페이지에 남아 있으면 지운 사람은
+-- 그것을 모른다.**
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_source  uuid;
+  v_gone    uuid;
+  v_token   text;
+  v_text    text;
+  v_json    jsonb;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'note'::public.source_type, 'RLS 검사용 공개 자료')
+  returning id into v_source;
+
+  insert into public.source_projects (owner_id, source_id, project_id)
+  values (v_owner, v_source, v_project);
+
+  -- 사람이 쓴 것. 나가야 한다.
+  insert into public.captures (owner_id, source_id, capture_type, content)
+  values (v_owner, v_source, 'note'::public.capture_type, '사람이쓴메모나가야함');
+
+  -- 기계가 쓴 것. 나가면 안 된다.
+  insert into public.captures
+    (owner_id, source_id, capture_type, content, ai_generated)
+  values (
+    v_owner, v_source, 'summary'::public.capture_type,
+    '기계가쓴요약나오면안됨', true
+  );
+
+  -- 지운 것. 나가면 안 된다.
+  insert into public.captures (owner_id, source_id, capture_type, content)
+  values (v_owner, v_source, 'note'::public.capture_type, '지운메모나오면안됨')
+  returning id into v_gone;
+
+  update public.captures set deleted_at = pg_catalog.now() where id = v_gone;
+
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning token into v_token;
+
+  set local role anon;
+  select public.public_project(v_token) into v_json;
+  reset role;
+
+  v_text := v_json::text;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.captures where source_id = v_source;
+  delete from public.source_projects where source_id = v_source;
+  delete from public.sources where id = v_source;
+  delete from public.projects where id = v_project;
+
+  if not (v_text like '%사람이쓴메모나가야함%') then
+    raise exception
+      '검사 142 실패: 사람이 쓴 메모가 안 나왔습니다. 아래 검사들이 헛돌고 있습니다.';
+  end if;
+
+  if v_text like '%기계가쓴요약나오면안됨%' then
+    raise exception
+      '검사 142 실패: **기계가 쓴 기록이 공개되었습니다.** 내 생각이라는 얼굴로 나갑니다.';
+  end if;
+
+  if v_text like '%지운메모나오면안됨%' then
+    raise exception
+      '검사 142 실패: **지운 기록이 공개되었습니다.** 지운 사람은 그것을 모릅니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 143. 자료에 붙지 않은 메모도 나간다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **처음에 통째로 빠뜨렸던 자리다.**
+--
+-- 이 앱은 "자료 없이도 기록할 수 있다"고 정해 두었다. (6.2절) 그런 빠른
+-- 메모는 `capture_projects`로 프로젝트에 바로 붙는다. 읽는 문을 자료부터
+-- 타고 내려가게 쓰면 **그 메모들이 걸릴 자리가 없다.**
+--
+-- 오류도 나지 않고 공개 페이지에서 그냥 안 보인다. **덜 나오는 것은 틀린
+-- 것처럼 보이지 않는다.** 쓴 사람은 자기 메모가 빠진 줄 모르고, 보는
+-- 사람은 그런 메모가 있었다는 것조차 모른다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_capture uuid;
+  v_token   text;
+  v_text    text;
+  v_json    jsonb;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  -- 자료가 없는 빠른 메모다.
+  insert into public.captures (owner_id, capture_type, content)
+  values (v_owner, 'note'::public.capture_type, '자료없는빠른메모나가야함')
+  returning id into v_capture;
+
+  insert into public.capture_projects (owner_id, capture_id, project_id)
+  values (v_owner, v_capture, v_project);
+
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning token into v_token;
+
+  set local role anon;
+  select public.public_project(v_token) into v_json;
+  reset role;
+
+  v_text := v_json::text;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.capture_projects where capture_id = v_capture;
+  delete from public.captures where id = v_capture;
+  delete from public.projects where id = v_project;
+
+  if not (v_text like '%자료없는빠른메모나가야함%') then
+    raise exception
+      '검사 143 실패: 자료에 붙지 않은 메모가 안 나왔습니다. 빠른 메모가 통째로 빠집니다.';
+  end if;
+end
+$$;
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================

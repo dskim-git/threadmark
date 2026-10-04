@@ -333,7 +333,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 1191개
+npm test          # node --test, 1211개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 npm run verify:split  # 003이 커서 SQL Editor가 끊길 때 조각낸다 (7절)
@@ -870,6 +870,31 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 않는다"고 이미 적혀 있던 함정이다. 실제 목록을 훑는 검사를 쓸 때는,
 그 목록이 비거나 한쪽으로 쏠리는 날에도 규칙이 지켜지는지 함께 본다.
 
+### `COALESCE`에는 `pg_catalog.`을 붙일 수 없다 (2026-10-04, 16-B 4차례)
+
+`search_path`를 비운 함수에서는 함수 이름에 스키마를 붙인다. 그 손이
+구문에까지 갔다.
+
+```
+ERROR: 42883: function pg_catalog.coalesce(jsonb, jsonb) does not exist
+```
+
+**`COALESCE`는 함수가 아니다.** `CASE`·`NULLIF`·`GREATEST`·`LEAST`와 함께
+**파서가 직접 다루는 구문**이고 `pg_catalog`에 그런 이름의 함수가 없다.
+붙일 필요도 없다. **구문은 `search_path`로 찾지 않으므로 가로챌 수 없다.**
+
+`substring`·`trim`·`extract`는 다르다. 특별한 문법을 가지면서 함수로도
+있어서 붙여도 찾아진다. 붙일 수 없는 것은 위의 다섯이다.
+
+**올릴 때는 아무 소리도 나지 않았다.** PL/pgSQL 함수의 본문은 만들 때
+검사되지 않고 **부를 때** 비로소 계획된다. `db push`가 통과하고 003을
+돌려서야 드러났다. 그 사이가 길다.
+
+`migration-invariants.test.mjs`가 이제 그것을 본다. **나중에 다시 쓴
+함수의 옛 글은 보지 않는다.** 마이그레이션은 올린 뒤에 고치지 않으므로
+옛 글이 저장소에 남고, 그것까지 보면 **고칠 길이 없는 과거를 가리키며
+영원히 실패한다.** 고칠 수 없는 실패는 검사를 끄게 만든다.
+
 ### 마이그레이션에서 칸 이름을 뽑을 때 (2026-10-04, 16-B 2차례)
 
 검사가 마이그레이션을 읽어 칸 이름을 뽑는 일이 늘고 있다. 함정이 셋 있고
@@ -1290,10 +1315,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1191개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1211개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (138검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (143검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 사람이 Supabase
 대시보드 SQL Editor에 붙여넣어 돌린다. `npm test`는 이 파일을 읽을 뿐

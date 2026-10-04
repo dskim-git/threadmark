@@ -640,6 +640,21 @@ export type NeverPublicField = {
   table: string;
   column: string;
   reason: string;
+  /**
+   * 읽는 문이 이 표를 **보기는 해야** 하는가. (기본값: 아니다)
+   *
+   * **`나가지 않는다`와 `닿지도 않는다`는 다르다.** 이 구분을 적어두지
+   * 않으면 검사가 둘을 같은 것으로 보고, 문이 열쇠 표를 보는 것만으로
+   * 실패한다. 실제로 그렇게 한 번 멈췄다.
+   *
+   * `project_public_links`가 그 경우다. 문은 **열쇠로 프로젝트를 찾아야**
+   * 하므로 그 표를 읽는다. 그러나 그 표의 값은 하나도 돌려주지 않는다.
+   * 열쇠를 돌려주면 공개 페이지를 본 사람이 열쇠를 손에 넣는다.
+   *
+   * `source_files`는 반대다. **이름조차 나오면 안 된다.** 파일에 대해
+   * 문이 할 일이 없다. 2.3절이 금지한다.
+   */
+  doorMayRead?: boolean;
 };
 
 /**
@@ -694,6 +709,12 @@ export const NEVER_PUBLIC: readonly NeverPublicField[] = [
     table: "project_public_links",
     column: "*",
     reason: "공개 링크의 열쇠입니다",
+    /*
+      읽는 문은 **열쇠로 프로젝트를 찾아야** 하므로 이 표를 본다. 그러나
+      이 표의 값은 하나도 돌려주지 않는다. 열쇠를 돌려주면 공개 페이지를
+      본 사람이 **다른 프로젝트를 여는 열쇠**를 손에 넣는다.
+    */
+    doorMayRead: true,
   },
   {
     table: "profiles",

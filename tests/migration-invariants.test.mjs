@@ -264,15 +264,203 @@ test("모든 정책이 authenticated 역할을 명시한다", () => {
   );
 });
 
-test("anon 역할에 권한을 부여하지 않는다", () => {
+/**
+ * 비로그인에게 **표** 권한을 주지 않는다.
+ *
+ * 001의 검사 17이 지키는 것과 같은 약속이다. anon이 표를 읽을 수 있으면
+ * RLS 이전에 열려 있는 것이다.
+ *
+ * **2026-10-04에 이 검사의 범위를 좁혔다.** 그전까지는 `grant`에 `anon`이
+ * 들어가면 전부 막았다. 16-B의 공개 링크를 만들면서 **함수 실행 권한**이
+ * 필요해졌다. 공개된 프로젝트를 로그인 없이 읽는 문이고, 그 문이 함수인
+ * 까닭이 바로 **표 권한을 주지 않으려는 것**이다. (16-B.5절)
+ *
+ * 그래서 넓힌 것이 아니라 **가른 것이다.**
+ *
+ *   - 표 권한: 하나도 안 된다. 예외 없다
+ *   - 함수 실행 권한: **이름을 적은 것만.** 아래 목록이다
+ *
+ * 목록을 두는 까닭. anon이 부를 수 있는 함수는 **로그인 없이 닿는
+ * 유일한 자리**다. 하나 늘 때마다 사람이 보고 적어야 한다. 적지 않으면
+ * 이 검사가 멈춘다.
+ */
+const ANON_CALLABLE_FUNCTIONS = [
+  /*
+    16-B. 열쇠로 공개된 프로젝트를 읽는 문.
+
+    `SECURITY DEFINER`이고 anon이 부른다. 이 저장소에서 가장 조심해야 하는
+    자리다. 지키는 것들은 이렇다.
+
+      - 열쇠(64자리 16진수)가 맞고 **살아 있어야** 한다
+      - 나가는 칸이 SQL에 글자로 적혀 있다. `select *`가 없다
+      - 기계가 쓴 기록과 지운 것은 줄째로 빠진다
+      - 틀린 열쇠·끈 열쇠·지운 프로젝트는 **전부 `null`**이다
+
+    `tests/sharing-public-reader.test.mjs`가 그것들을 본다. 실제로
+    막히는지는 003이 역할을 바꿔 눌러본다.
+  */
+  "public.public_project(text)",
+];
+
+test("anon 역할에 표 권한을 부여하지 않는다", () => {
   const offenders = statements.filter(
-    (statement) => statement.startsWith("grant") && statement.includes("anon"),
+    (statement) =>
+      statement.startsWith("grant") &&
+      statement.includes("anon") &&
+      statement.includes("on table"),
   );
 
   assert.deepEqual(
     offenders,
     [],
-    `anon에 권한을 부여하는 구문이 있다: ${offenders.join(" | ")}`,
+    `anon에 표 권한을 부여하는 구문이 있다: ${offenders.join(" | ")}`,
+  );
+});
+
+test("anon이 부를 수 있는 함수는 적어둔 것뿐이다", () => {
+  const grants = statements.filter(
+    (statement) =>
+      statement.startsWith("grant") &&
+      statement.includes("anon") &&
+      statement.includes("on function"),
+  );
+
+  /*
+    함수 이름을 뽑아 목록과 견준다. 목록에 없는 함수가 anon에게 열리면
+    멈춘다. **로그인 없이 닿는 자리는 사람이 하나씩 보고 늘려야 한다.**
+  */
+  const opened = grants
+    .map((statement) => /on function (\S+\([^)]*\))/u.exec(statement))
+    .filter(Boolean)
+    .map((match) => match[1]);
+
+  const unexpected = opened.filter(
+    (name) => !ANON_CALLABLE_FUNCTIONS.includes(name),
+  );
+
+  assert.deepEqual(
+    unexpected,
+    [],
+    `적어두지 않은 함수가 anon에게 열려 있다. 로그인 없이 닿는 자리다: ${unexpected.join(", ")}`,
+  );
+
+  /*
+    반대쪽도 조인다. 목록에 적어두고 실제로 열지 않으면, **있지도 않은
+    문을 지키고 있다고 믿게 된다.**
+  */
+  const notOpened = ANON_CALLABLE_FUNCTIONS.filter(
+    (name) => !opened.includes(name),
+  );
+
+  assert.deepEqual(
+    notOpened,
+    [],
+    `목록에 있는데 실제로 열려 있지 않다. 지우거나 열어야 한다: ${notOpened.join(", ")}`,
+  );
+});
+
+test("anon에게 열린 함수는 표 권한을 대신하지 않는다", () => {
+  /*
+    **함수를 여는 것이 표를 여는 쪽으로 번지지 않게 한다.**
+
+    anon에게 열린 함수가 있다는 것은, 그 함수가 `SECURITY DEFINER`로
+    RLS를 우회해 읽는다는 뜻이다. 그 자리가 생겼으니 "어차피 공개니까"
+    하며 표를 여는 쪽으로 가기 쉽다. 그 둘은 전혀 다르다.
+
+    표를 열면 **공개된 것을 전부 찾아낼 수 있다.** 함수는 열쇠를 아는
+    사람에게 그 하나만 준다.
+  */
+  assert.ok(
+    ANON_CALLABLE_FUNCTIONS.length <= 1,
+    `anon이 부를 수 있는 함수가 ${ANON_CALLABLE_FUNCTIONS.length}개다. 늘어난 까닭을 적고 이 검사를 고친다`,
+  );
+});
+
+/**
+ * 스키마를 붙일 수 없는 것에 붙이지 않는다.
+ *
+ * **2026-10-04에 이 자리에서 멈췄다.** 읽는 문에 `pg_catalog.coalesce(...)`를
+ * 썼고 003의 검사 139가 이렇게 실패했다.
+ *
+ *     ERROR: 42883: function pg_catalog.coalesce(jsonb, jsonb) does not exist
+ *
+ * `COALESCE`는 **함수가 아니라 SQL 구문이다.** `CASE`, `NULLIF`, `GREATEST`,
+ * `LEAST`와 함께 파서가 직접 다루고, `pg_catalog`에 그런 이름의 함수가 없다.
+ *
+ * 왜 조용했나
+ *   **올릴 때는 아무 소리도 나지 않았다.** PL/pgSQL 함수의 본문은 만들 때
+ *   검사되지 않고 **부를 때** 비로소 계획된다. `db push`가 통과하고, 003을
+ *   사람이 돌려서야 드러났다. 그 사이가 길다.
+ *
+ *   `search_path`를 비운 함수에서는 함수 이름에 스키마를 붙이는 것이 이
+ *   저장소의 방식이라, 붙이는 손이 구문에까지 갔다. 붙일 필요도 없었다.
+ *   **구문은 `search_path`로 찾지 않으므로 가로챌 수 없다.**
+ *
+ * 여기서 잡으면 올리기 전에 안다.
+ */
+test("스키마를 붙일 수 없는 SQL 구문에 pg_catalog을 붙이지 않는다", () => {
+  /*
+    주석을 뺀 글만 본다. 고친 마이그레이션의 머리말에 **그 오류 메시지가
+    그대로 적혀 있어서**, 주석을 함께 보면 영원히 실패하는 검사가 된다.
+  */
+  let code = sql
+    .replace(/\r\n/g, "\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--[^\n]*/g, "");
+
+  /*
+    **나중에 다시 쓴 함수의 옛 글은 보지 않는다.**
+
+    마이그레이션은 올린 뒤에 고치지 않는다. 그것이 이 저장소의 방식이고
+    `fix_` 로 시작하는 파일들이 그 기록이다. 그래서 고친 함수의 **옛
+    글이 저장소에 남는다.**
+
+    그 옛 글까지 보면 이 검사는 영원히 실패한다. 고칠 길이 없는 과거를
+    가리키게 되고, **고칠 수 없는 실패는 검사를 끄게 만든다.**
+
+    보아야 하는 것은 **지금 데이터베이스에 있는 글**이다. 같은 이름의
+    함수가 여러 번 정의되어 있으면 마지막 것만 남긴다.
+  */
+  const blocks = [
+    ...code.matchAll(
+      /create or replace function public\.(\w+)[\s\S]*?\n\$\$;/g,
+    ),
+  ];
+
+  const lastIndexOf = new Map();
+
+  for (const block of blocks) {
+    lastIndexOf.set(block[1], block.index);
+  }
+
+  for (const block of blocks) {
+    if (lastIndexOf.get(block[1]) !== block.index) {
+      code = code.replace(block[0], "");
+    }
+  }
+
+  /*
+    함수가 아니라 구문인 것들. 전부 `pg_catalog`에 없다.
+
+    `substring`·`trim`·`extract`처럼 특별한 문법을 가지면서 함수로도
+    존재하는 것들은 넣지 않는다. 그쪽은 붙여도 찾아진다.
+  */
+  const notFunctions = ["coalesce", "nullif", "greatest", "least", "case"];
+
+  const offenders = [];
+
+  for (const name of notFunctions) {
+    for (const match of code.matchAll(
+      new RegExp(`pg_catalog\\.${name}\\s*\\(`, "giu"),
+    )) {
+      offenders.push(match[0].trim());
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `SQL 구문에 pg_catalog을 붙였다. 부를 때 "does not exist"로 멈춘다: ${offenders.join(", ")}`,
   );
 });
 
