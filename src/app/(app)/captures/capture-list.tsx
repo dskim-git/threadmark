@@ -8,6 +8,7 @@ import type { Capture } from "@/lib/captures/queries";
 import { describeMediaTime } from "@/lib/captures/media-locator";
 import { describeMusicTime } from "@/lib/captures/music-locator";
 import { VideoTimeChip } from "./video-time-chip";
+import { describeImagePage } from "@/lib/captures/image-locator";
 import { describeLocatorPages } from "@/lib/captures/pdf-locator";
 import { locatorIsStale } from "@/lib/drive/file-check";
 import {
@@ -42,6 +43,7 @@ export function CaptureList({
   emptyText,
   projects = [],
   fileChecksums,
+  imageFileIds,
   captureTags,
   allTags,
   videoSeekable = false,
@@ -56,6 +58,17 @@ export function CaptureList({
    * 가린다. (설계 문서 9.2절) 넘기지 않으면 그 표시를 하지 않는다.
    */
   fileChecksums?: Record<string, string | null>;
+  /**
+   * 이 자료에 붙은 그림 파일의 번호를 **보이는 차례대로.**
+   * (설계 문서 16절, 2026-10-04)
+   *
+   * 그림 기록은 **몇 번째 장인지를 담아두지 않는다.** 파일을 떼거나 더하면
+   * 번호가 밀리기 때문이다. 그래서 보여줄 때 이 목록에서 센다.
+   *
+   * 넘기지 않으면 `2장으로` 단추를 그리지 않는다. 셀 수 없으면 **엉뚱한
+   * 장으로 보내느니 아무 데도 보내지 않는 편이 낫다.**
+   */
+  imageFileIds?: readonly string[];
   /** 비어 있지 않으면 기록마다 프로젝트 연결 선택을 보여준다. */
   projects?: ProjectChip[];
   /**
@@ -109,6 +122,32 @@ export function CaptureList({
                 >
                   {describeLocatorPages(capture.pdfLocation)}으로
                 </Link>
+              ) : null}
+
+              {/*
+                그림에서 남긴 기록이면 몇 번째 장인지 보여주고 그 자리로
+                돌아갈 길을 준다. PDF의 `17쪽으로`와 같은 자리다.
+
+                **셀 수 없으면 그리지 않는다.** 파일을 뗐거나 목록을 넘겨받지
+                못한 경우인데, 그때 `1장으로`라고 둘러대면 눌러서 엉뚱한
+                그림이 열린다. 없는 길을 보여주지 않는다.
+              */}
+              {capture.imageLocation && capture.sourceId && imageFileIds ? (
+                (() => {
+                  const where = describeImagePage(
+                    capture.imageLocation,
+                    imageFileIds,
+                  );
+
+                  return where === null ? null : (
+                    <Link
+                      href={`/sources/${capture.sourceId}/reader?file=${capture.imageLocation.sourceFileId}`}
+                      className="rounded-full border border-black/[.08] px-2.5 py-0.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                    >
+                      {where}으로
+                    </Link>
+                  );
+                })()
               ) : null}
 
               {/*

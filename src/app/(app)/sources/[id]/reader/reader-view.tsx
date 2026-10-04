@@ -561,7 +561,7 @@ export function ReaderView({
                       <PageMemoPanel
                         // 쪽이 바뀌면 칸을 새로 만든다. 앞 쪽에 쓰던 메모가 남으면 안 된다.
                         key={currentPage}
-                        page={currentPage}
+                        where={`${currentPage}쪽`}
                         busy={save.phase === "saving"}
                         onSave={(memo) => void handleSaveMemo(memo)}
                       />

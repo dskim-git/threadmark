@@ -17,17 +17,22 @@ import { MAX_TEXT_LENGTH } from "@/lib/captures/schema";
  * 스캔 이미지 PDF에서는 이것이 유일한 길이다. 고를 글자가 없기 때문이다.
  * 9.5절의 안내문이 약속하는 것이 이 기능이다.
  *
+ * **PDF와 그림이 함께 쓴다.** (2026-10-04) 하는 일이 같아서 둘로 나누지
+ * 않았다. 다른 것은 자리를 부르는 말뿐이라 그 말을 밖에서 받는다.
+ * PDF는 `3쪽`, 그림은 `2장`이다.
+ *
  * 14-E에서 떠 있는 창을 걷어내고 오른쪽 패널의 `메모` 탭에 두었다.
  * 늘 자리에 있으므로 닫기와 취소가 없다. 닫을 것이 없기 때문이다.
  * 자동 초점도 주지 않는다. 늘 떠 있는 칸이 초점을 가져가면, 패널을 열
  * 때마다 화면이 그리로 끌려가고 PDF의 키보드 넘김이 막힌다.
  */
 export function PageMemoPanel({
-  page,
+  where,
   busy,
   onSave,
 }: {
-  page: number;
+  /** 지금 보는 자리를 부르는 말. `3쪽` 또는 `2장`. */
+  where: string;
   busy: boolean;
   onSave: (memo: string) => void;
 }) {
@@ -37,10 +42,10 @@ export function PageMemoPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <span className="text-xs font-medium text-zinc-500">{page}쪽에 메모</span>
+      <span className="text-xs font-medium text-zinc-500">{where}에 메모</span>
 
       <label htmlFor="page-memo" className="sr-only">
-        {page}쪽에 남길 메모
+        {where}에 남길 메모
       </label>
       <textarea
         id="page-memo"
@@ -49,7 +54,7 @@ export function PageMemoPanel({
         value={memo}
         disabled={busy}
         onChange={(event) => setMemo(event.target.value)}
-        placeholder="이 쪽에 대해 남길 말을 적습니다. 나중에 이 쪽으로 바로 돌아올 수 있습니다."
+        placeholder="여기에 대해 남길 말을 적습니다. 나중에 이 자리로 바로 돌아올 수 있습니다."
         className="resize-none rounded-lg border border-black/[.08] bg-white px-3 py-2 text-sm leading-6 text-black disabled:opacity-60 dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
       />
 

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { imagePageLocatorSchema } from "@/lib/captures/image-locator";
 import {
   pdfPageLocatorSchema,
   pdfSelectionLocatorSchema,
@@ -319,6 +320,64 @@ export async function createPdfPageCapture(
 
   if (error) {
     console.error("[ThreadMark] 페이지 메모 생성 실패:", error.message);
+
+    return {
+      ok: false,
+      message: "저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  revalidatePath(`/sources/${sourceId}`);
+
+  return { ok: true };
+}
+
+/**
+ * 그림 한 장에 메모를 남긴다. (설계 문서 16절, 2026-10-04)
+ *
+ * **`createPdfPageCapture`와 하는 일이 같고 자리만 다르다.** 하나로 묶어
+ * `locator`만 갈아끼우는 길도 있었는데, 그러면 들어온 값이 어느 갈래인지
+ * 가리는 일이 이 함수 안으로 들어온다. `zod`가 문 앞에서 가리게 두는 편이
+ * 틀릴 자리가 적다.
+ *
+ * 유형은 일반 메모다. 그림에는 **고를 글자가 없어** 인용이 될 수 없고,
+ * 원문 칸을 비워 두는 것이 설계 문서 2.4절의 구분에 맞다.
+ */
+const imagePageMemoSchema = z.object({
+  sourceId: z.uuid({ message: "잘못된 요청입니다." }),
+  memo: z
+    .string()
+    .trim()
+    .min(1, "메모를 입력해 주세요.")
+    .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`),
+  locator: imagePageLocatorSchema,
+});
+
+export async function createImagePageCapture(
+  input: unknown,
+): Promise<PdfCaptureResult> {
+  await requireActiveAccount();
+
+  const parsed = imagePageMemoSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: firstIssueMessage(parsed.error) };
+  }
+
+  const { sourceId, memo, locator } = parsed.data;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("captures").insert({
+    // owner_id는 넣지 않는다. 기본값과 트리거가 auth.uid()로 채운다.
+    source_id: sourceId,
+    capture_type: "note",
+    content: memo,
+    locator,
+  });
+
+  if (error) {
+    console.error("[ThreadMark] 그림 메모 생성 실패:", error.message);
 
     return {
       ok: false,

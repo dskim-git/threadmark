@@ -13,13 +13,14 @@ import { getPaperAnalysis } from "@/lib/papers/analysis-queries";
 import { listProjectChips, listProjectsForSource } from "@/lib/projects/queries";
 import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
-import { isReadable, listSourceFiles } from "@/lib/sources/files";
+import { isImageFile, isReadable, listSourceFiles } from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import { listTags, listTagsForCaptures } from "@/lib/tags/queries";
 import { isTranslationConfigured } from "@/lib/translation/anthropic";
 
 import { FileStatusNotice } from "./file-status-notice";
+import { ImageReaderView } from "./image-reader-view";
 import { ReaderView, type PanelTab } from "./reader-view";
 
 export const metadata: Metadata = {
@@ -27,10 +28,20 @@ export const metadata: Metadata = {
 };
 
 /**
- * PDF를 읽는 화면. (설계 문서 9.1절, 경로는 21절)
+ * 자료를 읽는 화면. (설계 문서 9.1절·16절, 경로는 21절)
  *
  * 한 자료에 파일이 여럿일 수 있어서 `?file=`로 고른다.
  * 지정하지 않으면 읽을 수 있는 첫 파일을 연다.
+ *
+ * **PDF와 그림이 갈린다.** (2026-10-04)
+ *
+ *   PDF   파일 하나에 쪽이 여럿이다. 파일을 고르고 그 안에서 쪽을 넘긴다.
+ *   그림  파일 하나가 곧 한 장이다. **붙은 그림을 한 묶음으로 보고 장을
+ *         넘긴다.** `?file=`은 처음 열 장을 가리킨다.
+ *
+ * 그래서 고른 파일이 그림이면 그림 묶음을 통째로 넘긴다. 섞여 붙어 있으면
+ * 둘 다 쓸 수 있다. 위의 파일 고르는 줄에서 PDF를 누르면 PDF 작업대가,
+ * 그림을 누르면 그림 작업대가 열린다.
  *
  * 고른 문장을 기록으로 남기고(13-B) 옮기는 것(13-C)은 ReaderView가 맡는다.
  */
@@ -107,6 +118,25 @@ export default async function ReaderPage({
     Number.isInteger(requestedPage) && requestedPage >= 1
       ? requestedPage
       : (selected?.lastPage ?? 1);
+
+  /*
+    그림은 **붙은 것 전부가 한 묶음**이다. (설계 문서 16절)
+
+    PDF는 고른 파일 하나만 넘기면 되는데, 그림은 장을 넘겨야 해서 묶음을
+    통째로 넘긴다. `selected`는 그중 **처음 열 장**을 가리킨다.
+
+    차례는 `listSourceFiles`가 정한 대로(올린 순서) 둔다. 그 차례가 곧
+    `1장`, `2장`이 되므로 **여기서 다시 정렬하지 않는다.** 두 곳에서 정렬하면
+    기록에 적힌 장 번호와 화면의 번호가 어긋난다.
+  */
+  const imageFiles = readable.filter(isImageFile);
+  const showImages = selected !== null && isImageFile(selected);
+  const imageIndex = showImages
+    ? Math.max(
+        0,
+        imageFiles.findIndex((file) => file.id === selected.id),
+      )
+    : 0;
 
   return (
     /*
@@ -193,11 +223,71 @@ export default async function ReaderPage({
             />
           </header>
 
-          {selected.status === "missing" ? (
+          {/*
+            그림은 사라진 장이 있어도 작업대를 연다. **다른 장은 멀쩡하다.**
+            PDF는 파일 하나가 통째로 안 열리는 것이라 그 자리에서 멈춘다.
+          */}
+          {selected.status === "missing" && !showImages ? (
             <p className="rounded-2xl bg-zinc-50 px-6 py-10 text-center text-sm text-zinc-500 dark:bg-white/[.04]">
               Drive에 파일이 없어 열 수 없습니다. 이 자료에 남긴 기록은 그대로
               있습니다.
             </p>
+          ) : showImages ? (
+            <ImageReaderView
+              key={selected.id}
+              sourceId={source.id}
+              images={imageFiles.map((file) => ({
+                id: file.id,
+                fileName: file.fileName,
+                /*
+                  Drive에서 흘러나오는 주소. **공개 링크가 아니다.**
+                  이 경로가 세션을 보고 본인 것만 내보낸다. (설계 문서 2.3절)
+                */
+                src: `/api/source-files/${file.id}/content`,
+                missing: file.status === "missing",
+              }))}
+              initialIndex={imageIndex}
+              checksums={Object.fromEntries(
+                imageFiles.map((file) => [file.id, file.checksum]),
+              )}
+              capturesSlot={
+                <div className="flex flex-col gap-3">
+                  <StarFilter
+                    allHref={readerHref(source.id, selected.id, startPage, false)}
+                    starredHref={readerHref(source.id, selected.id, startPage, true)}
+                    total={captureCounts.total}
+                    starred={captureCounts.starred}
+                    starredOnly={starredOnly}
+                  />
+
+                  <CaptureList
+                    captures={captures}
+                    returnTo={readerHref(
+                      source.id,
+                      selected.id,
+                      startPage,
+                      starredOnly,
+                    )}
+                    emptyText={
+                      starredOnly
+                        ? "별을 단 기록이 없습니다."
+                        : "아직 이 자료에 남긴 기록이 없습니다."
+                    }
+                    projects={projectChips}
+                    captureTags={captureTags}
+                    allTags={allTags}
+                    fileChecksums={Object.fromEntries(
+                      files.map((file) => [file.id, file.checksum]),
+                    )}
+                    /*
+                      몇 번째 장인지는 담겨 있지 않다. 이 차례로 센다.
+                      넘기지 않으면 `2장으로` 단추가 그려지지 않는다.
+                    */
+                    imageFileIds={imageFiles.map((file) => file.id)}
+                  />
+                </div>
+              }
+            />
           ) : (
             <ReaderView
               // 다른 파일을 고르면 뷰어를 새로 만든다.
@@ -282,7 +372,7 @@ export default async function ReaderPage({
           </h1>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
             {files.length > 0
-              ? "이 자료에 붙은 파일 중 PDF가 없습니다. 지금은 PDF만 열어볼 수 있습니다."
+              ? "이 자료에 붙은 파일 중 열어볼 수 있는 것이 없습니다. 지금은 PDF와 그림(PNG·JPEG·WebP)을 열 수 있습니다."
               : "이 자료에 아직 파일이 붙어 있지 않습니다."}
           </p>
           <Link

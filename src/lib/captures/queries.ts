@@ -5,6 +5,7 @@ import {
   parseMusicTimeLocator,
   type MusicTimeLocator,
 } from "./music-locator";
+import { parseImageLocator, type ImageLocator } from "./image-locator";
 import { parsePdfLocator, type PdfLocator } from "./pdf-locator";
 import {
   parseMediaTimeLocator,
@@ -51,6 +52,14 @@ export type Capture = {
   starred: boolean;
   /** PDF에서 온 기록의 자리. 고른 문장이거나, 쪽만 가리키거나. 아니면 null. */
   pdfLocation: PdfLocator | null;
+  /**
+   * 그림에서 온 기록의 자리. 어느 장인지다. (설계 문서 16절, 2026-10-04)
+   *
+   * **몇 번째 장인지는 담겨 있지 않다.** 파일 번호만 담는다. 번호를 담으면
+   * 파일을 떼거나 더할 때 밀리고, 그때 오류는 나지 않는다. 보여줄 때
+   * 목록에서 세어 `2장`을 만든다. (`describeImagePage`)
+   */
+  imageLocation: ImageLocator | null;
   /**
    * 음악에서 온 기록의 자리. 재생 시점이거나 구간이다. (설계 문서 13.4절)
    *
@@ -126,6 +135,7 @@ function toCapture(row: CaptureRow): Capture[] {
       starred: row.starred,
       // locator는 JSONB라 무엇이든 들어갈 수 있다. 읽는 쪽이 모양을 확인한다.
       pdfLocation: parsePdfLocator(row.locator),
+      imageLocation: parseImageLocator(row.locator),
       musicLocation: parseMusicTimeLocator(row.locator),
       videoLocation: parseVideoTimeLocator(row.locator),
       mediaLocation: parseMediaTimeLocator(row.locator),
