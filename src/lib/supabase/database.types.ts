@@ -1123,7 +1123,7 @@ export type Database = {
           owner_id?: string
           project_id: string
           revoked_at?: string | null
-          token: string
+          token?: string
         }
         Update: {
           created_at?: string

@@ -107,6 +107,68 @@ test("열쇠를 부를 때 pg_catalog을 붙인다", () => {
   );
 });
 
+test("열쇠 칸에 기본값도 걸려 있다", () => {
+  /*
+    **기본값은 타입을, 트리거는 실제 보장을 맡는다.**
+
+    이 규칙을 같은 파일 안에서 한 칸에만 따랐다. `owner_id`에는 기본값과
+    트리거를 둘 다 걸고 `token`에는 트리거만 걸었다. 트리거가 채우니
+    됐다고 생각했다.
+
+    올린 뒤 `db:types`를 돌려 보니 `token`이 **Insert에 필수**로 잡혔다.
+    타입 생성기는 트리거를 모르고 칸의 기본값만 본다. 그러면 공개를 켜는
+    코드가 **보내면 안 되는 값을 보내야 한다.** 막으려던 것이 그것이다.
+
+    4-44절에서 `owner_id`가 똑같은 자리에 있었다. **적어둔 교훈을 같은
+    파일 안에서 한 칸에만 적용했다.**
+
+    두 겹이 하는 일이 다르다. 기본값은 "안 보내도 된다"를 말하고, 트리거는
+    보내도 **버린다.** 기본값만으로는 보낸 값이 그대로 들어간다.
+  */
+  assert.match(
+    migrations,
+    /alter table public\.project_public_links\s*\n?\s*alter column token set default/u,
+    "열쇠 칸에 기본값이 없다. 타입 생성기가 token을 필수로 보고, 코드가 열쇠를 보내야 한다",
+  );
+});
+
+test("생성된 타입에서 열쇠를 안 보내도 된다", () => {
+  /*
+    **마이그레이션만 보는 것으로는 모자랐다.** 위의 검사는 기본값을 적었는지
+    보고, 이 검사는 **그것이 실제로 먹었는지** 본다. 둘 사이에 `db push`와
+    `db:types`가 있고, 그 둘을 사람이 돌린다.
+
+    여기가 틀어지는 경우가 있다. 마이그레이션을 쓰고 올리지 않았거나,
+    올리고 `db:types`를 안 돌렸을 때다. 그때 이 검사가 멈춘다.
+    (AGENTS.md 3절이 "마이그레이션 적용 후 반드시 실행"이라고 적은 것)
+  */
+  const types = readFileSync(
+    path.join(repoRoot, "src", "lib", "supabase", "database.types.ts"),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
+
+  const table = /project_public_links: \{([\s\S]*?)\n      \}/u.exec(types);
+
+  assert.ok(table, "생성된 타입에 project_public_links가 없다. db:types를 돌리지 않았다");
+
+  const insert = /Insert: \{([\s\S]*?)\n        \}/u.exec(table[1]);
+
+  assert.ok(insert, "생성된 타입에서 Insert를 못 찾았다");
+
+  assert.match(
+    insert[1],
+    /token\?:/u,
+    "생성된 타입이 열쇠를 필수로 본다. 코드가 보내면 안 되는 값을 보내야 한다",
+  );
+
+  // owner_id도 같다. 이쪽은 처음부터 되어 있었다. (보안 원칙 2)
+  assert.match(
+    insert[1],
+    /owner_id\?:/u,
+    "생성된 타입이 owner_id를 필수로 본다",
+  );
+});
+
 test("열쇠 모양을 제약조건이 지킨다", () => {
   /*
     트리거가 채우는 값인데도 제약조건을 둔다. **트리거는 나중에 누군가
