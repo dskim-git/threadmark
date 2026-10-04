@@ -9,6 +9,8 @@ import type { YoutubeProfile } from "@/lib/youtube/queries";
 import { formatDuration, watchUrl } from "@/lib/youtube/video-id";
 
 import { findVideo, saveVideoProfile } from "./youtube-actions";
+import { RecordedFields } from "./recorded-fields";
+import { useSourceEditing } from "./source-editing";
 
 /**
  * YouTube 영상 칸. 주소를 넣으면 찾아와 채운다. (설계 문서 14절)
@@ -106,6 +108,46 @@ export function YoutubePanel({
 
   const seconds = Number(durationSeconds);
   const hasDuration = durationSeconds !== "" && Number.isFinite(seconds);
+
+  const editing = useSourceEditing();
+
+  /*
+    연필을 누르지 않았으면 **담아둔 것만 깔끔히 보여준다.**
+    (2026-10-04, 사용자가 쓰다가 말함) 논문 칸과 같은 모양이다.
+  */
+  if (!editing) {
+    return (
+      <Panel title="영상 정보" help="youtube" helpLabel="YouTube 영상">
+        <RecordedFields
+          emptyText="이 영상에 대해 아직 적어둔 것이 없습니다."
+          fields={[
+            { label: "제목", value: title },
+            { label: "영상 주소", value: videoInput },
+            { label: "채널", value: channelName },
+            { label: "올린 날", value: publishedAt },
+            {
+              label: "길이",
+              /*
+                **폼이 쓰는 함수와 같은 것을 쓴다.** 아래쪽이
+                `formatDuration`을 쓰는데 여기서 다른 것을 쓰면 같은
+                길이가 두 모양으로 보인다.
+              */
+              value: hasDuration ? formatDuration(seconds) : "",
+            },
+            {
+              label: "앱에서 재생",
+              value:
+                embeddable === ""
+                  ? ""
+                  : embeddable === "true"
+                    ? "할 수 있습니다"
+                    : "할 수 없습니다",
+            },
+          ]}
+        />
+      </Panel>
+    );
+  }
 
   return (
     <Panel

@@ -10,6 +10,13 @@ import { AutoNotice } from "@/app/(app)/auto-notice";
 import { HelpButton } from "@/app/(app)/help-button";
 import { StarButton } from "@/app/(app)/star-button";
 import { TagEditor } from "@/app/(app)/tag-editor";
+import {
+  SourceEditButton,
+  SourceEditing,
+  WhenEditing,
+  WhenReading,
+  WhenRecorded,
+} from "@/app/(app)/sources/source-editing";
 import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
 import {
@@ -264,6 +271,20 @@ export default async function SourceDetailPage({
   ];
 
   return (
+    /*
+      고치는 상태를 화면 하나가 함께 본다. (2026-10-04, 사용자가 쓰다가 말함)
+
+      **감싸는 것만 브라우저에서 돈다.** 이 화면은 서버에서 그려지고, 안쪽의
+      갈래 칸들이 `useSourceEditing`으로 그 값을 읽는다. 상태는 브라우저에만
+      있으면 되므로 경계가 여기다.
+    */
+    <SourceEditing>
+      {/*
+        **안쪽을 한 칸 더 들여쓰지 않았다.** 감싸면 아래 900줄을 전부 밀어야
+        하고, 그러면 이 커밋의 달라진 줄이 900줄이 되어 **무엇을 고쳤는지
+        읽을 수 없게 된다.** 들여쓰기를 맞추는 일은 그것만 하는 커밋에서
+        한다.
+      */}
     <div className="flex flex-col gap-8">
       <nav className="text-sm">
         <Link
@@ -334,6 +355,19 @@ export default async function SourceDetailPage({
             </Link>
 
             {/*
+              담아둔 값을 고치는 단추. (2026-10-04, 사용자가 쓰다가 말함)
+
+              **기록 카드의 연필과 같은 것이다.** 누르지 않았으면 갈래 칸이
+              담아둔 것만 깔끔히 보여주고, 누르면 지금까지처럼 입력칸이
+              열린다.
+
+              **사용자가 가리킨 자리가 여기다.** `제목·설명 고치기` 옆이다.
+              칸마다 연필을 달면 한 화면에 다섯 개가 생기고, 무엇을 눌러야
+              하는지가 더 어려워진다.
+            */}
+            <SourceEditButton />
+
+            {/*
               자료의 별. 기록의 별과 다른 것이다. (설계 문서 6.2-1절)
               이 논문 자체를 다시 봐야 한다는 표시이고, 안의 어느 문장이
               중요했는지는 기록마다 따로 단다.
@@ -362,18 +396,36 @@ export default async function SourceDetailPage({
           먼저 보이는 것이 자연스럽고, 아래로 내려갈수록 있는 줄도 모르게 된다.
           제목 옆 `제목·설명 고치기`가 아래에 있다가 안 쓰이던 것과 같은 이유다.
         */}
-        <div className="flex items-start gap-2">
-          <HelpButton topic="tags" className="mt-1.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-        <TagEditor
-          target="source"
-          id={source.id}
-          tags={sourceTags}
-          allTags={allTags}
-          returnTo={returnTo}
-        />
+        {/*
+          **읽을 때는 달린 태그만 보인다.** (2026-10-04, 사용자 요청)
+          적는 칸과 `쓰던 태그` 줄은 연필 안으로 들어갔다. 달린 것이 없으면
+          아무것도 그리지 않는다.
+        */}
+        <WhenReading>
+          <TagEditor
+            readOnly
+            target="source"
+            id={source.id}
+            tags={sourceTags}
+            allTags={allTags}
+            returnTo={returnTo}
+          />
+        </WhenReading>
+
+        <WhenEditing>
+          <div className="flex items-start gap-2">
+            <HelpButton topic="tags" className="mt-1.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <TagEditor
+                target="source"
+                id={source.id}
+                tags={sourceTags}
+                allTags={allTags}
+                returnTo={returnTo}
+              />
+            </div>
           </div>
-        </div>
+        </WhenEditing>
       </header>
 
       {/*
@@ -473,6 +525,7 @@ export default async function SourceDetailPage({
         놓인 데가 없으면 자리를 만들지 않는다. 빈 칸이 늘어나면 정작 있는
         것이 눈에 안 들어온다.
       */}
+      <WhenRecorded has={placements.length > 0}>
       <section className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="min-w-0 flex-1 text-sm font-medium text-black dark:text-zinc-50">
@@ -488,17 +541,25 @@ export default async function SourceDetailPage({
             정해두는 일이 오히려 더 흔하다.** 아직 어느 문장을 뽑을지는
             모르지만 이 논문이 3장에 들어간다는 것은 먼저 정해진다.
           */}
-          <NodePicker
-            item={`source:${source.id}`}
-            returnTo={returnTo}
-            label="자리에 놓기 →"
-          />
+          <WhenEditing>
+            <NodePicker
+              item={`source:${source.id}`}
+              returnTo={returnTo}
+              label="자리에 놓기 →"
+            />
+          </WhenEditing>
         </div>
 
+        {/*
+          **놓인 데가 없다는 말은 고치는 중에만 한다.** 읽을 때는 이 칸
+          자체가 보이지 않는다. (위 `WhenRecorded`)
+        */}
         {placements.length === 0 ? (
-          <p className="text-sm leading-6 text-zinc-500">
-            아직 어느 프로젝트의 자리에도 놓지 않았습니다.
-          </p>
+          <WhenEditing>
+            <p className="text-sm leading-6 text-zinc-500">
+              아직 어느 프로젝트의 자리에도 놓지 않았습니다.
+            </p>
+          </WhenEditing>
         ) : null}
 
         {placements.length > 0 ? (
@@ -524,6 +585,7 @@ export default async function SourceDetailPage({
           </>
         ) : null}
       </section>
+      </WhenRecorded>
 
       {/*
         책 칸. 책 유형일 때만 보여준다. (설계 문서 12절)
@@ -591,6 +653,7 @@ export default async function SourceDetailPage({
         있다는 것을 알 방법이 없다.
       */}
       {source.type === "media" ? (
+        <WhenRecorded has={watchProviders.length > 0}>
         <WatchPanel
           sourceId={source.id}
           providers={watchProviders}
@@ -599,6 +662,7 @@ export default async function SourceDetailPage({
           ready={mediaProfile !== null}
           returnTo={returnTo}
         />
+        </WhenRecorded>
       ) : null}
 
       {/*
@@ -690,6 +754,7 @@ export default async function SourceDetailPage({
         </section>
       ) : null}
 
+      <WhenRecorded has={linkedProjects.length > 0}>
       <Panel title="프로젝트">
         {linkedProjects.length > 0 ? (
           <ul className="flex flex-wrap gap-2">
@@ -713,21 +778,26 @@ export default async function SourceDetailPage({
                   <input type="hidden" name="projectId" value={project.id} />
                   <input type="hidden" name="targetId" value={source.id} />
                   <input type="hidden" name="returnTo" value={returnTo} />
-                  <button
-                    type="submit"
-                    aria-label={`${project.name} 연결 끊기`}
-                    className="text-sm text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
-                  >
-                    ×
-                  </button>
+                  {/* 끊는 길은 연필 안에 둔다. 읽을 때는 이어둔 것만 보인다. */}
+                  <WhenEditing>
+                    <button
+                      type="submit"
+                      aria-label={`${project.name} 연결 끊기`}
+                      className="text-sm text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
+                    >
+                      ×
+                    </button>
+                  </WhenEditing>
                 </form>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-zinc-500">
-            연결된 프로젝트가 없습니다.
-          </p>
+          <WhenEditing>
+            <p className="text-sm text-zinc-500">
+              연결된 프로젝트가 없습니다.
+            </p>
+          </WhenEditing>
         )}
 
         {/*
@@ -735,6 +805,7 @@ export default async function SourceDetailPage({
           자주 하는 일은 이어둔 것을 보는 일이지 새로 잇는 일이 아니다.
         */}
         {linkableProjects.length > 0 ? (
+          <WhenEditing>
           <Reveal label="프로젝트에 잇기">
           <form
             action={linkSourceToProject}
@@ -764,8 +835,10 @@ export default async function SourceDetailPage({
             </button>
           </form>
           </Reveal>
+          </WhenEditing>
         ) : null}
       </Panel>
+      </WhenRecorded>
 
       {/*
         프로젝트별 활용 계획. 논문 유형일 때만 보여준다. (설계 문서 8.3절)
@@ -775,6 +848,7 @@ export default async function SourceDetailPage({
         안내와 연결하는 자리가 멀어진다.
       */}
       {source.type === "paper" ? (
+        <WhenRecorded has={paperUses.length > 0}>
         <Panel
           title="프로젝트별 활용 계획"
           hint="이 논문을 각 프로젝트에서 어떻게 쓸지 적습니다. 논문이 무엇을 말하는지는 논문 분석에, 내 원고의 어디에 넣을지는 여기에 적습니다."
@@ -785,6 +859,7 @@ export default async function SourceDetailPage({
             uses={paperUses}
           />
         </Panel>
+        </WhenRecorded>
       ) : null}
 
       {/*
@@ -798,6 +873,9 @@ export default async function SourceDetailPage({
         어느 쪽에서 적었는지에 따라 같은 사실이 다른 말로 남는다.
         화살표가 없으면 목록에서 그 둘을 구별할 수 없다.
       */}
+      <WhenRecorded
+        has={relations.outgoing.length > 0 || relations.incoming.length > 0}
+      >
       <Panel title="관련 자료">
         {relations.outgoing.length > 0 || relations.incoming.length > 0 ? (
           <ul className="flex flex-col gap-2">
@@ -825,6 +903,7 @@ export default async function SourceDetailPage({
                   </Link>
                 </div>
 
+                <WhenEditing>
                 <form action={unlinkSourceRelation}>
                   <input
                     type="hidden"
@@ -839,6 +918,7 @@ export default async function SourceDetailPage({
                     관계 끊기
                   </button>
                 </form>
+                </WhenEditing>
               </li>
             ))}
 
@@ -866,6 +946,7 @@ export default async function SourceDetailPage({
                   <span className="text-zinc-500">이 자료</span>
                 </div>
 
+                <WhenEditing>
                 <form action={unlinkSourceRelation}>
                   <input
                     type="hidden"
@@ -880,15 +961,19 @@ export default async function SourceDetailPage({
                     관계 끊기
                   </button>
                 </form>
+                </WhenEditing>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-zinc-500">아직 이어둔 자료가 없습니다.</p>
+          <WhenEditing>
+            <p className="text-sm text-zinc-500">아직 이어둔 자료가 없습니다.</p>
+          </WhenEditing>
         )}
 
         {relatableSources.length > 0 ? (
-          <Reveal label="다른 자료와 잇기">
+          <WhenEditing>
+        <Reveal label="다른 자료와 잇기">
           <form
             action={linkSourceRelation}
             className="flex min-w-0 flex-wrap items-center gap-2"
@@ -938,6 +1023,7 @@ export default async function SourceDetailPage({
             </button>
           </form>
           </Reveal>
+          </WhenEditing>
         ) : (
           <p className="text-xs leading-5 text-zinc-500">
             이을 다른 자료가 없습니다. 아래에서 제목만으로 담아둘 수 있습니다.
@@ -954,6 +1040,7 @@ export default async function SourceDetailPage({
           담아두기와 잇기를 한 번에 한다. 어디서 봤는지가 곧 지금 읽고 있는
           이 자료이고, 나중에 그것이 그 논문을 찾은 유일한 단서가 된다.
         */}
+        <WhenEditing>
         <Reveal label="목록에 없는 논문 담아두기">
           <form
             action={addReadingCandidate}
@@ -1031,7 +1118,9 @@ export default async function SourceDetailPage({
             </div>
           </form>
         </Reveal>
+        </WhenEditing>
       </Panel>
+      </WhenRecorded>
 
       {/*
         파일 영역. 설계 문서 10.3절.
@@ -1039,9 +1128,20 @@ export default async function SourceDetailPage({
         Drive에 연결되지 않아도 이 자료의 나머지 기능은 그대로 쓸 수 있다.
         그래서 화면을 막지 않고 안내만 보여준다. (설계 문서 10.4절 마지막 줄)
       */}
+      <WhenRecorded has={files.length > 0}>
       <Panel title="파일" help="drive" helpLabel="파일 보관">
+        {/*
+          **읽을 때도 파일 목록은 그대로 보인다.** `열기`와 `Drive에서
+          열기`는 바꾸는 일이 아니라 읽는 일이다. 떼는 `해제`만 연필 안으로
+          들어간다. (`file-list.tsx`)
+        */}
         <FileList sourceId={source.id} files={files} />
 
+        {/*
+          붙이는 길과 `Drive를 연결하세요` 안내를 **함께** 연필 안에 둔다.
+          읽을 때는 붙일 수 없으므로 연결하라는 말도 할 자리가 아니다.
+        */}
+        <WhenEditing>
         {driveConnection?.status === "connected" ? (
           <Reveal label="파일 붙이기">
             <div className="flex flex-col gap-3">
@@ -1093,7 +1193,9 @@ export default async function SourceDetailPage({
             </Link>
           </p>
         )}
+        </WhenEditing>
       </Panel>
+      </WhenRecorded>
 
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
@@ -1181,6 +1283,7 @@ export default async function SourceDetailPage({
         </form>
       </div>
     </div>
+    </SourceEditing>
   );
 }
 

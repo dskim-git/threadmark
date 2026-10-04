@@ -23,6 +23,8 @@ import { PlaceMap } from "./place-map";
 import { PlacePicker, type PickedPoint } from "./place-picker";
 
 import { findAddresses, findPlaces, savePlace } from "./place-actions";
+import { RecordedFields } from "./recorded-fields";
+import { useSourceEditing } from "./source-editing";
 
 /**
  * 장소 칸. 이름으로 찾아 고르고 채운다. (설계 문서 17-1절)
@@ -442,6 +444,44 @@ export function PlacePanel({
 
   const shownCategory = categoryLabel(category);
   const providerLabel = getPlaceProviderLabel(provider);
+
+  const editing = useSourceEditing();
+
+  /*
+    연필을 누르지 않았으면 **담아둔 것만 깔끔히 보여준다.**
+    (2026-10-04, 사용자가 쓰다가 말함) 논문 칸과 같은 모양이다.
+
+    **좌표는 보여주지 않는다.** 숫자 두 줄이 사람에게 말해주는 것이 거의
+    없고, 가는 길은 지도 링크가 맡는다. 고칠 때만 보인다.
+  */
+  if (!editing) {
+    return (
+      <Panel title="장소" help="place" helpLabel="장소">
+        <RecordedFields
+          emptyText="이 장소에 대해 아직 적어둔 것이 없습니다."
+          fields={[
+            { label: "이름", value: name },
+            {
+              label: "국내·해외",
+              value: region === "overseas" ? "해외" : "국내",
+            },
+            { label: "갈래", value: shownCategory },
+            { label: "도로명 주소", value: roadAddress },
+            { label: "지번 주소", value: address },
+            { label: "우편번호", value: postal },
+            { label: "전화", value: phone },
+            /*
+              **폼이 쓰는 라벨 함수를 그대로 쓴다.** 안 정한 값에는
+              아무것도 보여주지 않는다는 판단이 그 함수에 들어 있다.
+            */
+            { label: "가봤나", value: getPlaceVisitStatusLabel(visitStatus) },
+            { label: "왜 담았나", value: why, multiline: true },
+            { label: "어디서 가져왔나", value: providerLabel },
+          ]}
+        />
+      </Panel>
+    );
+  }
 
   return (
     <Panel

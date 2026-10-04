@@ -25,6 +25,7 @@ export function TagEditor({
   allTags,
   returnTo,
   compact,
+  readOnly,
 }: {
   target: "source" | "capture";
   /** 자료 id 또는 기록 id. */
@@ -36,7 +37,37 @@ export function TagEditor({
   returnTo: string;
   /** 기록 카드처럼 좁은 자리에서 쓸 때. 안내 문구를 줄인다. */
   compact?: boolean;
+  /**
+   * 달린 태그만 보여준다. 떼는 단추도 적는 칸도 두지 않는다.
+   * (2026-10-04, 사용자 요청)
+   *
+   * **꼬리표 모양을 여기 한 곳에 둔다.** 읽기 전용 목록을 따로 만들면
+   * 같은 꼬리표가 두 모양이 되고, 한쪽만 고쳐진다.
+   */
+  readOnly?: boolean;
 }) {
+  if (readOnly) {
+    /*
+      **달린 것이 없으면 아무것도 그리지 않는다.** 빈 자리에 `태그 없음`을
+      적으면 없는 것의 목록이 된다. 다는 길은 연필 안에 있다.
+    */
+    if (tags.length === 0) {
+      return null;
+    }
+
+    return (
+      <ul className="flex flex-wrap items-center gap-1.5">
+        {tags.map((tag) => (
+          <li key={tag.id}>
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent dark:bg-accent-dark-soft dark:text-accent-dark">
+              {tag.name}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   const attached = new Set(tags.map((tag) => tag.id));
   const addable = allTags.filter((tag) => !attached.has(tag.id));
   const inputId = `tag-input-${target}-${id}`;

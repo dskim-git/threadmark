@@ -16,6 +16,9 @@ import type { BookProfile } from "@/lib/books/queries";
 import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 
 import { findBooks, saveBookProfile } from "./book-actions";
+import { Panel } from "@/app/(app)/panel";
+import { RecordedFields } from "./recorded-fields";
+import { useSourceEditing } from "./source-editing";
 
 /**
  * 책 칸. 찾아와 채우고, 읽은 자리를 남긴다. (설계 문서 12절)
@@ -120,6 +123,46 @@ export function BookPanel({
     values.finishedOn || null,
   );
 
+  const editing = useSourceEditing();
+
+  /*
+    읽기 화면에 적을 두 줄. **폼이 보여주는 것과 같은 값을 쓴다.**
+    따로 계산하면 두 모양이 어긋난다.
+  */
+  const pages =
+    values.currentPage && values.totalPages
+      ? `${values.currentPage} / ${values.totalPages}쪽${progress === null ? "" : ` (${progress}%)`}`
+      : values.totalPages
+        ? `${values.totalPages}쪽`
+        : values.currentPage
+          ? `${values.currentPage}쪽까지`
+          : "";
+
+  const period =
+    values.startedOn && values.finishedOn
+      ? `${values.startedOn} ~ ${values.finishedOn}${days === null ? "" : ` (${days}일)`}`
+      : values.startedOn
+        ? `${values.startedOn} ~`
+        : values.finishedOn
+          ? `~ ${values.finishedOn}`
+          : "";
+
+  /*
+    라벨 표는 정해진 값만 열쇠로 받는다. 담긴 값이 그 밖이면(예전 값이나
+    빈 값) **지어내지 않고 그대로 보여준다.**
+  */
+  const holdingLabel =
+    values.holding in HOLDING_LABELS
+      ? HOLDING_LABELS[values.holding as keyof typeof HOLDING_LABELS]
+      : values.holding;
+
+  const statusLabel =
+    values.readingStatus in READING_STATUS_LABELS
+      ? READING_STATUS_LABELS[
+          values.readingStatus as keyof typeof READING_STATUS_LABELS
+        ]
+      : values.readingStatus;
+
   function handleLookup() {
     setMessage(null);
     setFailed(false);
@@ -176,6 +219,51 @@ export function BookPanel({
       given.length > 0
         ? `${given.length}칸을 이 책의 값으로 바꿨습니다. 읽기 기록은 그대로입니다. 저장을 눌러야 남습니다.`
         : "이 후보에는 채울 값이 없었습니다.",
+    );
+  }
+
+  /*
+    연필을 누르지 않았으면 **담아둔 것만 깔끔히 보여준다.**
+    (2026-10-04, 사용자가 쓰다가 말함)
+
+    입력칸 여덟 개가 늘 펼쳐져 있어서 담긴 내용이 한눈에 들어오지 않았다.
+    논문 칸(`PaperSummary`)이 처음부터 이렇게 되어 있었고, 이제 갈래가
+    같은 모양을 쓴다.
+  */
+  if (!editing) {
+    return (
+      <Panel title="책" help="book" helpLabel="책 정보와 읽기 기록">
+        <div className="flex items-start gap-3">
+          <Cover url={values.thumbnailUrl} />
+
+          <div className="min-w-0 flex-1">
+            <RecordedFields
+              emptyText="이 책에 대해 아직 적어둔 것이 없습니다."
+              fields={[
+                { label: "제목", value: values.bookTitle },
+                { label: "저자", value: values.authors },
+                { label: "옮긴이", value: values.translators },
+                { label: "출판사", value: values.publisher },
+                { label: "펴낸 날", value: values.publishedOn },
+                { label: "ISBN", value: values.isbn13 || values.isbn10 },
+                { label: "어디서 가져왔나", value: values.metadataSource },
+                {
+                  label: "가진 책인가",
+                  value: holdingLabel,
+                },
+                {
+                  label: "읽기 상태",
+                  value: statusLabel,
+                },
+                { label: "쪽", value: pages },
+                { label: "읽은 기간", value: period },
+                { label: "왜 골랐나", value: values.whyChosen, multiline: true },
+                { label: "읽고 나서", value: values.verdict, multiline: true },
+              ]}
+            />
+          </div>
+        </div>
+      </Panel>
     );
   }
 

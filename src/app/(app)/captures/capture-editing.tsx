@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useState } from "react";
 
+import { PencilIcon } from "@/app/(app)/pencil-icon";
+
 /**
  * 기록 카드의 **고치는 상태**. (2026-10-04, 사용자가 쓰다가 말함)
  *
@@ -92,22 +94,11 @@ export function CaptureEditButton() {
       }`}
     >
       {/*
-        연필. 그림 파일을 두지 않고 선으로 그린다. 한 곳에서만 쓰는
-        작은 그림이라 파일을 늘릴 일이 아니다.
+        연필. 자료 화면의 고치기 단추와 **같은 그림을 쓴다.**
+        (2026-10-04) 한때 이 파일 안에 그려 두었는데, 쓰는 곳이 둘이
+        되면서 `pencil-icon.tsx`로 떼어냈다.
       */}
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-3.5 w-3.5"
-      >
-        <path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" />
-        <path d="M10 4l2 2" />
-      </svg>
+      <PencilIcon />
     </button>
   );
 }

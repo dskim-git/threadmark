@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { driveViewUrl, formatByteSize } from "@/lib/drive/upload";
+import { WhenEditing } from "./source-editing";
 import { isStrokeFileName } from "@/lib/drawing/scene";
 import { isOpenable, isReadable, type SourceFileItem } from "@/lib/sources/files";
 
@@ -89,12 +90,23 @@ export function FileList({
                 없으면 **그 파일에는 누를 것이 아무것도 없다.**
               */}
               {isStrokeFileName(file.fileName) && file.status === "ready" ? (
-                <Link
-                  href={`/sources/${sourceId}/draw?file=${file.id}`}
-                  className="text-sm font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100"
-                >
-                  고쳐 그리기
-                </Link>
+                /*
+                  **고치는 길이라 연필 안에 둔다.** (2026-10-04, 사용자 요청)
+                  이름 그대로 고치는 일이고, 저장하면 파일이 새로 쌓인다.
+
+                  그러면 읽을 때 그 파일에는 누를 것이 하나도 없어진다.
+                  위에 적은 그대로다. **그래도 괜찮다.** 읽는 화면에서 획
+                  파일은 그림이 거기 있다는 표시일 뿐이고, 보이는 것은 짝인
+                  `.png`가 맡는다.
+                */
+                <WhenEditing>
+                  <Link
+                    href={`/sources/${sourceId}/draw?file=${file.id}`}
+                    className="text-sm font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100"
+                  >
+                    고쳐 그리기
+                  </Link>
+                </WhenEditing>
               ) : null}
 
               {isOpenable(file) && file.driveFileId ? (
@@ -113,17 +125,24 @@ export function FileList({
                 </a>
               ) : null}
 
-              <form action={detachSourceFile}>
-                <input type="hidden" name="fileId" value={file.id} />
-                <input type="hidden" name="sourceId" value={sourceId} />
-                <button
-                  type="submit"
-                  aria-label={`${file.fileName} 첨부 해제`}
-                  className="text-sm text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
-                >
-                  해제
-                </button>
-              </form>
+              {/*
+                **떼는 길만 연필 안에 둔다.** (2026-10-04, 사용자 요청)
+                `열기`와 `Drive에서 열기`는 바꾸는 일이 아니라 읽는 일이라
+                읽을 때도 그대로 보인다.
+              */}
+              <WhenEditing>
+                <form action={detachSourceFile}>
+                  <input type="hidden" name="fileId" value={file.id} />
+                  <input type="hidden" name="sourceId" value={sourceId} />
+                  <button
+                    type="submit"
+                    aria-label={`${file.fileName} 첨부 해제`}
+                    className="text-sm text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
+                  >
+                    해제
+                  </button>
+                </form>
+              </WhenEditing>
             </div>
           </li>
         ))}

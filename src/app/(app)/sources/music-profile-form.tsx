@@ -13,6 +13,8 @@ import {
   lookupMusicCandidates,
   saveMusicProfile,
 } from "./music-actions";
+import { RecordedFields } from "./recorded-fields";
+import { useSourceEditing } from "./source-editing";
 
 /**
  * 곡 정보 칸. 찾아와 채우고, 고쳐서 저장한다. (설계 문서 13.2절, 13.3절)
@@ -124,6 +126,15 @@ export function MusicProfileForm({
   const set = (name: keyof MusicValues, value: string) =>
     onChange({ ...values, [name]: value });
 
+  const editing = useSourceEditing();
+
+  /** 담긴 초를 사람이 보는 모양으로. 숫자가 아니면 적힌 그대로 둔다. */
+  const durationSeconds = Number(values.durationSeconds);
+  const durationText =
+    values.durationSeconds !== "" && Number.isFinite(durationSeconds)
+      ? formatPosition(durationSeconds)
+      : values.durationSeconds;
+
   function handleLookup() {
     setMessage(null);
     setFailed(false);
@@ -194,6 +205,41 @@ export function MusicProfileForm({
         router.refresh();
       }
     });
+  }
+
+  /*
+    연필을 누르지 않았으면 **담아둔 것만 깔끔히 보여준다.**
+    (2026-10-04, 사용자가 쓰다가 말함) 논문 칸과 같은 모양이다.
+
+    **접어둔 칸까지 함께 보여준다.** 폼에서는 열두 칸을 한꺼번에 보여주면
+    다 적어야 하는 것처럼 보여서 접어 두었는데(`MORE_FIELDS`), 읽을 때는
+    **적어둔 것만 줄이 생기므로** 접을 이유가 없다. 적어둔 것을 보려고
+    왔는데 한 번 더 눌러야 보이면 그것이 더 나쁘다.
+  */
+  if (!editing) {
+    return (
+      <RecordedFields
+        emptyText="이 곡에 대해 아직 적어둔 것이 없습니다."
+        fields={[
+          { label: "곡 이름", value: values.trackTitle },
+          { label: "아티스트", value: values.artist },
+          { label: "앨범", value: values.albumName },
+          { label: "앨범 아티스트", value: values.albumArtist },
+          { label: "발매일", value: values.releasedOn },
+          { label: "트랙 번호", value: values.trackNumber },
+          /*
+            **담긴 것은 초다.** 사람이 보는 모양은 `media/time.ts`가
+            만든다. 음악 기록의 시점도 같은 함수를 쓴다.
+          */
+          { label: "재생 시간", value: durationText },
+          { label: "장르", value: values.genre },
+          { label: "언어", value: values.language },
+          { label: "작곡", value: values.composer },
+          { label: "작사", value: values.lyricist },
+          { label: "편곡", value: values.arranger },
+        ]}
+      />
+    );
   }
 
   return (

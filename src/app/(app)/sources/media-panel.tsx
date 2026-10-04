@@ -13,6 +13,8 @@ import {
 import { MAX_TITLE_LENGTH } from "@/lib/sources/schema";
 
 import { findWorks, loadWorkDetail, saveMediaWork } from "./media-actions";
+import { RecordedFields } from "./recorded-fields";
+import { useSourceEditing } from "./source-editing";
 
 /**
  * 영화·드라마 칸. 제목으로 찾아 고르고 채운다. (설계 문서 15절)
@@ -156,6 +158,41 @@ export function MediaPanel({
 
   const runtime = Number(runtimeMinutes);
   const hasRuntime = runtimeMinutes !== "" && Number.isFinite(runtime);
+
+  const editing = useSourceEditing();
+
+  /*
+    연필을 누르지 않았으면 **담아둔 것만 깔끔히 보여준다.**
+    (2026-10-04, 사용자가 쓰다가 말함) 논문 칸과 같은 모양이다.
+
+    **TMDB 번호는 보여주지 않는다.** 사람이 읽을 값이 아니고, 고칠 때도
+    숨은 칸이다.
+  */
+  if (!editing) {
+    return (
+      <Panel title="작품 정보" help="media" helpLabel="영화·드라마">
+        <RecordedFields
+          emptyText="이 작품에 대해 아직 적어둔 것이 없습니다."
+          fields={[
+            { label: "제목", value: title },
+            { label: "원제", value: originalTitle },
+            /*
+              **폼이 쓰는 라벨·형식 함수를 그대로 쓴다.** 다른 것을 쓰면
+              같은 값이 두 모양으로 보인다.
+            */
+            { label: "갈래", value: kind === "" ? "" : getMediaKindLabel(kind) },
+            { label: "개봉·공개", value: releasedOn },
+            { label: "길이", value: hasRuntime ? formatRuntime(runtime) : "" },
+            { label: "시즌 수", value: seasonCount },
+            { label: "회차 수", value: episodeCount },
+            { label: "장르", value: genres },
+            { label: "출연", value: castNames },
+            { label: "줄거리", value: overview, multiline: true },
+          ]}
+        />
+      </Panel>
+    );
+  }
 
   return (
     <Panel

@@ -8,6 +8,7 @@ import type { WatchProviderRow } from "@/lib/media/queries";
 import { OFFER_KINDS, getOfferKindLabel } from "@/lib/media/works";
 
 import { addWatchProvider, removeWatchProvider, syncWatchProviders } from "./media-actions";
+import { WhenEditing } from "./source-editing";
 
 /**
  * 볼 수 있는 곳. (설계 문서 15절)
@@ -82,6 +83,8 @@ export function WatchPanel({
       hint="한국에서 이 작품을 볼 수 있는 곳입니다. 영상 자체는 담지 않고 어디서 볼 수 있는지만 알려드립니다."
       action={
         ready ? (
+          /* 받아오는 일도 바꾸는 일이라 연필 안에 둔다. */
+          <WhenEditing>
           <button
             type="button"
             onClick={sync}
@@ -90,14 +93,17 @@ export function WatchPanel({
           >
             {busy ? "받는 중…" : syncedAt ? "다시 받기" : "받아오기"}
           </button>
+          </WhenEditing>
         ) : null
       }
     >
       {!ready ? (
-        <p className="text-sm leading-6 text-zinc-500">
-          먼저 위 `작품 정보`에서 `찾기`로 작품을 고르고 저장해 주세요.
-          어느 작품인지 정해져야 볼 수 있는 곳을 찾을 수 있습니다.
-        </p>
+        <WhenEditing>
+          <p className="text-sm leading-6 text-zinc-500">
+            먼저 위 `작품 정보`에서 `찾기`로 작품을 고르고 저장해 주세요.
+            어느 작품인지 정해져야 볼 수 있는 곳을 찾을 수 있습니다.
+          </p>
+        </WhenEditing>
       ) : null}
 
       {failed ? (
@@ -139,16 +145,19 @@ export function WatchPanel({
       ) : null}
 
       {providers.length === 0 && ready ? (
-        <p className="text-sm text-zinc-500">
-          아직 담아둔 곳이 없습니다. `받아오기`를 누르거나 아래에서 직접
-          적습니다.
-        </p>
+        <WhenEditing>
+          <p className="text-sm text-zinc-500">
+            아직 담아둔 곳이 없습니다. `받아오기`를 누르거나 아래에서 직접
+            적습니다.
+          </p>
+        </WhenEditing>
       ) : null}
 
       {/*
         직접 적기. **TMDB가 모르는 곳이 있다.** 지역 서비스나 도서관 영상
         서비스가 그렇다. 적어둘 자리가 있어야 이 칸이 쓸모 있다.
       */}
+      <WhenEditing>
       <form
         action={addWatchProvider}
         className="flex flex-wrap items-end gap-2 border-t border-black/[.06] pt-4 dark:border-white/[.08]"
@@ -190,6 +199,7 @@ export function WatchPanel({
           담기
         </button>
       </form>
+      </WhenEditing>
 
       {/*
         출처 표기. TMDB는 이 자료를 쓸 때 출처를 JustWatch로 밝히기를
@@ -247,17 +257,19 @@ function ProviderList({
             {getOfferKindLabel(row.offerKind)}
           </span>
 
-          <form action={removeWatchProvider}>
-            <input type="hidden" name="id" value={row.id} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-            <button
-              type="submit"
-              aria-label={`${row.providerName} 빼기`}
-              className="rounded-full px-2 text-xs text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
-            >
-              ✕
-            </button>
-          </form>
+          <WhenEditing>
+            <form action={removeWatchProvider}>
+              <input type="hidden" name="id" value={row.id} />
+              <input type="hidden" name="returnTo" value={returnTo} />
+              <button
+                type="submit"
+                aria-label={`${row.providerName} 빼기`}
+                className="rounded-full px-2 text-xs text-zinc-400 transition-colors hover:text-red-700 dark:hover:text-red-400"
+              >
+                ✕
+              </button>
+            </form>
+          </WhenEditing>
         </li>
       ))}
     </ul>

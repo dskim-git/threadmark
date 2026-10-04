@@ -17,6 +17,8 @@ import {
   deletePaperProjectUse,
   savePaperProjectUse,
 } from "./project-use-actions";
+import { RecordedFields } from "./recorded-fields";
+import { WhenEditing, useSourceEditing } from "./source-editing";
 
 /**
  * 프로젝트별 논문 활용 계획. (설계 문서 8.3절)
@@ -102,6 +104,8 @@ export function ProjectUsePanel({
   function draftFor(projectId: string): Draft {
     return drafts[projectId] ?? initial(projectId);
   }
+
+  const editing = useSourceEditing();
 
   const [pending, startTransition] = useTransition();
   /** 지금 저장·삭제가 도는 프로젝트. 그 줄만 잠근다. */
@@ -197,10 +201,60 @@ export function ProjectUsePanel({
 
   if (projects.length === 0) {
     return (
-      <p className="text-sm leading-6 text-zinc-500">
-        위에서 프로젝트를 연결하면, 그 프로젝트에서 이 논문을 어떻게 쓸지 적을
-        수 있습니다. 같은 논문도 프로젝트마다 쓰는 방식이 다릅니다.
-      </p>
+      /* 읽을 때는 이 칸 자체가 보이지 않는다. 적어둔 것이 없기 때문이다. */
+      <WhenEditing>
+        <p className="text-sm leading-6 text-zinc-500">
+          위에서 프로젝트를 연결하면, 그 프로젝트에서 이 논문을 어떻게 쓸지
+          적을 수 있습니다. 같은 논문도 프로젝트마다 쓰는 방식이 다릅니다.
+        </p>
+      </WhenEditing>
+    );
+  }
+
+  /*
+    연필을 누르지 않았으면 **적어둔 계획만 보여준다.**
+    (2026-10-04, 사용자 요청) 갈래 칸들과 같은 모양이다.
+
+    **계획이 없는 프로젝트는 줄을 만들지 않는다.** 연결만 해두고 아직 적지
+    않은 프로젝트까지 `계획 없음`으로 늘어놓으면, 적어둔 것을 보러 온
+    사람에게 없는 것의 목록을 보여주는 셈이다.
+  */
+  if (!editing) {
+    const written = projects.filter((project) => draftFor(project.id).exists);
+
+    if (written.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="flex flex-col gap-4">
+        {written.map((project) => {
+          const draft = draftFor(project.id);
+
+          return (
+            <section key={project.id} className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <h3 className="text-sm font-medium text-black dark:text-zinc-50">
+                  {project.name}
+                </h3>
+                <span className="text-xs text-zinc-500">
+                  {getPaperUseStatusLabel(draft.status)}
+                </span>
+              </div>
+
+              <RecordedFields
+                emptyText="이 프로젝트에 적어둔 계획이 없습니다."
+                fields={PROJECT_USE_FIELDS.map((field) => ({
+                  label: field.label,
+                  value: draft.values[field.column],
+                  // 긴 칸은 단락을 나눠 적는다. 붙여 보이면 읽기 어렵다.
+                  multiline: field.size !== "short",
+                }))}
+              />
+            </section>
+          );
+        })}
+      </div>
     );
   }
 
