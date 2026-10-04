@@ -81,7 +81,8 @@ export type ProfileSearchTarget = {
     | "music_profiles"
     | "youtube_profiles"
     | "media_profiles"
-    | "place_profiles";
+    | "place_profiles"
+    | "audio_profiles";
   /** 글자 포함으로 뒤질 칸. */
   text: readonly string[];
   /** 낱말이 통째로 같은지로 뒤질 칸. */
@@ -157,6 +158,25 @@ export const PROFILE_SEARCH_TARGETS: readonly ProfileSearchTarget[] = [
     */
     table: "place_profiles",
     text: ["road_address", "address", "category"],
+    arrays: [],
+  },
+  {
+    /*
+      17-V 4차례. 전사문.
+
+      **담아둔 것 가운데 가장 긴 글이다.** 한 시간짜리 녹음을 옮기면 수만
+      자가 된다. 그 안의 한 마디가 기억나서 찾는 일이 이 기능이 있어야 하는
+      까닭이다.
+
+      전사문만 뒤진다. 길이(초)와 checksum은 사람이 그 값으로 찾지 않는다.
+      (이 파일 머리말의 `사람이 그 말로 기억하는가`)
+
+      **공개 목록과 반대 방향이다.** 거기서는 전사문을 통째로 뺐다. (16-B)
+      내 글이 아닐 수 있어서다. 그러나 **내가 내 것을 찾는 일은 막을 까닭이
+      없다.**
+    */
+    table: "audio_profiles",
+    text: ["transcript"],
     arrays: [],
   },
 ];

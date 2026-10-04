@@ -57,6 +57,7 @@ const PANELS_WITH_FORMS = [
   "media-panel.tsx",
   "music-profile-form.tsx",
   "project-use-panel.tsx",
+  "audio-panel.tsx",
 ];
 
 /**

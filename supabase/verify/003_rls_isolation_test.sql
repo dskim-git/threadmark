@@ -8915,6 +8915,248 @@ begin
 end
 $$;
 
+
+-- -----------------------------------------------------------------------------
+-- 144. 남의 자료에 전사문을 붙일 수 없다 (막아야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 외래키 제약은 RLS를 보지 않는다. 자료 id만 알면 남의 녹음에 전사문을
+-- 붙일 수 있는지 본다. 트리거의 assert_source_owned가 막아야 한다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'audio'::public.source_type, 'RLS 격리 검사용 남의 녹음')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.audio_profiles (source_id, transcript)
+    values (v_source, '남의 자료에 붙인 전사문');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.audio_profiles where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 144 실패: 다른 사용자의 자료에 전사문을 붙일 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 145. 소유자는 전사문을 담고 읽고 고칠 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **막는 것만 보면 과잉 차단을 놓친다.** (보안 원칙 6) 전사문은 고쳐야 하는
+-- 값이다. 기계가 옮기면 틀리고, 고칠 수 없으면 이 기능이 반쪽이 된다.
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_read   text;
+  v_status public.capture_verification_status;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'audio'::public.source_type, 'RLS 격리 검사용 내 녹음')
+  returning id into v_source;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.audio_profiles (source_id, transcript, duration_seconds)
+  values (v_source, '내가 적은 전사문', 187);
+
+  select transcript into v_read
+  from public.audio_profiles where source_id = v_source;
+
+  if v_read is distinct from '내가 적은 전사문' then
+    reset role;
+    delete from public.sources where id = v_source;
+    raise exception '검사 145 실패: 내가 담은 전사문을 읽지 못했습니다.';
+  end if;
+
+  -- 고칠 수 있어야 한다. 기계가 옮긴 것을 사람이 손보는 길이 이것이다.
+  update public.audio_profiles
+  set transcript = '고쳐 적은 전사문',
+      verification_status = 'user_edited'::public.capture_verification_status
+  where source_id = v_source;
+
+  select transcript, verification_status into v_read, v_status
+  from public.audio_profiles where source_id = v_source;
+
+  reset role;
+  delete from public.sources where id = v_source;
+
+  if v_read is distinct from '고쳐 적은 전사문' then
+    raise exception '검사 145 실패: 전사문을 고칠 수 없었습니다.';
+  end if;
+
+  if v_status is distinct from 'user_edited'::public.capture_verification_status then
+    raise exception '검사 145 실패: 확인 상태를 고칠 수 없었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 146. 다른 자료에 붙은 파일을 가리키는 전사문을 만들 수 없다 (막아야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **내 파일이기만 하면 통과하게 두면 안 된다.** 내 다른 자료의 파일을
+-- 가리키는 전사문이 만들어지고, 오류는 나지 않는다. 되짚어 갈 때 엉뚱한
+-- 데로 간다. assert_audio_file_owned가 자료와 종류까지 본다.
+do $$
+declare
+  v_owner   uuid;
+  v_audio   uuid;
+  v_other   uuid;
+  v_file    uuid;
+  v_blocked boolean := false;
+  v_added   integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'audio'::public.source_type, 'RLS 검사용 녹음 자료')
+  returning id into v_audio;
+
+  -- 같은 사람의 **다른** 자료에 붙은 파일이다.
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'paper'::public.source_type, 'RLS 검사용 다른 자료')
+  returning id into v_other;
+
+  insert into public.source_files
+    (owner_id, source_id, status, file_name, mime_type, byte_size, drive_file_id)
+  values
+    (v_owner, v_other, 'ready'::public.source_file_status,
+     '다른 자료의 녹음.webm', 'audio/webm', 1024, 'drive-check-146')
+  returning id into v_file;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.audio_profiles (source_id, source_file_id, transcript)
+    values (v_audio, v_file, '엉뚱한 파일을 가리키는 전사문');
+    get diagnostics v_added = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.audio_profiles where source_id = v_audio;
+  delete from public.sources where id in (v_audio, v_other);
+
+  if not v_blocked or v_added > 0 then
+    raise exception
+      '검사 146 실패: 다른 자료에 붙은 파일을 가리키는 전사문을 만들 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 147. 전사문을 지우는 길이 없다 (막아야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **지우는 길을 만들지 않기로 한 것이 설계다.** (17-V.2절) 삭제 표시를
+-- 두지 않았으므로 지우면 되살릴 수 없다. 권한과 정책 둘 다에서 막는다.
+--
+-- 이 검사가 없으면 나중에 누가 grant delete를 더해도 아무도 모른다.
+do $$
+declare
+  v_owner   uuid;
+  v_source  uuid;
+  v_blocked boolean := false;
+  v_gone    integer := 0;
+  v_left    integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'audio'::public.source_type, 'RLS 검사용 못 지우는 전사문')
+  returning id into v_source;
+
+  insert into public.audio_profiles (owner_id, source_id, transcript)
+  values (v_owner, v_source, '지워지면 안 되는 전사문');
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    delete from public.audio_profiles where source_id = v_source;
+    get diagnostics v_gone = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  select count(*) into v_left
+  from public.audio_profiles where source_id = v_source;
+
+  delete from public.sources where id = v_source;
+
+  if not v_blocked and v_gone > 0 then
+    raise exception
+      '검사 147 실패: 전사문을 지울 수 있었습니다. 되살릴 길이 없는 글입니다.';
+  end if;
+
+  if v_left = 0 and not v_blocked then
+    raise exception
+      '검사 147 실패: 전사문이 사라졌습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -8999,6 +9241,26 @@ select
     링크가 안 뜬다.** 오류는 나지 않으므로, 이 둘의 수가 벌어지는 것이
     카카오에서 좌표를 못 받아오고 있다는 유일한 신호다.
   */
+  /*
+    전사문. **무엇을 세는 칸인지 이름이 말하게 한다.** (VERIFICATION 4-30절)
+
+    셋으로 센다. 담긴 줄, 글이 실제로 있는 줄, 그리고 **누구 목소리인지
+    밝힌 줄**이다.
+
+    첫 둘이 벌어지면 길이만 담기고 전사문은 비어 있다는 뜻이다. 셋째가
+    첫째보다 적으면 **그만큼은 영원히 공개할 수 없는 녹음**이다. 모르면
+    공개하지 않기 때문이다. (17-V.3절) 그 수가 늘기만 하면 녹음할 때
+    묻는 자리가 돌지 않고 있다는 신호다.
+  */
+  (select count(*) from public.audio_profiles)                          as 음성_정보,
+  (select count(*) from public.audio_profiles
+    where transcript is not null
+      and pg_catalog.btrim(transcript) <> '')                           as 전사문_있는_녹음,
+  (select count(*) from public.audio_profiles
+    where voice_scope is not null)                                      as 목소리_밝힌_녹음,
+  (select count(*) from public.audio_profiles
+    where verification_status
+          <> 'user_written'::public.capture_verification_status)        as 기계가_옮긴_전사문,
   (select count(*) from public.place_profiles)                          as 장소,
   (select count(*) from public.place_profiles
     where latitude is not null)                                         as 좌표_있는_장소,

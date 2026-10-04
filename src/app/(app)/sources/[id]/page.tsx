@@ -48,6 +48,7 @@ import { getBookProfile } from "@/lib/books/queries";
 import { getYoutubeProfile } from "@/lib/youtube/queries";
 import { getMediaProfile, listWatchProviders } from "@/lib/media/queries";
 import { getPlaceProfile } from "@/lib/places/queries";
+import { getAudioProfile } from "@/lib/audio/queries";
 import { Panel, Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
@@ -85,6 +86,7 @@ import { YoutubePanel } from "../youtube-panel";
 import { YoutubePlayer } from "../youtube-player";
 import { MediaPanel } from "../media-panel";
 import { PlacePanel } from "../place-panel";
+import { AudioPanel } from "../audio-panel";
 import { WatchPanel } from "../watch-panel";
 import { MediaMomentForm } from "../media-moment-form";
 import { MusicPanel } from "../music-panel";
@@ -145,6 +147,7 @@ export default async function SourceDetailPage({
     mediaProfile,
     watchProviders,
     placeProfile,
+    audioProfile,
     placements,
     relations,
     allSources,
@@ -172,6 +175,8 @@ export default async function SourceDetailPage({
     source.type === "media" ? listWatchProviders(source.id) : [],
     // 장소가 아닌 자료에는 조회하지 않는다.
     source.type === "place" ? getPlaceProfile(source.id) : null,
+    // 음성이 아닌 자료에는 조회하지 않는다.
+    source.type === "audio" ? getAudioProfile(source.id) : null,
     listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
@@ -614,6 +619,39 @@ export default async function SourceDetailPage({
           returnTo={returnTo}
         />
       ) : null}
+
+      {/*
+        음성 칸. 음성 유형일 때만 보여준다. (설계 문서 17절, 17-V 4차례)
+
+        **붙어 있는 음성 파일 하나를 함께 넘긴다.** 전사문이 어느 파일의
+        것인지 적어야 파일이 교체되었을 때 알릴 수 있다. (9.2절)
+        여럿이면 처음 것이다. 17-V.2절이 `한 자료에 녹음 하나`를 전제로
+        적어둔 자리이고, 그 전제가 깨지는 것이 보이면 그때 고친다.
+      */}
+      {source.type === "audio"
+        ? (() => {
+            const audioFile = files.find((file) =>
+              file.mimeType.startsWith("audio/"),
+            );
+
+            return (
+              <AudioPanel
+                sourceId={source.id}
+                profile={audioProfile}
+                returnTo={returnTo}
+                file={
+                  audioFile
+                    ? {
+                        id: audioFile.id,
+                        fileName: audioFile.fileName,
+                        checksum: audioFile.checksum,
+                      }
+                    : null
+                }
+              />
+            );
+          })()
+        : null}
 
       {/*
         장소 칸. 장소 유형일 때만 보여준다. (설계 문서 17-1절)

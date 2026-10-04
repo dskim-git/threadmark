@@ -137,6 +137,63 @@ export type Database = {
         }
         Relationships: []
       }
+      audio_profiles: {
+        Row: {
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          owner_id: string
+          source_file_id: string | null
+          source_id: string
+          transcript: string | null
+          transcript_checksum: string | null
+          updated_at: string
+          verification_status: Database["public"]["Enums"]["capture_verification_status"]
+          voice_scope: Database["public"]["Enums"]["audio_voice_scope"] | null
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          owner_id?: string
+          source_file_id?: string | null
+          source_id: string
+          transcript?: string | null
+          transcript_checksum?: string | null
+          updated_at?: string
+          verification_status?: Database["public"]["Enums"]["capture_verification_status"]
+          voice_scope?: Database["public"]["Enums"]["audio_voice_scope"] | null
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          owner_id?: string
+          source_file_id?: string | null
+          source_id?: string
+          transcript?: string | null
+          transcript_checksum?: string | null
+          updated_at?: string
+          verification_status?: Database["public"]["Enums"]["capture_verification_status"]
+          voice_scope?: Database["public"]["Enums"]["audio_voice_scope"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audio_profiles_source_file_id_fkey"
+            columns: ["source_file_id"]
+            isOneToOne: false
+            referencedRelation: "source_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audio_profiles_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: true
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       book_profiles: {
         Row: {
           authors: string[]
@@ -1583,6 +1640,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assert_audio_file_owned: {
+        Args: { p_file_id: string; p_owner_id: string; p_source_id: string }
+        Returns: undefined
+      }
       assert_capture_owned: {
         Args: { p_capture_id: string; p_owner_id: string }
         Returns: undefined
@@ -1621,6 +1682,7 @@ export type Database = {
       ai_call_outcome: "ok" | "failed"
       ai_feature: "translation" | "search" | "placement"
       app_role: "admin"
+      audio_voice_scope: "self_only" | "others_included"
       book_holding: "paper" | "ebook" | "borrowed"
       book_reading_status: "unread" | "reading" | "finished"
       capture_type:
@@ -1807,6 +1869,7 @@ export const Constants = {
       ai_call_outcome: ["ok", "failed"],
       ai_feature: ["translation", "search", "placement"],
       app_role: ["admin"],
+      audio_voice_scope: ["self_only", "others_included"],
       book_holding: ["paper", "ebook", "borrowed"],
       book_reading_status: ["unread", "reading", "finished"],
       capture_type: [

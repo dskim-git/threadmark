@@ -17,6 +17,12 @@ import {
 import { formatPosition } from "@/lib/media/time";
 
 import { finishFileUpload, startFileUpload } from "../../file-actions";
+import { saveRecordingFacts } from "../../audio-actions";
+import {
+  VOICE_SCOPES,
+  getVoiceScopeHint,
+  getVoiceScopeLabel,
+} from "@/lib/audio/transcript";
 
 /**
  * 이 브라우저에서 녹음이 되는가.
@@ -82,6 +88,16 @@ export function Recorder({ sourceId }: { sourceId: string }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [name, setName] = useState("");
+  /*
+    누구의 목소리가 담겼는가. (17-V.5절)
+
+    **여기서 묻는 것이 핵심이다.** 동의 안내가 떠 있는 자리이고, 녹음을
+    막 끝낸 그 순간이 누가 말했는지를 가장 잘 아는 때다. 나중에 자료
+    화면에서 되물으면 **그때는 기억나지 않는다.**
+
+    비워둘 수 있다. 다만 비어 있으면 나중에도 공개할 수 없다.
+  */
+  const [voiceScope, setVoiceScope] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -317,10 +333,29 @@ export function Recorder({ sourceId }: { sourceId: string }) {
       같은 녹음이 Drive에 둘로 쌓인다. 16-2에서 "고른 영역은 저장하면
       거둬진다"와 같은 생각이다.
     */
+    /*
+      **올린 뒤에 길이와 목소리 범위를 담는다.** (17-V.5절)
+
+      파일이 먼저 올라가야 그 번호를 가리킬 수 있다. 그리고 **여기서
+      실패해도 녹음은 이미 저장되어 있다.** 그 사실을 그대로 알린다.
+      16-3이 획 파일만 못 올라갔을 때 한 것과 같은 자리다.
+    */
+    const facts = await saveRecordingFacts({
+      sourceId,
+      sourceFileId: started.fileId,
+      durationSeconds: take.seconds,
+      voiceScope,
+    });
+
     clearTake();
     setName("");
+    setVoiceScope("");
     setSeconds(0);
-    setNotice(`${fileName}을 저장했습니다.`);
+    setNotice(
+      facts.ok
+        ? `${fileName}을 저장했습니다.`
+        : `${fileName}은 저장했습니다. 다만 ${facts.message} 자료 화면에서 적을 수 있습니다.`,
+    );
     router.refresh();
   }
 
@@ -423,6 +458,49 @@ export function Recorder({ sourceId }: { sourceId: string }) {
           <audio controls src={take.url} className="w-full">
             이 브라우저는 음성 재생을 지원하지 않습니다.
           </audio>
+
+          {/*
+            **누구의 목소리인지 여기서 묻는다.** (17-V.5절)
+
+            위의 동의 안내 바로 아래이고, 막 녹음을 끝낸 자리다. 이보다
+            잘 아는 때가 없다. 나중에 자료 화면에서 되물으면 그때는
+            기억나지 않는다.
+
+            비워둘 수 있다. 혼자 쓰는 녹음에는 이 구분이 쓸모없을 수 있다.
+            다만 **비어 있으면 나중에도 공개할 수 없다.** (17-V.3절)
+          */}
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">
+              누구의 목소리인가
+            </span>
+
+            {VOICE_SCOPES.map((scope) => (
+              <label key={scope} className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="voiceScope"
+                  value={scope}
+                  checked={voiceScope === scope}
+                  onChange={() => setVoiceScope(scope)}
+                  disabled={busy}
+                  className="mt-1"
+                />
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm text-black dark:text-zinc-50">
+                    {getVoiceScopeLabel(scope)}
+                  </span>
+                  <span className="text-xs leading-5 text-zinc-500">
+                    {getVoiceScopeHint(scope)}
+                  </span>
+                </span>
+              </label>
+            ))}
+
+            <span className="text-xs leading-5 text-zinc-500">
+              고르지 않아도 저장됩니다. 다만 나중에 이 녹음을 공개하려면 누구의
+              목소리인지 밝혀져 있어야 합니다.
+            </span>
+          </div>
 
           <label className="flex flex-col gap-2">
             <span className="text-sm text-zinc-700 dark:text-zinc-300">
