@@ -168,8 +168,24 @@ export default async function ReaderPage({
 
       머리말도 한 줄로 줄인다. 작업대는 창 높이를 기준으로 크기를 잡는데,
       위에 줄이 늘수록 PDF가 그만큼 작아진다.
+
+      **음성에는 붙이지 않는다.** (2026-10-04, 사용자가 찾음)
+
+      `data-wide`는 넓게 쓰는 일만 하지 않는다. globals.css가 그 표시를
+      보고 **넓은 화면에서 `body`의 스크롤을 잠근다.** PDF와 그림은 안쪽
+      두 칸이 각자 스크롤해서 괜찮지만, **음성 화면은 위에서 아래로 쌓이는
+      보통 화면이다.** 잠그면 재생기 아래의 메모와 기록 목록에 닿을 수
+      없다.
+
+      오류가 나지 않는 고장이다. 화면은 멀쩡히 그려지고 아래쪽이 그냥
+      없는 것처럼 보인다. **좁은 화면에서는 그 잠금이 걸리지 않아** 거기서
+      눌러봤다면 찾지 못했다.
+
+      그래서 `showAudio`일 때만 뺀다. `false`를 넣으면 안 된다.
+      `data-wide="false"`도 `[data-wide]`에 걸린다. 값이 아니라 **칸 자체가
+      없어야** 한다.
     */
-    <div data-wide className="flex flex-col gap-3">
+    <div data-wide={showAudio ? undefined : true} className="flex flex-col gap-3">
       {selected ? (
         <>
           {/*
