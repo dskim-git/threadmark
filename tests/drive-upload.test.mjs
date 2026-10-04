@@ -16,6 +16,7 @@ import {
   ALLOWED_UPLOAD_MIME_TYPES,
   MAX_FILE_NAME_LENGTH,
   MAX_UPLOAD_BYTES,
+  PICKABLE_UPLOAD_MIME_TYPES,
   PICKER_MIME_TYPES,
   STALE_PENDING_MINUTES,
   describePickedFileProblem,
@@ -186,10 +187,19 @@ test("고른 파일이 조건에 맞지 않으면 이유를 돌려준다", () =>
     describeUnacceptableFile(pickedFile({ size: MAX_UPLOAD_BYTES + 1 })) ?? "",
     /100MB/,
   );
-  assert.match(
-    describeUnacceptableFile(pickedFile({ type: "application/zip" })) ?? "",
-    /PDF와 이미지/,
-  );
+  /*
+    **안내문이 받는 것을 전부 말해야 한다.** (17-V 2차례에서 고쳤다)
+
+    받는 목록에 음성을 더하고 이 글을 안 고치면, 음성을 올릴 수 있는데도
+    `PDF와 이미지만 올릴 수 있습니다`가 뜬다. 쓰는 사람은 **그 말을 믿고
+    시도하지 않는다.** 그래서 갈래 이름 셋이 다 들어 있는지 본다.
+  */
+  for (const kind of [/PDF/, /이미지/, /음성/]) {
+    assert.match(
+      describeUnacceptableFile(pickedFile({ type: "application/zip" })) ?? "",
+      kind,
+    );
+  }
   assert.match(
     describeUnacceptableFile(pickedFile({ name: "   " })) ?? "",
     /파일 이름/,
@@ -498,11 +508,116 @@ test("고른 파일이 조건에 맞으면 붙일 수 있다", () => {
   assert.equal(describePickedFileProblem(uploadedFile()), null);
 });
 
-test("다룰 수 없는 종류는 골라도 거부한다", () => {
-  assert.match(
-    describePickedFileProblem(uploadedFile({ mimeType: "application/zip" })) ?? "",
-    /PDF와 이미지/,
+// -----------------------------------------------------------------------------
+// 음성 (17-V 2차례)
+// -----------------------------------------------------------------------------
+
+test("브라우저마다 다른 녹음 형식을 모두 받는다", () => {
+  /*
+    **한쪽만 넣으면 그 기기에서만 안 된다.** iOS Safari는 audio/mp4로,
+    Android Chrome은 audio/webm으로 녹음한다. 우리 기기에서 되는 것만
+    넣어두면 나머지는 끝까지 보이지 않는다. 설계 문서 17절 마지막 줄이
+    이것을 테스트하라고 적은 자리다.
+  */
+  for (const mimeType of ["audio/webm", "audio/mp4"]) {
+    assert.ok(
+      isAllowedUploadMimeType(mimeType),
+      `${mimeType}이 막혔다. 그 기기에서만 녹음을 못 올린다`,
+    );
+  }
+});
+
+test("음성은 사람이 고를 수 있는 쪽에도 들어간다", () => {
+  /*
+    획을 담은 json과 **반대쪽 판단이다.** json은 그림판이 만드는 파일이라
+    고르는 칸에서 가렸다. 음성은 사람이 이미 가진 녹음 파일을 올리는 것이
+    쓸모라서 가리지 않는다.
+
+    가려 두면 **고르는 칸이 음성을 내놓지 않으면서 끌어다 놓으면 받는**
+    모양이 된다.
+  */
+  for (const mimeType of ["audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg"]) {
+    assert.ok(
+      PICKABLE_UPLOAD_MIME_TYPES.includes(mimeType),
+      `${mimeType}을 사람이 고를 수 없다`,
+    );
+  }
+
+  // 획을 담은 json은 그대로 가려져 있어야 한다. 이 둘이 함께 참이어야 뜻이 산다.
+  assert.ok(!PICKABLE_UPLOAD_MIME_TYPES.includes("application/json"));
+});
+
+test("고른 음성 파일을 올릴 수 있다고 답한다", () => {
+  /*
+    `describeUnacceptableFile`은 **좁은 목록**으로 본다. 음성을 넓은
+    목록에만 넣고 좁은 목록에 빠뜨리면, 고르는 칸에는 뜨는데 고르면
+    "올릴 수 없습니다"가 뜬다.
+  */
+  assert.equal(
+    describeUnacceptableFile({
+      name: "강의 녹음.webm",
+      size: 5 * 1024 * 1024,
+      type: "audio/webm",
+    }),
+    null,
   );
+});
+
+test("WAV는 아직 받지 않는다", () => {
+  /*
+    설계 문서 17절이 "압축된 음성 형식을 사용한다"고 적었고, 압축하지 않은
+    소리는 상한(100MB)에 10분쯤이면 닿는다. **막아둔 것을 검사로 적어두면
+    나중에 푸는 일이 결정이 된다.** 적어두지 않으면 누가 슬쩍 넣는다.
+  */
+  assert.ok(!isAllowedUploadMimeType("audio/wav"));
+  assert.ok(!isAllowedUploadMimeType("audio/x-wav"));
+});
+
+test("꼬리가 붙은 녹음 형식은 그대로는 받지 않는다", () => {
+  /*
+    MediaRecorder는 `audio/webm;codecs=opus`처럼 준다. 받는 쪽이 글자가
+    똑같은지를 보므로 그대로 보내면 거부당한다.
+
+    **이 검사는 고장을 막는 것이 아니라 아직 안 한 일을 적어 두는 것이다.**
+    꼬리를 떼는 일은 녹음을 만드는 3차례에서 한다. 그때 이 검사가 뒤집히고,
+    뒤집히는 것이 곧 "그 일을 했다"는 뜻이 된다.
+  */
+  assert.ok(!isAllowedUploadMimeType("audio/webm;codecs=opus"));
+});
+
+test("음성은 Drive의 Audio 폴더로 간다", () => {
+  /*
+    설계 문서 10.1절의 권장 폴더다. 폴더를 정하지 않으면 ThreadMark 루트에
+    쌓여서, Drive에서 직접 볼 때 무엇이 무엇인지 알 수 없다.
+  */
+  for (const mimeType of ["audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg"]) {
+    assert.equal(
+      folderNameForUpload({ sourceType: "audio", mimeType }),
+      "Audio",
+      `${mimeType}이 Audio 폴더로 가지 않는다`,
+    );
+  }
+
+  /*
+    **자료 갈래가 아니라 파일의 성격을 본다.** 음성 파일을 논문 자료에
+    붙여도 Audio로 간다. 그림이 `drawing` 자료에서만 Drawings로 가는 것과
+    다른 자리라 함께 확인한다.
+  */
+  assert.equal(
+    folderNameForUpload({ sourceType: "paper", mimeType: "audio/mpeg" }),
+    "Audio",
+  );
+});
+
+test("다룰 수 없는 종류는 골라도 거부한다", () => {
+  // 안내문이 받는 것을 전부 말해야 한다. 위의 올리는 쪽과 같은 까닭이다.
+  for (const kind of [/PDF/, /이미지/, /음성/]) {
+    assert.match(
+      describePickedFileProblem(uploadedFile({ mimeType: "application/zip" })) ??
+        "",
+      kind,
+    );
+  }
 });
 
 test("크기를 알 수 없는 파일은 거부한다", () => {

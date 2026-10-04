@@ -35,48 +35,22 @@ export type SourceFileItem = {
   lastZoom: number | null;
 };
 
-/**
- * 그림 파일인가. (설계 문서 16절, 2026-10-04)
- *
- * **`image/`로 시작하는지로 본다.** 올릴 때 받는 종류는
- * `ALLOWED_UPLOAD_MIME_TYPES`가 좁게 정해두었고, 거기 한 종류가 늘 때마다
- * 이 함수를 고치게 만들지 않는다.
- */
-export function isImageFile(file: SourceFileItem): boolean {
-  return file.mimeType.startsWith("image/");
-}
+/*
+  파일 갈래를 가리는 순수 판단은 `file-kinds.ts`로 떼어냈다. (17-V 2차례)
 
-/** PDF인가. 뷰어가 갈리는 자리라 이름을 붙여 둔다. */
-export function isPdfFile(file: SourceFileItem): boolean {
-  return file.mimeType === "application/pdf";
-}
+  **이 파일은 서버 전용 모듈을 가져온다.** 그래서 여기 있는 동안 그 판단을
+  단위 검사로 불러올 수 없었고, `isReadable`에 검사가 하나도 없었다.
+  틀려도 오류가 나지 않는 자리라 더 나빴다.
 
-/**
- * 뷰어가 다룰 수 있는 파일인가. PDF와 그림이다.
- *
- * **2026-10-04에 그림이 들어왔다.** 그전까지 PDF만이었고, 그림은 올릴 수
- * 있는데 앱 안에서 볼 길이 없어 `Drive에서 열기`로 나가야 했다. 담는 길은
- * 처음부터 있었던 셈이다. `source_type`에 `image`가 있고 Drive 업로드도
- * 그림을 받고 있었다. **없던 것은 보는 길 하나였다.**
- *
- * 사라진 파일도 포함한다. 열어보면 "Drive에서 찾지 못했습니다"와 함께
- * `다시 확인`을 보여줘야 하기 때문이다. 목록에서 아예 빼버리면 되살린 뒤에도
- * 들어갈 길이 없다. (설계 문서 10.4절: 복구 가능한 오류 상태)
- *
- * 아직 올라가는 중인 파일은 뺀다. 그것은 열 수 있는 상태가 아니다.
- */
-export function isReadable(file: SourceFileItem): boolean {
-  if (!isPdfFile(file) && !isImageFile(file)) {
-    return false;
-  }
-
-  return file.status === "ready" || file.status === "missing";
-}
-
-/** 지금 실제로 열리는가. 사라진 파일은 목록에 있어도 열리지 않는다. */
-export function isOpenable(file: SourceFileItem): boolean {
-  return isReadable(file) && file.status === "ready";
-}
+  불러 쓰는 쪽은 고치지 않았다. 여기서 그대로 다시 내보낸다.
+*/
+export {
+  isAudioFile,
+  isImageFile,
+  isOpenable,
+  isPdfFile,
+  isReadable,
+} from "./file-kinds";
 
 /**
  * 한 자료에 붙은 파일을 오래된 순으로 돌려준다.

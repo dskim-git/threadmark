@@ -89,7 +89,7 @@ export default async function IntegrationsPage({
               Google Drive
             </h2>
             <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              PDF와 이미지를 선생님의 Google Drive에 보관합니다. 파일은
+              PDF, 이미지, 음성을 선생님의 Google Drive에 보관합니다. 파일은
               ThreadMark가 아니라 선생님 계정에 남습니다.
             </p>
           </div>

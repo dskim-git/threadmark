@@ -369,7 +369,8 @@ export function NewSourceForm({
             ) : null}
 
             <p className="text-xs leading-5 text-zinc-500">
-              선택 사항입니다. PDF와 이미지(PNG, JPEG, WebP)를 붙일 수 있습니다.
+              선택 사항입니다. PDF, 이미지(PNG, JPEG, WebP), 음성(WebM, MP4,
+              MP3, OGG)을 붙일 수 있습니다.
               내 컴퓨터에서 올리는 파일은 한 개당 {MAX_MEGABYTES}MB까지이고, 이미
               Drive에 있는 파일은 크기 제한이 없습니다. 파일은 ThreadMark가 아니라
               선생님의 Google Drive에 있습니다.

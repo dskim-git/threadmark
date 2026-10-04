@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { createCapture } from "@/app/(app)/captures/actions";
+import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
 import { parseRegionParam } from "@/lib/captures/image-locator";
 import { StarFilter } from "@/app/(app)/star-filter";
@@ -18,12 +20,18 @@ import {
 } from "@/lib/projects/queries";
 import { shouldVerify } from "@/lib/drive/file-check";
 import { formatByteSize } from "@/lib/drive/upload";
-import { isImageFile, isReadable, listSourceFiles } from "@/lib/sources/files";
+import {
+  isAudioFile,
+  isImageFile,
+  isReadable,
+  listSourceFiles,
+} from "@/lib/sources/files";
 import { getSourceById } from "@/lib/sources/queries";
 import { STARRED_ON, STARRED_PARAM, readStarredOnly } from "@/lib/stars";
 import { listTags, listTagsForCaptures } from "@/lib/tags/queries";
 import { isTranslationConfigured } from "@/lib/translation/anthropic";
 
+import { AudioReaderView } from "./audio-reader-view";
 import { FileStatusNotice } from "./file-status-notice";
 import { ImageReaderView } from "./image-reader-view";
 import { ReaderView, type PanelTab } from "./reader-view";
@@ -144,6 +152,16 @@ export default async function ReaderPage({
       )
     : 0;
 
+  /*
+    음성은 **고른 파일 하나**다. (17-V 2차례)
+
+    그림처럼 묶지 않는다. 그림을 묶은 까닭은 "파일 하나가 곧 한 장"이라
+    장을 넘겨야 하기 때문인데, 녹음은 **한 파일이 곧 하나의 이야기**다.
+    둘을 이어 틀어줄 이유가 없고, 이어 틀면 지금 어느 파일을 듣고 있는지를
+    또 관리해야 한다.
+  */
+  const showAudio = selected !== null && isAudioFile(selected);
+
   return (
     /*
       data-wide가 본문의 너비 제한을 푼다. (globals.css)
@@ -238,6 +256,87 @@ export default async function ReaderPage({
               Drive에 파일이 없어 열 수 없습니다. 이 자료에 남긴 기록은 그대로
               있습니다.
             </p>
+          ) : showAudio ? (
+            /*
+              음성은 들으면서 적는다. (17-V 2차례)
+
+              메모 칸에 **이미 있는 `CaptureForm`을 그대로 쓴다.** 자료에
+              메모를 다는 길이고, 그래서 **새 Server Action도 새 `locator`도
+              만들지 않았다.** 시점을 담기로 정하면 그때 그 둘이 함께
+              필요해진다. (`audio-reader-view.tsx`)
+            */
+            <AudioReaderView
+              key={selected.id}
+              src={`/api/source-files/${selected.id}/content`}
+              memoSlot={
+                <section className="rounded-2xl border border-zinc-200 px-5 py-5 dark:border-white/10">
+                  <h2 className="mb-4 text-sm font-medium text-black dark:text-zinc-50">
+                    들으면서 적기
+                  </h2>
+
+                  <CaptureForm
+                    action={createCapture}
+                    submitLabel="기록하기"
+                    /*
+                      적은 뒤 이 화면으로 돌아온다. 별로 거른 자리로
+                      돌려보내지 않는 까닭은 **새 기록에는 별이 없어서**
+                      방금 적은 것이 안 보이기 때문이다. 자료 화면에서
+                      같은 판단을 했다.
+                    */
+                    returnTo={readerHref(source.id, selected.id, startPage, false)}
+                    compact
+                    values={{
+                      sourceId: source.id,
+                      /*
+                        `일반 메모`로 시작한다. 자료 화면은 `직접 인용`으로
+                        시작하는데, 그쪽은 글이 있는 자료가 많아서다.
+                        **소리에는 옮겨 적을 글이 없다.** 인용으로 시작하면
+                        원문 칸이 열린 채로 뜨고, 거기 무엇을 적어야 하는지
+                        알 수 없다. 전사문은 4차례에서 따로 담는다.
+                      */
+                      captureType: "note",
+                      content: "",
+                      originalText: "",
+                      translatedText: "",
+                      translationLanguage: "",
+                    }}
+                  />
+                </section>
+              }
+              capturesSlot={
+                <div className="flex flex-col gap-3">
+                  <StarFilter
+                    allHref={readerHref(source.id, selected.id, startPage, false)}
+                    starredHref={readerHref(source.id, selected.id, startPage, true)}
+                    total={captureCounts.total}
+                    starred={captureCounts.starred}
+                    starredOnly={starredOnly}
+                  />
+
+                  <CaptureList
+                    captures={captures}
+                    returnTo={readerHref(
+                      source.id,
+                      selected.id,
+                      startPage,
+                      starredOnly,
+                    )}
+                    emptyText={
+                      starredOnly
+                        ? "별을 단 기록이 없습니다."
+                        : "아직 이 자료에 남긴 기록이 없습니다."
+                    }
+                    projects={projectChips}
+                    captureTags={captureTags}
+                    captureProjects={captureProjects}
+                    allTags={allTags}
+                    fileChecksums={Object.fromEntries(
+                      files.map((file) => [file.id, file.checksum]),
+                    )}
+                  />
+                </div>
+              }
+            />
           ) : showImages ? (
             <ImageReaderView
               key={selected.id}

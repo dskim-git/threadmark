@@ -28,7 +28,10 @@ export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
  *
  * 설계 문서에 목록이 없다. MVP가 PDF 뷰어 중심(22절)이므로 PDF를 확실히 열고,
  * 이미지 Source 유형(5.1절)이 이미 있으므로 흔한 이미지 형식을 함께 연다.
- * 음성과 그림은 그 화면을 만드는 단계에서 늘린다.
+ *
+ * **"음성과 그림은 그 화면을 만드는 단계에서 늘린다"고 적어두었고, 그렇게
+ * 했다.** 그림(획을 담은 json)은 16-3에서, 음성 넷은 17-V 2차례에서 늘렸다.
+ * 늘릴 때마다 **받아도 되는 까닭을 그 자리에 적는다.**
  *
  * 목록을 좁게 시작하는 이유는, 무엇이 올라올지 모르는 상태로 파일을 받으면
  * 나중에 그 파일을 열어 보여주는 쪽에서 감당할 수 없기 때문이다.
@@ -60,6 +63,46 @@ export const ALLOWED_UPLOAD_MIME_TYPES = [
     만드는 파일이지 사람이 고를 파일이 아니다.
   */
   "application/json",
+  /*
+    음성. (17-V 2차례, 2026-10-04)
+
+    **json과 달리 사람이 고르는 쪽에도 들어간다.** 획을 담은 json은
+    그림판이 만드는 파일이라 고르는 칸에서 가렸는데, 음성은 **이미 가진
+    녹음 파일을 올리는 것**이 이 차례의 쓸모다. 그래서 아래
+    `PICKABLE_UPLOAD_MIME_TYPES`에도 같은 넷이 들어 있다.
+
+    받아도 되는 까닭
+      내보내는 길(`/api/source-files/[id]/content`)이 담긴 종류를 그대로
+      `Content-Type`에 적고 `X-Content-Type-Options: nosniff`를 함께
+      보낸다. 그래서 소리 파일이 html로 읽히는 일이 없다. 그 길은
+      **Range 요청도 넘긴다.** 소리는 중간으로 건너뛸 수 있어야 하는데
+      PDF를 위해 이미 만들어져 있었다.
+
+    왜 이 넷인가
+      `audio/webm`   Android Chrome과 데스크톱이 녹음해 주는 것
+      `audio/mp4`    iOS Safari가 녹음해 주는 것
+      `audio/mpeg`   사람이 이미 가지고 있는 mp3
+      `audio/ogg`    Firefox 쪽에서 나오는 것
+
+      **앞의 둘은 둘 다 있어야 한다.** 설계 문서 17절 마지막 줄이 "iOS
+      Safari와 Android Chrome의 실제 녹음 형식 차이를 테스트한다"고 적은
+      까닭이고, 한쪽만 넣으면 **그 기기에서만 안 된다.** 우리 기기에서는
+      끝까지 보이지 않는다.
+
+    `audio/wav`를 넣지 않은 까닭
+      설계 문서 17절이 "압축된 음성 형식을 사용한다"고 적었고, 압축하지
+      않은 소리는 상한(100MB)에 10분쯤이면 닿는다. 가진 wav를 올리려는
+      사람은 막힌다. **적어두고 넘어간다.** (17-V.9절)
+
+    **꼬리가 붙은 값은 여기서 걸린다.** MediaRecorder는
+    `audio/webm;codecs=opus`처럼 준다. 받는 쪽이 글자가 똑같은지를 보므로
+    그대로 보내면 거부당한다. 꼬리를 떼는 일은 **녹음을 만드는 3차례**에서
+    한다. 사람이 고른 파일의 `type`에는 꼬리가 붙지 않는다.
+  */
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/ogg",
 ] as const;
 
 export type AllowedUploadMimeType = (typeof ALLOWED_UPLOAD_MIME_TYPES)[number];
@@ -70,12 +113,21 @@ export type AllowedUploadMimeType = (typeof ALLOWED_UPLOAD_MIME_TYPES)[number];
  * `ALLOWED_UPLOAD_MIME_TYPES`보다 좁다. **서버가 받아도 되는 것과 사람이
  * 고를 것을 가른다.** 획을 담는 json은 그림판이 만드는 파일이고, 고르는
  * 칸에 띄우면 "이걸 왜 올리지"가 된다.
+ *
+ * **음성은 가리지 않는다.** (17-V 2차례) 사람이 이미 가진 녹음 파일을
+ * 올리는 것이 그 차례의 쓸모다. 가려 두면 **고르는 칸이 음성을 내놓지
+ * 않으면서 끌어다 놓으면 받는** 모양이 되고, 그것이 json을 가린 까닭과
+ * 정반대 방향의 거짓말이 된다.
  */
 export const PICKABLE_UPLOAD_MIME_TYPES = [
   "application/pdf",
   "image/png",
   "image/jpeg",
   "image/webp",
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/ogg",
 ] as const;
 
 export function isAllowedUploadMimeType(
@@ -217,7 +269,7 @@ export function describeUnacceptableFile(file: {
     않는데 끌어다 놓으면 받아들이는 모양이 된다.
   */
   if (!(PICKABLE_UPLOAD_MIME_TYPES as readonly string[]).includes(file.type)) {
-    return "PDF와 이미지(PNG, JPEG, WebP) 파일만 올릴 수 있습니다.";
+    return "PDF, 이미지(PNG, JPEG, WebP), 음성(WebM, MP4, MP3, OGG) 파일만 올릴 수 있습니다.";
   }
 
   if (sanitizeFileName(file.name) === null) {
@@ -424,7 +476,7 @@ export const PICKER_MIME_TYPES = ALLOWED_UPLOAD_MIME_TYPES.join(",");
  */
 export function describePickedFileProblem(file: DriveFileFacts): string | null {
   if (!isAllowedUploadMimeType(file.mimeType)) {
-    return "PDF와 이미지(PNG, JPEG, WebP)만 붙일 수 있습니다.";
+    return "PDF, 이미지(PNG, JPEG, WebP), 음성(WebM, MP4, MP3, OGG)만 붙일 수 있습니다.";
   }
 
   // Google 문서나 스프레드시트에는 크기가 없다. 표에서 byte_size가 필수이기도 하고,
