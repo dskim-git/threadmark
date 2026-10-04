@@ -1052,6 +1052,19 @@ export default async function SourceDetailPage({
               그 파일이 내 컴퓨터에 있느냐 Drive에 있느냐가 다를 뿐이다.
             */}
             <DrivePickerButton sourceId={source.id} />
+            {/*
+              그림판. (설계 문서 16절, 16-3)
+
+              **파일 붙이기 안에 둔다.** 그린 것이 파일로 붙는 일이라
+              올리기·고르기와 같은 칸이다. 따로 떼어 놓으면 "그림은 파일이
+              아닌가" 하고 찾게 된다.
+            */}
+            <Link
+              href={`/sources/${source.id}/draw`}
+              className="h-11 rounded-full border border-solid border-black/[.08] px-5 text-sm font-medium leading-[2.75rem] text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              그림판에서 그리기
+            </Link>
             </div>
           </Reveal>
         ) : (

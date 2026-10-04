@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 
 import { sendFileToDrive } from "@/lib/drive/send-to-drive";
 import {
-  ALLOWED_UPLOAD_MIME_TYPES,
+  PICKABLE_UPLOAD_MIME_TYPES,
   MAX_UPLOAD_BYTES,
   describeUnacceptableFile,
 } from "@/lib/drive/upload";
@@ -130,7 +130,7 @@ export function FileUpload({ sourceId }: { sourceId: string }) {
             ref={inputRef}
             type="file"
             className="sr-only"
-            accept={ALLOWED_UPLOAD_MIME_TYPES.join(",")}
+            accept={PICKABLE_UPLOAD_MIME_TYPES.join(",")}
             disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0];

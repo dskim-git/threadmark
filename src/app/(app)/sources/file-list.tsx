@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { driveViewUrl, formatByteSize } from "@/lib/drive/upload";
+import { isStrokeFileName } from "@/lib/drawing/scene";
 import { isOpenable, isReadable, type SourceFileItem } from "@/lib/sources/files";
 
 import { cleanupStaleUploads, detachSourceFile } from "./file-actions";
@@ -73,6 +74,26 @@ export function FileList({
                   className="text-sm font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100"
                 >
                   열기
+                </Link>
+              ) : null}
+
+              {/*
+                그림판에서 그린 것을 이어 그리는 길. (16-3)
+
+                **획 파일에만 붙인다.** 보이는 `.png`에는 점이 없어서
+                이어 그릴 수 없다. 그 파일에 `고쳐 그리기`를 붙이면
+                눌러서 빈 캔버스가 뜬다.
+
+                `열기`가 없는 자리이기도 하다. json은 뷰어가 다루는
+                종류가 아니라 `isReadable`이 거짓이다. 그래서 이 줄이
+                없으면 **그 파일에는 누를 것이 아무것도 없다.**
+              */}
+              {isStrokeFileName(file.fileName) && file.status === "ready" ? (
+                <Link
+                  href={`/sources/${sourceId}/draw?file=${file.id}`}
+                  className="text-sm font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100"
+                >
+                  고쳐 그리기
                 </Link>
               ) : null}
 

@@ -7,7 +7,7 @@ import { useRef, useState } from "react";
 import { openDrivePicker, type PickedFile } from "@/lib/drive/open-picker";
 import { sendFileToDrive } from "@/lib/drive/send-to-drive";
 import {
-  ALLOWED_UPLOAD_MIME_TYPES,
+  PICKABLE_UPLOAD_MIME_TYPES,
   MAX_UPLOAD_BYTES,
   PICKER_MIME_TYPES,
   describeUnacceptableFile,
@@ -317,7 +317,7 @@ export function NewSourceForm({
                   ref={fileInputRef}
                   type="file"
                   className="sr-only"
-                  accept={ALLOWED_UPLOAD_MIME_TYPES.join(",")}
+                  accept={PICKABLE_UPLOAD_MIME_TYPES.join(",")}
                   disabled={busy}
                   onChange={(event) => {
                     handleFilePick(event.target.files?.[0] ?? null);

@@ -38,9 +38,45 @@ export const ALLOWED_UPLOAD_MIME_TYPES = [
   "image/png",
   "image/jpeg",
   "image/webp",
+  /*
+    그림판이 그린 것의 **획**을 담는다. (16-3, 2026-10-04)
+
+    그림 하나가 Drive에 파일 둘로 간다. 보이는 `.png`와 고칠 수 있는
+    `.strokes.json`이다. PNG만 담으면 다시 고칠 수 없고 획만 담으면
+    보여줄 것이 없다. (`src/lib/drawing/scene.ts`)
+
+    **이 목록을 늘리는 일은 가볍지 않다.** 이 파일 머리말이 "무엇이
+    올라올지 모르는 상태로 파일을 받으면 나중에 그 파일을 열어 보여주는
+    쪽에서 감당할 수 없다"고 적어두었다.
+
+    받아도 되는 까닭
+      내보내는 길(`/api/source-files/[id]/content`)이 담긴 종류를 그대로
+      `Content-Type`에 적고 `X-Content-Type-Options: nosniff`를 함께
+      보낸다. 그래서 json이 html로 읽히는 일이 없다. 그리고 json은
+      그 자체로 실행되는 종류가 아니다.
+
+    **고르는 칸에는 넣지 않는다.** 이 목록은 서버가 받아도 되는 것이고,
+    사람이 파일 올리기로 고르는 목록은 화면이 따로 좁혀 둔다. 그림판이
+    만드는 파일이지 사람이 고를 파일이 아니다.
+  */
+  "application/json",
 ] as const;
 
 export type AllowedUploadMimeType = (typeof ALLOWED_UPLOAD_MIME_TYPES)[number];
+
+/**
+ * 사람이 `파일 올리기`로 고를 수 있는 종류.
+ *
+ * `ALLOWED_UPLOAD_MIME_TYPES`보다 좁다. **서버가 받아도 되는 것과 사람이
+ * 고를 것을 가른다.** 획을 담는 json은 그림판이 만드는 파일이고, 고르는
+ * 칸에 띄우면 "이걸 왜 올리지"가 된다.
+ */
+export const PICKABLE_UPLOAD_MIME_TYPES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
 
 export function isAllowedUploadMimeType(
   value: unknown,
@@ -129,8 +165,13 @@ export const uploadStartSchema = z.object({
     .refine((value): value is string => value !== null, {
       message: "파일 이름을 확인할 수 없습니다.",
     }),
+  /*
+    **받아도 되는 목록으로 본다.** 고르는 목록보다 넓다. 그림판이 획을
+    담은 json을 이 문으로 올린다. 안내문을 좁게 적어두면 그림을 저장할 때
+    "PDF와 이미지만 올릴 수 있습니다"가 뜬다.
+  */
   mimeType: z.enum(ALLOWED_UPLOAD_MIME_TYPES, {
-    message: "PDF와 이미지(PNG, JPEG, WebP) 파일만 올릴 수 있습니다.",
+    message: "이 종류의 파일은 올릴 수 없습니다.",
   }),
   byteSize: z
     .number()
@@ -167,7 +208,15 @@ export function describeUnacceptableFile(file: {
     return `파일이 ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB를 넘습니다. 지금 고른 파일은 ${formatByteSize(file.size)}입니다.`;
   }
 
-  if (!isAllowedUploadMimeType(file.type)) {
+  /*
+    **사람이 고른 파일은 좁은 목록으로 본다.** (16-3)
+
+    `isAllowedUploadMimeType`은 서버가 받아도 되는 것이고, 거기에는
+    그림판이 만드는 `application/json`이 들어 있다. 사람이 고르는 자리에서
+    그것까지 받으면 **안내문이 거짓말을 한다.** 고르는 칸이 json을 내놓지
+    않는데 끌어다 놓으면 받아들이는 모양이 된다.
+  */
+  if (!(PICKABLE_UPLOAD_MIME_TYPES as readonly string[]).includes(file.type)) {
     return "PDF와 이미지(PNG, JPEG, WebP) 파일만 올릴 수 있습니다.";
   }
 
