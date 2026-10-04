@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
-import { imagePageLocatorSchema } from "@/lib/captures/image-locator";
+import { imageLocatorSchema } from "@/lib/captures/image-locator";
 import {
   pdfPageLocatorSchema,
   pdfSelectionLocatorSchema,
@@ -379,15 +379,19 @@ export async function createPdfPageCapture(
  *
  * 유형은 일반 메모다. 그림에는 **고를 글자가 없어** 인용이 될 수 없고,
  * 원문 칸을 비워 두는 것이 설계 문서 2.4절의 구분에 맞다.
+ *
+ * **장 전체와 한 부분을 한 문으로 받는다.** (16-2) 둘은 담기는 값만 다르고
+ * 하는 일이 같다. 가리는 일은 `imageLocatorSchema`가 하고, 이 함수는
+ * 어느 갈래가 들어왔는지 알 필요가 없다.
  */
-const imagePageMemoSchema = z.object({
+const imageMemoSchema = z.object({
   sourceId: z.uuid({ message: "잘못된 요청입니다." }),
   memo: z
     .string()
     .trim()
     .min(1, "메모를 입력해 주세요.")
     .max(MAX_TEXT_LENGTH, `${MAX_TEXT_LENGTH}자를 넘을 수 없습니다.`),
-  locator: imagePageLocatorSchema,
+  locator: imageLocatorSchema,
 });
 
 export async function createImagePageCapture(
@@ -395,7 +399,7 @@ export async function createImagePageCapture(
 ): Promise<PdfCaptureResult> {
   await requireActiveAccount();
 
-  const parsed = imagePageMemoSchema.safeParse(input);
+  const parsed = imageMemoSchema.safeParse(input);
 
   if (!parsed.success) {
     return { ok: false, message: firstIssueMessage(parsed.error) };

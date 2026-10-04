@@ -4,10 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createImagePageCapture } from "@/app/(app)/captures/actions";
-import { IMAGE_PAGE_KIND } from "@/lib/captures/image-locator";
+import {
+  IMAGE_PAGE_KIND,
+  IMAGE_REGION_KIND,
+} from "@/lib/captures/image-locator";
 
 import { FillViewport } from "./fill-viewport";
-import { ImageReader, type ReaderImage } from "./image-reader";
+import {
+  ImageReader,
+  type ImageRegion,
+  type ReaderImage,
+} from "./image-reader";
 import { PageMemoPanel } from "./page-memo-panel";
 import { SplitPane } from "./split-pane";
 
@@ -40,6 +47,7 @@ export function ImageReaderView({
   initialIndex,
   checksums,
   capturesSlot,
+  highlight,
 }: {
   sourceId: string;
   images: readonly ReaderImage[];
@@ -49,6 +57,14 @@ export function ImageReaderView({
   checksums: Readonly<Record<string, string | null>>;
   /** 서버가 그려 넘긴 기록 목록. Server Action을 품고 있어 여기서 못 만든다. */
   capturesSlot: React.ReactNode;
+  /**
+   * 기록을 눌러 들어왔을 때 보여줄 상자. 주소가 정한다. (16-2)
+   *
+   * **고르는 상자와 따로 둔다.** 들어온 상자를 그대로 고른 것으로 쓰면,
+   * 보려고 들어온 자리에 **또 메모가 달린다.** 읽으러 온 것과 쓰러 온
+   * 것은 다르다.
+   */
+  highlight: ImageRegion | null;
 }) {
   const router = useRouter();
 
@@ -68,6 +84,14 @@ export function ImageReaderView({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  /**
+   * 끌어서 고른 한 부분. 없으면 장 전체에 메모한다. (16-2)
+   *
+   * **작업대가 들고 있는다.** 메모 칸의 안내문과 저장할 자리가 둘 다 이
+   * 값에 달려 있어서, 그림 칸에만 두면 두 곳으로 내려보내야 한다.
+   */
+  const [region, setRegion] = useState<ImageRegion | null>(null);
+
   const current = images[index];
 
   async function handleSaveMemo(memo: string) {
@@ -78,15 +102,27 @@ export function ImageReaderView({
     setBusy(true);
     setError(null);
 
-    const result = await createImagePageCapture({
-      sourceId,
-      memo,
-      locator: {
-        kind: IMAGE_PAGE_KIND,
-        sourceFileId: current.id,
-        fileChecksum: checksums[current.id] ?? null,
-      },
-    });
+    /*
+      **고른 영역이 있으면 그 자리에, 없으면 장 전체에 남긴다.** (16-2)
+
+      갈래를 여기서 가린다. 담기는 값의 모양이 달라서 하나로 뭉갤 수
+      없고, 뭉개면 목록에서 `3장`과 `3장의 한 부분`을 가릴 수 없게 된다.
+    */
+    const locator =
+      region === null
+        ? {
+            kind: IMAGE_PAGE_KIND,
+            sourceFileId: current.id,
+            fileChecksum: checksums[current.id] ?? null,
+          }
+        : {
+            kind: IMAGE_REGION_KIND,
+            sourceFileId: current.id,
+            fileChecksum: checksums[current.id] ?? null,
+            ...region,
+          };
+
+    const result = await createImagePageCapture({ sourceId, memo, locator });
 
     setBusy(false);
 
@@ -96,7 +132,19 @@ export function ImageReaderView({
       return;
     }
 
-    setNotice(`${index + 1}장에 메모를 남겼습니다.`);
+    setNotice(
+      region === null
+        ? `${index + 1}장에 메모를 남겼습니다.`
+        : `${index + 1}장의 고른 부분에 메모를 남겼습니다.`,
+    );
+
+    /*
+      **남긴 뒤에는 고른 영역을 거둔다.**
+
+      남겨 두면 다음 메모가 같은 자리에 또 달린다. 사용자는 장 전체에
+      적는다고 생각하고 쓰는데, 조용히 앞서 고른 자리에 붙는다.
+    */
+    setRegion(null);
 
     /*
       목록을 서버에서 다시 받아온다. 방금 남긴 것이 아래에 바로 보여야
@@ -134,6 +182,13 @@ export function ImageReaderView({
                 setNotice(null);
                 setIndex(next);
               }}
+              region={region}
+              onRegionChange={setRegion}
+              /*
+                들어온 상자는 **보던 장에서만** 그린다. 장을 넘기면 다음
+                그림의 그 자리에 엉뚱한 상자가 뜬다.
+              */
+              highlight={index === initialIndex ? highlight : null}
             />
           }
           right={
@@ -144,7 +199,12 @@ export function ImageReaderView({
                   있으면 **다른 장의 것으로 저장된다.** 오류는 나지 않는다.
                 */
                 key={current?.id ?? "none"}
-                where={`${index + 1}장`}
+                /*
+                  **어디에 달리는지 적는다.** (16-2) 고른 영역이 있으면
+                  장 전체가 아니라 그 부분에 달린다. 그 차이가 보이지
+                  않으면, 끌어 놓고도 장 전체에 적는다고 생각한다.
+                */
+                where={region === null ? `${index + 1}장` : `${index + 1}장의 고른 부분`}
                 busy={busy}
                 onSave={handleSaveMemo}
               />

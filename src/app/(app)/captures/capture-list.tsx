@@ -8,7 +8,11 @@ import type { Capture } from "@/lib/captures/queries";
 import { describeMediaTime } from "@/lib/captures/media-locator";
 import { describeMusicTime } from "@/lib/captures/music-locator";
 import { VideoTimeChip } from "./video-time-chip";
-import { describeImagePage } from "@/lib/captures/image-locator";
+import {
+  IMAGE_REGION_KIND,
+  describeImageLocator,
+  formatRegionParam,
+} from "@/lib/captures/image-locator";
 import { describeLocatorPages } from "@/lib/captures/pdf-locator";
 import { locatorIsStale } from "@/lib/drive/file-check";
 import {
@@ -168,14 +172,28 @@ export function CaptureList({
               */}
               {capture.imageLocation && capture.sourceId && imageFileIds ? (
                 (() => {
-                  const where = describeImagePage(
+                  const where = describeImageLocator(
                     capture.imageLocation,
                     imageFileIds,
                   );
 
-                  return where === null ? null : (
+                  if (where === null) {
+                    return null;
+                  }
+
+                  /*
+                    한 부분을 가리키는 기록이면 **그 상자까지 주소에
+                    싣는다.** (16-2) 장만 열어 주면 어디를 가리키는지
+                    보이지 않고, 그러면 눌러도 알게 되는 것이 없다.
+                  */
+                  const region =
+                    capture.imageLocation.kind === IMAGE_REGION_KIND
+                      ? `&region=${formatRegionParam(capture.imageLocation)}`
+                      : "";
+
+                  return (
                     <Link
-                      href={`/sources/${capture.sourceId}/reader?file=${capture.imageLocation.sourceFileId}`}
+                      href={`/sources/${capture.sourceId}/reader?file=${capture.imageLocation.sourceFileId}${region}`}
                       className="rounded-full border border-black/[.08] px-2.5 py-0.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-300 dark:hover:bg-white/[.06]"
                     >
                       {where}으로

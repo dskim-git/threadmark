@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CaptureList } from "@/app/(app)/captures/capture-list";
+import { parseRegionParam } from "@/lib/captures/image-locator";
 import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
 import {
@@ -255,6 +256,14 @@ export default async function ReaderPage({
               checksums={Object.fromEntries(
                 imageFiles.map((file) => [file.id, file.checksum]),
               )}
+              /*
+                기록을 눌러 들어왔을 때 보여줄 상자. (16-2)
+
+                **모양이 어긋나면 `null`이다.** 주소는 사람이 손으로 고칠
+                수 있는 자리라, 잘못된 값으로 상자를 그리면 엉뚱한 곳을
+                가리키면서 그것이 틀렸다는 것을 알릴 길이 없다.
+              */
+              highlight={parseRegionParam(firstValue(query.region))}
               capturesSlot={
                 <div className="flex flex-col gap-3">
                   <StarFilter

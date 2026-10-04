@@ -41,14 +41,44 @@ export type ReaderImage = {
   missing: boolean;
 };
 
+/** 그림 안의 사각형. 전부 상대값(0~1)이다. */
+export type ImageRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * 끌었다고 볼 만한 가장 짧은 거리(화면 픽셀).
+ *
+ * **누르기와 끌기를 가른다.** 이 값이 없으면 확대하려고 두 번 누르는
+ * 사이에 손이 1픽셀 흔들려도 상자가 만들어진다. 그 상자는 보이지 않으면서
+ * 메모 칸의 안내문을 `한 부분`으로 바꿔 놓는다.
+ */
+const DRAG_THRESHOLD = 6;
+
 export function ImageReader({
   images,
   index,
   onIndexChange,
+  region,
+  onRegionChange,
+  highlight,
 }: {
   images: readonly ReaderImage[];
   index: number;
   onIndexChange: (next: number) => void;
+  /** 지금 골라 둔 영역. 없으면 장 전체에 메모한다. */
+  region: ImageRegion | null;
+  onRegionChange: (next: ImageRegion | null) => void;
+  /**
+   * 기록을 눌러 들어왔을 때 보여줄 상자. (16-2)
+   *
+   * 고르는 상자와 **다른 색으로 따로 그린다.** 하나로 합치면, 들어온
+   * 상자를 지우려고 누른 것이 새 영역을 고르는 일이 되거나 그 반대가 된다.
+   */
+  highlight: ImageRegion | null;
 }) {
   /** 원본 크기로 볼 것인가. 기본은 칸에 맞춰 보는 것이다. */
   const [actualSize, setActualSize] = useState(false);
@@ -65,8 +95,31 @@ export function ImageReader({
 
   const stageRef = useRef<HTMLDivElement | null>(null);
 
+  /*
+    끌고 있는 중의 상자. **끝나면 `onRegionChange`로 넘기고 비운다.**
+
+    여기서 들고 있는 까닭은 끌리는 동안의 모양이 **이 칸에서만 쓰이는
+    값**이기 때문이다. 위로 올리면 손가락이 움직이는 동안 작업대 전체가
+    다시 그려진다.
+  */
+  const [dragging, setDragging] = useState<ImageRegion | null>(null);
+
+  /** 끌기 시작한 자리. 화면 좌표가 아니라 그림 안의 상대값이다. */
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  /** 그 자리의 화면 좌표. 끌었는지 눌렀는지 가리는 데 쓴다. */
+  const dragOrigin = useRef<{ clientX: number; clientY: number } | null>(null);
+
   const current = images[index];
   const loaded = loadedId === current?.id;
+
+  /**
+   * 화면에 그릴 상자.
+   *
+   * 끌고 있는 중에는 그 모양을, 놓은 뒤에는 골라 둔 것을 그린다.
+   * **둘을 한 변수로 모아 둔다.** 그리는 자리에서 가리면 좌표 네 칸마다
+   * 같은 판단이 되풀이되고, 한 칸만 고치는 실수가 생긴다.
+   */
+  const shown = dragging ?? region;
 
   const move = useCallback(
     (delta: number) => {
@@ -126,6 +179,110 @@ export function ImageReader({
     stageRef.current?.scrollTo({ top: 0, left: 0 });
   }, [index]);
 
+  /*
+    끌어서 한 부분을 고른다. (16-2)
+
+    **상대값으로 잰다.** 그림을 칸에 맞춰 볼 때와 원본으로 볼 때 크기가
+    다른데, 화면 픽셀로 담으면 다른 크기로 열었을 때 상자가 엉뚱한 데
+    생긴다. (`image-locator.ts`의 머리말)
+
+    `getBoundingClientRect()`로 재는 것이 `<img>` 요소 자체여야 한다.
+    바깥 칸을 재면 칸 안에서 그림이 가운데로 밀린 만큼 어긋난다.
+  */
+  const ratioAt = (
+    event: React.PointerEvent<HTMLElement>,
+  ): { x: number; y: number } => {
+    const box = event.currentTarget.getBoundingClientRect();
+
+    // 칸 밖으로 끌어도 그림 안에 가둔다. 밖을 가리키는 상자를 만들지 않는다.
+    const clamp = (value: number) => Math.min(1, Math.max(0, value));
+
+    return {
+      x: clamp((event.clientX - box.left) / box.width),
+      y: clamp((event.clientY - box.top) / box.height),
+    };
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    /*
+      **주된 단추로만 시작한다.** 가운데 단추나 오른쪽 단추로 끌면 브라우저
+      나름의 일(붙여넣기, 메뉴)이 함께 일어난다.
+    */
+    if (event.button !== 0) {
+      return;
+    }
+
+    dragStart.current = ratioAt(event);
+    dragOrigin.current = { clientX: event.clientX, clientY: event.clientY };
+
+    /*
+      **이 요소가 끝까지 손가락을 쥔다.** 안 쥐면 그림 밖으로 끌 때
+      `pointerup`이 다른 요소로 가고, 상자가 끌린 채로 남는다.
+    */
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const start = dragStart.current;
+    const origin = dragOrigin.current;
+
+    if (!start || !origin) {
+      return;
+    }
+
+    const moved =
+      Math.abs(event.clientX - origin.clientX) +
+      Math.abs(event.clientY - origin.clientY);
+
+    // 아직 누르기인지 끌기인지 모른다. 상자를 그리지 않는다.
+    if (moved < DRAG_THRESHOLD) {
+      return;
+    }
+
+    const now = ratioAt(event);
+
+    setDragging({
+      x: Math.min(start.x, now.x),
+      y: Math.min(start.y, now.y),
+      width: Math.abs(now.x - start.x),
+      height: Math.abs(now.y - start.y),
+    });
+  };
+
+  const handlePointerUp = () => {
+    const box = dragging;
+
+    dragStart.current = null;
+    dragOrigin.current = null;
+    setDragging(null);
+
+    if (!box) {
+      // 끌지 않았다. 누르기는 확대를 다루는 쪽이 받는다.
+      return;
+    }
+
+    /*
+      **너무 작은 상자는 버린다.** 담기는 쪽(`imageRegionLocatorSchema`)도
+      막지만, 여기서 버리면 메모 칸의 안내문이 잘못 바뀌는 일이 없다.
+    */
+    if (box.width < 0.01 || box.height < 0.01) {
+      return;
+    }
+
+    onRegionChange(box);
+  };
+
+  /*
+    장이 바뀌면 골라 둔 영역을 거둔다.
+
+    **앞 장에서 고른 상자가 남으면 다음 장의 그 자리를 가리키게 된다.**
+    그림마다 담긴 것이 달라서, 같은 좌표가 전혀 다른 곳을 뜻한다.
+    오류는 나지 않는다.
+  */
+  useEffect(() => {
+    onRegionChange(null);
+  }, [index, onRegionChange]);
+
   if (!current) {
     return (
       <p className="rounded-2xl bg-zinc-50 px-6 py-10 text-center text-sm text-zinc-500 dark:bg-white/[.04]">
@@ -169,6 +326,22 @@ export function ImageReader({
           {current.fileName}
         </span>
 
+        {/*
+          고른 영역을 거두는 단추. (16-2)
+
+          **고른 뒤에만 보인다.** 늘 보이면 누를 것이 없는 단추가 되고,
+          누를 것이 없는 단추는 "지금 뭔가 골라져 있나" 하고 찾게 만든다.
+        */}
+        {region ? (
+          <button
+            type="button"
+            onClick={() => onRegionChange(null)}
+            className="h-8 shrink-0 rounded-full border border-accent px-3 text-xs font-medium text-accent transition-colors hover:bg-accent-soft dark:border-accent-dark dark:text-accent-dark dark:hover:bg-accent-dark-soft"
+          >
+            고른 영역 지우기
+          </button>
+        ) : null}
+
         <button
           type="button"
           onClick={() => setActualSize((value) => !value)}
@@ -178,6 +351,22 @@ export function ImageReader({
           {actualSize ? "칸에 맞추기" : "원본 크기"}
         </button>
       </div>
+
+      {/*
+        **끌 수 있다는 것을 말해 준다.** (16-2)
+
+        끌어서 고르는 길은 **보이지 않는 기능**이다. 단추가 없으니 눌러볼
+        것도 없고, 설명이 없으면 그런 길이 있다는 것을 모른 채 장 전체에만
+        메모한다. 사용법에도 적지만 그 화면까지 가야 읽힌다.
+
+        고른 뒤에는 무엇이 달라졌는지로 바꿔 적는다. 같은 자리에 같은 말이
+        남아 있으면 골라진 것인지 알 수 없다.
+      */}
+      <p className="shrink-0 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+        {region
+          ? "이 부분에 메모가 달립니다. 다시 끌면 자리가 바뀝니다."
+          : "그림에서 끌어 한 부분을 고르면 그 자리에 메모를 달 수 있습니다."}
+      </p>
 
       {/*
         그림이 놓이는 자리. **남는 높이를 다 쓴다.**
@@ -212,19 +401,79 @@ export function ImageReader({
 
               `next/image`를 쓰지 않는 까닭은 머리말에 적었다.
             */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              key={current.id}
-              src={current.src}
-              alt={`${index + 1}장: ${current.fileName}`}
-              onLoad={() => setLoadedId(current.id)}
-              onDoubleClick={() => setActualSize((value) => !value)}
-              className={
-                actualSize
-                  ? "max-w-none cursor-zoom-out"
-                  : "max-h-full max-w-full cursor-zoom-in object-contain"
-              }
-            />
+            {/*
+              **상자를 그리려면 그림을 감싸는 칸이 필요하다.**
+
+              `relative`인 칸이 `<img>` 크기에 딱 맞아야 한다. 바깥 칸에
+              맞추면 그림이 가운데로 밀린 만큼 상자가 어긋난다.
+              `inline-block`과 `leading-none`이 그 일을 한다. `leading-none`이
+              없으면 글자 높이만큼 아래에 틈이 생긴다.
+            */}
+            <span className="relative inline-block leading-none">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={current.id}
+                src={current.src}
+                alt={`${index + 1}장: ${current.fileName}`}
+                onLoad={() => setLoadedId(current.id)}
+                onDoubleClick={() => setActualSize((value) => !value)}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                /*
+                  **브라우저의 그림 끌기를 막는다.** 막지 않으면 끌기 시작할
+                  때 반투명한 그림이 손가락에 따라붙고, 그 뒤로는
+                  `pointermove`가 오지 않는다. 영역 고르기가 통째로 안 된다.
+
+                  PDF 쪽에서 글자를 고를 때 덮개를 둔 것과 같은 자리다.
+                */
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
+                className={
+                  actualSize
+                    ? "max-w-none cursor-crosshair select-none"
+                    : "max-h-full max-w-full cursor-crosshair object-contain select-none"
+                }
+              />
+
+              {/*
+                기록을 눌러 들어왔을 때의 상자. (16-2)
+
+                **고르는 상자와 색을 달리한다.** 같으면 어느 것이 내가 지금
+                고른 것인지 알 수 없다.
+              */}
+              {highlight ? (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute rounded-sm border-2 border-amber-500 bg-amber-400/20"
+                  style={{
+                    left: `${highlight.x * 100}%`,
+                    top: `${highlight.y * 100}%`,
+                    width: `${highlight.width * 100}%`,
+                    height: `${highlight.height * 100}%`,
+                  }}
+                />
+              ) : null}
+
+              {/*
+                지금 고르는 상자. 끌리는 동안과 놓은 뒤 모두 이것으로 그린다.
+
+                `pointer-events-none`이 있어야 한다. 없으면 상자가 그림 위를
+                덮어 **그 안에서 다시 끌 수 없다.**
+              */}
+              {shown ? (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute rounded-sm border-2 border-accent bg-accent/15 dark:border-accent-dark dark:bg-accent-dark/15"
+                  style={{
+                    left: `${shown.x * 100}%`,
+                    top: `${shown.y * 100}%`,
+                    width: `${shown.width * 100}%`,
+                    height: `${shown.height * 100}%`,
+                  }}
+                />
+              ) : null}
+            </span>
           </div>
         )}
 
