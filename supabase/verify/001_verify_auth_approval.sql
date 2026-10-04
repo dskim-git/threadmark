@@ -105,7 +105,16 @@ with checks(순번, 항목, 기대, 실제) as (
          -- 대신, 소유자와 승인 상태를 직접 확인하는 함수로 분리했다.
          'soft_delete_source',
          'soft_delete_capture',
-         'soft_delete_project'
+         'soft_delete_project',
+         -- AI 허용량을 더한 일을 감사 기록에 남기는 트리거 함수.
+         -- authenticated에는 admin_audit_logs INSERT 권한이 없어 DEFINER다.
+         --
+         -- **이 이름이 2026-09-26부터 2026-10-04까지 빠져 있었다.**
+         -- 19-E를 만들 때 AGENTS.md 7절의 "DEFINER 함수를 추가하면 001의
+         -- 허용 목록에 넣는다"를 빠뜨렸고, 그동안 이 검사는 1을 돌려줄
+         -- 상태였다. 그 사이에 001을 돌리지 않아 아무도 몰랐다.
+         -- 16-B 3차례에서 같은 목록을 고치다가 찾았다.
+         'log_ai_usage_grant'
        ))
 
   -- source_files에는 이런 함수가 없다는 점을 적어둔다.
@@ -130,7 +139,19 @@ with checks(순번, 항목, 기대, 실제) as (
      from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
-       and p.proname in ('guard_profile_protected_columns', 'guard_last_admin')
+       and p.proname in (
+         'guard_profile_protected_columns',
+         'guard_last_admin',
+         /*
+           16-B. 공개 링크를 끄는 것만 허용하는 가드.
+
+           **이것이 DEFINER가 되면 안 되는 까닭이 특히 분명하다.** 이
+           트리거는 "끈 열쇠를 되살릴 수 없다"를 지킨다. 소유자 권한으로
+           돌면 RLS를 우회하므로, 가드가 **막아야 할 갱신을 스스로
+           통과시키는** 자리가 된다.
+         */
+         'guard_project_public_link_update'
+       )
        and p.prosecdef)
 
   union all

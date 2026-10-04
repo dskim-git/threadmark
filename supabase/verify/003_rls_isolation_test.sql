@@ -7912,6 +7912,545 @@ end
 $$;
 
 
+
+-- -----------------------------------------------------------------------------
+-- 131. 남의 프로젝트를 공개할 수 없다
+-- -----------------------------------------------------------------------------
+-- **이것이 이 표에서 가장 중요한 검사다.** 그리고 이 저장소 전체에서
+-- 가장 무거운 자리다.
+--
+-- 여기가 열려 있으면 프로젝트 번호만 알면 **남의 글을 밖으로 내보낼 수
+-- 있다.** 다른 표에서 뚫리는 것은 "남의 것이 내게 보인다"인데, 여기서
+-- 뚫리는 것은 **"남의 것이 모두에게 보인다"**다. 그리고 되돌릴 수 없다.
+--
+-- 외래키 제약은 RLS를 보지 않는다. (AGENTS.md 6절) 트리거가 막는다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_blocked boolean := false;
+  v_made    integer := 0;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  -- 클레임을 비우고 소유자의 프로젝트를 심는다. (머리말의 주의)
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    insert into public.project_public_links (project_id)
+    values (v_project);
+    get diagnostics v_made = row_count;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if not v_blocked or v_made > 0 then
+    raise exception
+      '검사 131 실패: 남의 프로젝트에 공개 열쇠를 달 수 있었습니다. 남의 글이 밖으로 나갑니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 132. 소유자는 공개를 켤 수 있고 열쇠는 우리가 만든다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 막는 것만 검사하면 과잉 차단을 놓친다. (보안 원칙 6) 여기가 막히면
+-- 공유 기능이 통째로 아무 일도 하지 않는다.
+--
+-- **보낸 열쇠를 쓰지 않는지 함께 본다.** 일부러 짧고 뻔한 열쇠를 적어
+-- 보낸다. 그대로 들어가면 **주소를 맞혀서 열 수 있게 되고**, 16-B.5절이
+-- 막으려던 것이 그대로 열린다. (검사 118·127과 같은 생각이다)
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_link    uuid;
+  v_token   text;
+  v_revoked timestamptz;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 짧고 뻔한 열쇠와 "이미 꺼짐"을 함께 적어 보낸다. 둘 다 버려야 한다.
+  insert into public.project_public_links (project_id, token, revoked_at)
+  values (v_project, 'secret', pg_catalog.now())
+  returning id, token, revoked_at into v_link, v_token, v_revoked;
+
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_link is null then
+    raise exception
+      '검사 132 실패: 소유자가 자기 프로젝트를 공개할 수 없었습니다. 공유 기능이 아무 일도 하지 않습니다.';
+  end if;
+
+  if v_token = 'secret' or v_token !~ '^[0-9a-f]{64}$' then
+    raise exception
+      '검사 132 실패: 보낸 열쇠가 그대로 들어갔습니다. 주소를 맞혀서 열 수 있게 됩니다. (지금 %)',
+      v_token;
+  end if;
+
+  if v_revoked is not null then
+    raise exception
+      '검사 132 실패: 켜면서 동시에 꺼진 줄이 만들어졌습니다. 살아 있는 열쇠 자리가 비는데 공개된 것처럼 보입니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 133. 한 프로젝트에 살아 있는 열쇠는 하나뿐이다
+-- -----------------------------------------------------------------------------
+-- 둘이 되면 **"껐다"가 뜻을 잃는다.** 하나를 끄고도 다른 하나로 열린다.
+-- 사용자는 껐다고 생각하는데 링크가 살아 있다. 오류도 나지 않는다.
+--
+-- 끈 뒤에는 다시 켤 수 있어야 한다. 그때는 **새 열쇠**가 나온다.
+-- (16-B.6절) 그것도 함께 본다.
+do $$
+declare
+  v_owner    uuid;
+  v_project  uuid;
+  v_first    text;
+  v_second   text;
+  v_blocked  boolean := false;
+  v_live     integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_public_links (project_id)
+  values (v_project)
+  returning token into v_first;
+
+  -- 켜져 있는데 또 켜려 한다. 막혀야 한다.
+  begin
+    insert into public.project_public_links (project_id)
+    values (v_project);
+  exception when others then
+    v_blocked := true;
+  end;
+
+  if not v_blocked then
+    reset role;
+    delete from public.project_public_links where project_id = v_project;
+    delete from public.projects where id = v_project;
+
+    raise exception
+      '검사 133 실패: 한 프로젝트에 살아 있는 열쇠가 둘이 되었습니다. 하나를 꺼도 다른 하나로 열립니다.';
+  end if;
+
+  -- 끄고 다시 켠다.
+  update public.project_public_links
+  set revoked_at = pg_catalog.now()
+  where project_id = v_project and revoked_at is null;
+
+  insert into public.project_public_links (project_id)
+  values (v_project)
+  returning token into v_second;
+
+  select count(*) into v_live
+  from public.project_public_links
+  where project_id = v_project and revoked_at is null;
+
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_second = v_first then
+    raise exception
+      '검사 133 실패: 다시 켰는데 같은 열쇠가 나왔습니다. 끈 링크가 되살아납니다. (16-B.6절)';
+  end if;
+
+  if v_live <> 1 then
+    raise exception
+      '검사 133 실패: 끄고 다시 켠 뒤 살아 있는 열쇠가 %개입니다. 1개여야 합니다.', v_live;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 134. 끈 열쇠는 되살릴 수 없고, 열쇠를 바꿔치울 수 없다
+-- -----------------------------------------------------------------------------
+-- 16-B.6절이 명시로 금지한다. **한 번 돌아간 링크를 영원히 믿어야 하는
+-- 상태를 만들지 않는다.**
+--
+-- `with check`는 `OLD` 행을 볼 수 없다. (AGENTS.md 6절) 그래서 "끄기만
+-- 허용"은 정책으로 쓸 수 없고 BEFORE 트리거가 본다. 트리거가 실제로
+-- 막는지를 여기서 확인한다.
+--
+-- 열쇠 바꿔치기를 함께 보는 까닭. 바꿀 수 있으면 짧은 열쇠를 넣을 수
+-- 있고, 그것은 검사 132가 막은 것을 뒷문으로 여는 일이다.
+do $$
+declare
+  v_owner    uuid;
+  v_project  uuid;
+  v_link     uuid;
+  v_token    text;
+  v_revive   boolean := false;
+  v_retoken  boolean := false;
+  v_remove   boolean := false;
+  v_now_tok  text;
+  v_now_rev  timestamptz;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_public_links (project_id)
+  values (v_project)
+  returning id, token into v_link, v_token;
+
+  -- 켜져 있는 동안 열쇠를 바꿔치려 한다.
+  begin
+    update public.project_public_links
+    set token = pg_catalog.repeat('a', 64)
+    where id = v_link;
+  exception when others then
+    v_retoken := true;
+  end;
+
+  -- 끈다.
+  update public.project_public_links
+  set revoked_at = pg_catalog.now()
+  where id = v_link;
+
+  -- 되살리려 한다.
+  begin
+    update public.project_public_links
+    set revoked_at = null
+    where id = v_link;
+  exception when others then
+    v_revive := true;
+  end;
+
+  -- 지우려 한다. 권한 자체가 없다. (16-B.6절)
+  begin
+    delete from public.project_public_links where id = v_link;
+  exception when others then
+    v_remove := true;
+  end;
+
+  select token, revoked_at into v_now_tok, v_now_rev
+  from public.project_public_links where id = v_link;
+
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if not v_retoken or v_now_tok is distinct from v_token then
+    raise exception
+      '검사 134 실패: 열쇠를 바꿔치울 수 있었습니다. 짧은 열쇠를 넣는 뒷문이 됩니다.';
+  end if;
+
+  if not v_revive or v_now_rev is null then
+    raise exception
+      '검사 134 실패: 끈 열쇠를 되살릴 수 있었습니다. 16-B.6절이 금지합니다.';
+  end if;
+
+  if not v_remove then
+    raise exception
+      '검사 134 실패: 공개 내역을 지울 수 있었습니다. 언제 켜고 껐는지가 사라집니다. (16-B.6절)';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 135. 남의 공개 열쇠는 보이지도 않고 끌 수도 없다
+-- -----------------------------------------------------------------------------
+-- 열쇠가 보이면 **그 링크로 남의 프로젝트를 읽을 수 있다.** 이 표에서
+-- 조회 격리는 다른 표의 조회 격리보다 무겁다. 다른 표는 보이는 것이
+-- 끝이지만, 여기서 보이는 것은 **다른 문을 여는 열쇠**다.
+--
+-- 끌 수 있는 것도 막는다. 남의 공개를 함부로 끄는 일은 자료를 새게 하지는
+-- 않지만, 남이 건넨 링크를 죽이는 일이다.
+do $$
+declare
+  v_owner   uuid;
+  v_other   uuid;
+  v_project uuid;
+  v_link    uuid;
+  v_seen    integer;
+  v_killed  integer := 0;
+  v_rev     timestamptz;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_other
+  from public.profiles p where p.id <> v_owner limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  insert into public.project_public_links (owner_id, project_id)
+  values (v_owner, v_project)
+  returning id into v_link;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_other, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_seen
+  from public.project_public_links where id = v_link;
+
+  update public.project_public_links
+  set revoked_at = pg_catalog.now()
+  where id = v_link;
+  get diagnostics v_killed = row_count;
+
+  reset role;
+
+  select revoked_at into v_rev
+  from public.project_public_links where id = v_link;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 0 then
+    raise exception
+      '검사 135 실패: 남의 공개 열쇠가 %건 보였습니다. 그 링크로 남의 프로젝트를 읽을 수 있습니다.',
+      v_seen;
+  end if;
+
+  if v_killed > 0 or v_rev is not null then
+    raise exception
+      '검사 135 실패: 남의 공개를 끌 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 136. 본인은 자기 공개 내역을 꺼진 것까지 본다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 16-B.6절. **공개했던 사실은 남긴다.** 남겨도 읽을 수 없으면 남긴 것이
+-- 아니다. "그때 무엇이 나갔나"에 답하려고 두는 기록이다.
+--
+-- 그리고 더 급한 까닭이 있다. 조회 정책에 `revoked_at is null`을 걸면
+-- **끄는 갱신 자체가 실패한다.** PostgREST는 갱신을 `RETURNING`으로
+-- 감싸고 PostgreSQL은 그 결과에도 조회 정책을 적용하기 때문이다.
+-- (AGENTS.md 6절) 끌 수 없는 공개 기능이 된다.
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_seen    integer;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  -- 켜고 끈다. 그 뒤에도 그 줄이 보여야 한다.
+  insert into public.project_public_links (project_id) values (v_project);
+
+  update public.project_public_links
+  set revoked_at = pg_catalog.now()
+  where project_id = v_project and revoked_at is null;
+
+  select count(*) into v_seen
+  from public.project_public_links
+  where project_id = v_project and revoked_at is not null;
+
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_seen <> 1 then
+    raise exception
+      '검사 136 실패: 끈 공개 내역이 %건 보였습니다. 1건이어야 합니다. 언제 켜고 껐는지를 읽을 수 없습니다.',
+      v_seen;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 137. 지운 프로젝트는 공개가 꺼지고, 지운 프로젝트는 공개할 수 없다
+-- -----------------------------------------------------------------------------
+-- **프로젝트의 삭제는 표시만 한다.** 그래서 지워도 열쇠는 살아 있다.
+--
+-- 이것이 사용자가 가장 예상하지 못하는 고장이다. 지운 사람은 **확인할
+-- 방법이 없다.** 프로젝트가 목록에서 사라졌으므로 공개 단추도 함께
+-- 사라진다. 그 상태로 링크는 계속 열린다.
+--
+-- 읽는 문에서 한 번 더 걸러낼 것이지만 **그 한 겹에만 기대지 않는다.**
+do $$
+declare
+  v_owner   uuid;
+  v_project uuid;
+  v_live    integer;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '', true);
+
+  insert into public.projects (owner_id, name)
+  values (v_owner, 'RLS 검사용 공개 프로젝트')
+  returning id into v_project;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.project_public_links (project_id) values (v_project);
+
+  perform public.soft_delete_project(v_project);
+
+  select count(*) into v_live
+  from public.project_public_links
+  where project_id = v_project and revoked_at is null;
+
+  -- 지운 프로젝트를 다시 공개하려 한다.
+  begin
+    insert into public.project_public_links (project_id) values (v_project);
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.project_public_links where project_id = v_project;
+  delete from public.projects where id = v_project;
+
+  if v_live <> 0 then
+    raise exception
+      '검사 137 실패: 프로젝트를 지웠는데 살아 있는 공개 열쇠가 %개 남았습니다. 지운 것이 계속 열립니다.',
+      v_live;
+  end if;
+
+  if not v_blocked then
+    raise exception
+      '검사 137 실패: 지운 프로젝트를 공개할 수 있었습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 138. 비로그인(anon)은 공개 열쇠 표에 닿을 수 없다
+-- -----------------------------------------------------------------------------
+-- **이 표에서 가장 조용한 위험이다.**
+--
+-- 공개 기능을 만들다 보면 "로그인 없이 열려야 하니 anon에게 권한을 주자"가
+-- 자연스러워 보인다. 주면 **anon이 열쇠 표를 통째로 읽어 공개된 프로젝트를
+-- 전부 찾아낸다.** 열쇠를 따로 만든 뜻이 그 자리에서 사라진다.
+-- 주소를 맞힐 필요도 없어진다. (16-B.5절)
+--
+-- 공개된 것을 읽는 문은 **함수 하나**로 만든다. 함수에 실행 권한을 주는
+-- 것은 표 권한이 아니다. 001의 검사 17이 "anon 역할에 테이블 권한 없음"을
+-- 0으로 지키고 있고, 이 검사는 같은 약속을 실제로 눌러서 확인한다.
+-- (검사 12와 같은 생각이다)
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  set local role anon;
+
+  begin
+    perform count(*) from public.project_public_links;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked then
+    raise exception
+      '검사 138 실패: 비로그인 상태에서 공개 열쇠 표를 읽을 수 있었습니다. 공개된 프로젝트를 전부 찾아낼 수 있습니다.';
+  end if;
+end
+$$;
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -8013,6 +8552,21 @@ select
     **두 칸으로 센다.** 준 줄 수와 이번 달에 더해진 합이다. 합만 보면
     음수로 되돌린 것이 섞여 0이 되고, **아무 일도 없었던 것처럼 보인다.**
   */
+  /*
+    링크로 공개한 프로젝트. (16-B)
+
+    **두 칸으로 센다. 그리고 이 둘의 차이가 이 표의 뜻이다.**
+    `공개_켠_적_있음`은 역사 전체이고 `지금_공개중`은 살아 있는 열쇠다.
+    끄면 앞은 그대로고 뒤만 줄어든다. 한 칸만 두면 **껐는지 안 껐는지를
+    셀 수가 없다.**
+
+    `지금_공개중`이 0이 아니면 **지금 로그인 없이 열리는 주소가 있다는
+    뜻이다.** 돌릴 때마다 이 칸을 본다. 생각보다 큰 숫자가 보이면
+    꺼야 할 것이 남아 있다.
+  */
+  (select count(*) from public.project_public_links)                    as 공개_켠_적_있음,
+  (select count(*) from public.project_public_links
+    where revoked_at is null)                                           as 지금_공개중,
   (select count(*) from public.ai_usage_grants)                         as 허용량_기록,
   (select coalesce(sum(extra_calls), 0) from public.ai_usage_grants
     where created_at >= pg_catalog.date_trunc('month', now()))          as 이번달_더한_횟수,

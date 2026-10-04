@@ -333,7 +333,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 1170개
+npm test          # node --test, 1189개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 npm run verify:split  # 003이 커서 SQL Editor가 끊길 때 조각낸다 (7절)
@@ -418,7 +418,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 16-A. AI 검색과 출처 기반 추천 (19절) | Phase 7 | 완료 |
 | 16-B-1. 무엇을 공개할지 정하기 (16-B절) | Phase 7 | 완료 (설계 문서) |
 | 16-B-2. 공개할 수 있는 것의 목록과 검사 | Phase 7 | 완료 |
-| 16-B-3. 공개 상태·열쇠·RLS·003 | Phase 7 | 예정 |
+| 16-B-3. 공개 상태·열쇠·RLS·003 | Phase 7 | 완료 (003·001 통과) |
 | 16-B-4. 공개 화면과 약관·방침 | Phase 7 | 예정 |
 | 17-A. 계정과 자료 지우기 (`/account/delete`) | | 완료 |
 | 17-B. 개인정보 처리방침·삭제 안내 화면 (`/privacy`, `/data-deletion`) | | 완료 |
@@ -1290,10 +1290,10 @@ YouTube·TMDB·Kakao는 Phase 6이다. 22절의 MVP 목록에서도 PDF 뷰어�
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1170개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1189개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
-| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (130검사) |
+| RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (138검사) |
 
 003은 실제 역할로 전환해 차단되어야 할 동작을 시도한다. 사람이 Supabase
 대시보드 SQL Editor에 붙여넣어 돌린다. `npm test`는 이 파일을 읽을 뿐
@@ -1344,7 +1344,7 @@ npm run verify:split -- supabase/verify/003_rls_isolation_test.sql 4
    모두 쓴다.** 막는 것만 쓰면 과하게 잠근 것을 놓치고, 잠긴 자리는 오류
    없이 값이 안 바뀔 뿐이라 쓰다가 부딪히기 전에는 모른다.
 2. `tests/migration-invariants.test.mjs`의 `PROTECTED_TABLES`에 이름을 더한다.
-   (지금 30개)
+   (지금 31개)
 3. 결과 표 맨 아래 `select`에 세는 칸을 더한다. **그 칸 이름이 무엇을 세는지
    말하게 한다.** `글_쓴_자리`가 어느 글을 세는지 말하지 않아 고장 소동이
    한 번 있었다. (`docs/VERIFICATION.md` 4-30절)

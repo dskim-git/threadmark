@@ -1108,6 +1108,41 @@ export type Database = {
           },
         ]
       }
+      project_public_links: {
+        Row: {
+          created_at: string
+          id: string
+          owner_id: string
+          project_id: string
+          revoked_at: string | null
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          project_id: string
+          revoked_at?: string | null
+          token: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          project_id?: string
+          revoked_at?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_public_links_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           color: string | null

@@ -85,6 +85,14 @@ const PROTECTED_TABLES = [
     표라 기본값을 걸면 관리자 자신에게 붙는다. 고칠 수도 지울 수도 없다.
   */
   "ai_usage_grants",
+  /*
+    16-B. 프로젝트를 링크로 여는 열쇠와 그 역사.
+
+    **이 표가 뚫리면 남의 글이 밖으로 나간다.** 열쇠 하나가 로그인 없이
+    열리는 문이라, 이 저장소에서 RLS가 가장 무거운 자리다.
+    지우기 권한과 정책이 없다. 공개했던 사실은 남긴다. (16-B.6절)
+  */
+  "project_public_links",
 ];
 
 /**
@@ -433,6 +441,64 @@ test("격리 검사가 모든 앱 테이블을 다룬다", () => {
     missing,
     [],
     `이 표의 격리 검사가 003_rls_isolation_test.sql에 없다: ${missing.join(", ")}`,
+  );
+});
+
+/**
+ * SECURITY DEFINER 함수가 001의 허용 목록을 따라오는가.
+ *
+ * **2026-10-04에 이 구멍을 찾았다.** `log_ai_usage_grant`가 9월 26일부터
+ * DEFINER였는데 001의 허용 목록에 없었다. 그동안 001의 검사 9
+ * (`허용 목록 밖의 DEFINER 함수 없음`)는 **0이 아니라 1을 돌려줄 상태**로
+ * 있었고, 그 사이에 001을 돌리지 않아 아무도 몰랐다.
+ *
+ * AGENTS.md 7절이 "DEFINER 함수를 추가하면 001의 허용 목록에 넣는다"고
+ * 적어두고 있었다. **말로 적은 약속은 잊히고 검사로 적은 약속은 잊히지
+ * 않는다.** 여기서 붙잡는다.
+ *
+ * DEFINER 함수는 소유자 권한으로 돌아 **RLS를 우회한다.** 그래서 "몇
+ * 개인지"가 아니라 "어떤 것들인지"를 사람이 보고 적어야 하고, 적지 않은
+ * 것이 생기면 멈춰야 한다.
+ *
+ * 001은 사람이 Supabase SQL Editor에서 돌린다. 그 사이가 길다. 이 검사는
+ * **001을 돌리기 전에** 뒤처짐을 잡는다.
+ */
+test("DEFINER 함수가 001의 허용 목록에 빠짐없이 있다", () => {
+  const verify = readFileSync(
+    path.join(repoRoot, "supabase", "verify", "001_verify_auth_approval.sql"),
+    "utf8",
+  );
+
+  /*
+    마이그레이션에서 DEFINER 함수 이름을 뽑는다.
+
+    `as $$`까지의 머리말에 `security definer`가 있는지로 가른다. 함수
+    본문에 그 말이 나오는 경우(주석 등)를 세지 않으려는 것이다.
+  */
+  const definers = new Set();
+
+  for (const match of sql.matchAll(
+    /create or replace function public\.(\w+)\s*\(([\s\S]{0,600}?)\bas \$\$/gu,
+  )) {
+    if (/security definer/iu.test(match[2])) {
+      definers.add(match[1]);
+    }
+  }
+
+  // 목록이 비는 날을 생각해 둔다. 정규식이 어긋나면 조용히 통과한다.
+  assert.ok(
+    definers.size >= 11,
+    `마이그레이션에서 DEFINER 함수를 못 뽑았다. 이 검사가 헛돌고 있다: ${[...definers].join(", ")}`,
+  );
+
+  const missing = [...definers].filter(
+    (name) => !verify.includes(`'${name}'`),
+  );
+
+  assert.deepEqual(
+    missing,
+    [],
+    `이 DEFINER 함수가 001의 허용 목록에 없다. 001의 검사 9가 실패한다: ${missing.join(", ")}`,
   );
 });
 

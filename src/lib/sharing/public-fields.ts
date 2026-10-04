@@ -522,6 +522,16 @@ export const WITHHELD_TABLES: Readonly<Record<string, string>> = {
   */
   source_projects: "무엇이 이 프로젝트에 속하는지 가리는 번호뿐입니다",
   capture_projects: "무엇이 이 프로젝트에 속하는지 가리는 번호뿐입니다",
+  /*
+    **열쇠가 담긴 표다. 가장 무거운 자리다.** (16-B)
+
+    여기서 한 칸이라도 공개 쪽으로 넘어가면, 공개 페이지를 본 사람이
+    **다른 프로젝트를 여는 열쇠**를 손에 넣는다. 공개한 것 하나가
+    공개하지 않은 것 전부를 여는 길이 된다.
+
+    `NEVER_PUBLIC`에 표 전체를 못 박아 두었다.
+  */
+  project_public_links: "공개 링크의 열쇠와 공개한 내역입니다",
   media_watch_providers:
     "어디서 볼 수 있는지입니다. TMDB에서 받아온 값이고 출처 표기 규칙이 함께 걸립니다 (15.1절)",
   music_provider_links: "듣기 링크입니다. 내 글도 서지도 아닙니다 (13.6절)",
@@ -674,6 +684,16 @@ export const NEVER_PUBLIC: readonly NeverPublicField[] = [
     table: "source_files",
     column: "*",
     reason: "올린 파일입니다. 2.3절이 금지합니다",
+  },
+  {
+    /*
+      **공개 링크의 열쇠다.** 이것이 나가면 공개한 것 하나가 공개하지 않은
+      것 전부를 여는 길이 된다. 블루프린트 16-B.3절의 표에는 없다. 그 표를
+      쓸 때는 이 표가 아직 없었다. (3차례에서 만들었다)
+    */
+    table: "project_public_links",
+    column: "*",
+    reason: "공개 링크의 열쇠입니다",
   },
   {
     table: "profiles",
