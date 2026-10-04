@@ -101,6 +101,25 @@ test("화면에 붙인 물음표 단추의 열쇠가 모두 있다", () => {
     )) {
       used.add(match[1]);
     }
+
+    /*
+      **`Panel`에 붙인 것도 본다.** (2026-10-04에 더함)
+
+      위의 정규식은 `<HelpButton topic="...">`만 찾는다. 그런데 물음표
+      단추는 대개 `Panel`의 `help`로 붙고, `Panel`은 그것을
+      `topic={help}`로 넘긴다. **글자가 아니라 변수라 위에서 걸리지
+      않았다.**
+
+      그래서 이 검사가 "오타 하나로 설명이 안 뜨는 단추를 막는다"고
+      적어두고도 **실제로 쓰이는 길을 보지 않고 있었다.** 세어 보니 아홉
+      곳이 `help=`이고 `<HelpButton topic="...">`은 그보다 적었다.
+
+      없는 열쇠를 가리키면 `HelpButton`이 아무것도 그리지 않는다. 오류도
+      나지 않고 **물음표가 그냥 사라진다.** 만든 사람은 붙였다고 생각한다.
+    */
+    for (const match of source.matchAll(/\bhelp="([^"]+)"/gu)) {
+      used.add(match[1]);
+    }
   }
 
   const unknown = [...used].filter((id) => findGuideTopic(id) === null);

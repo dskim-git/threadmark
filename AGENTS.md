@@ -333,7 +333,7 @@ PostgreSQL 12부터 `ALTER TYPE ... ADD VALUE`는 트랜잭션 안에서도 되�
 npm run dev       # 개발 서버
 npm run lint
 npx tsc --noEmit
-npm test          # node --test, 1211개
+npm test          # node --test, 1223개
 npm run build
 npm run db:types  # 원격 스키마에서 타입 재생성. 마이그레이션 적용 후 반드시 실행
 npm run verify:split  # 003이 커서 SQL Editor가 끊길 때 조각낸다 (7절)
@@ -419,7 +419,7 @@ Supabase CLI는 링크되어 있다. `supabase db push`, `migration list`, `conf
 | 16-B-1. 무엇을 공개할지 정하기 (16-B절) | Phase 7 | 완료 (설계 문서) |
 | 16-B-2. 공개할 수 있는 것의 목록과 검사 | Phase 7 | 완료 |
 | 16-B-3. 공개 상태·열쇠·RLS·003 | Phase 7 | 완료 (003·001 통과) |
-| 16-B-4. 공개 화면과 약관·방침 | Phase 7 | 예정 |
+| 16-B-4. 공개 화면과 약관·방침 | Phase 7 | 완료 (눌러보기 전) |
 | 17-A. 계정과 자료 지우기 (`/account/delete`) | | 완료 |
 | 17-B. 개인정보 처리방침·삭제 안내 화면 (`/privacy`, `/data-deletion`) | | 완료 |
 | 19-A. 프로젝트 뼈대와 시작 서식 (7.3절) | | 완료 |
@@ -1315,7 +1315,7 @@ ERROR: 42883: function pg_catalog.coalesce(jsonb, jsonb) does not exist
 
 | 대상 | 방법 |
 | --- | --- |
-| 규칙이 무너지지 않았는지 | `npm test` (1211개, DB 없이 실행) |
+| 규칙이 무너지지 않았는지 | `npm test` (1223개, DB 없이 실행) |
 | 스키마와 운영 불변조건 | `supabase/verify/001_verify_auth_approval.sql` (23항목) |
 | 관리자 부트스트랩 | `supabase/verify/002_verify_first_admin.sql` (8항목) |
 | RLS 격리와 권한 | `supabase/verify/003_rls_isolation_test.sql` (143검사) |

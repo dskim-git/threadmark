@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AutoNotice } from "@/app/(app)/auto-notice";
 import { requireActiveAccount } from "@/lib/auth/account";
+import { originFromHeaders } from "@/lib/auth/request-url";
+import { liveLink, listShareLinks } from "@/lib/sharing/queries";
 import { getCaptureTypeLabel } from "@/lib/captures/types";
 import {
   PROJECT_USE_FIELDS,
@@ -35,6 +38,7 @@ import { Panel, Reveal } from "@/app/(app)/panel";
 import { isAiSearchConfigured } from "@/lib/ai/anthropic";
 
 import { OutlinePanel } from "../outline-panel";
+import { SharePanel } from "../share-panel";
 
 export const metadata: Metadata = {
   title: "프로젝트 · ThreadMark",
@@ -62,6 +66,8 @@ export default async function ProjectDetailPage({
     outline,
     placements,
     pickerTree,
+    shareLinks,
+    requestHeaders,
     query,
   ] =
     await Promise.all([
@@ -72,8 +78,25 @@ export default async function ProjectDetailPage({
       listOutline(project.id),
       listPlacements(project.id),
       listPickerTree(),
+      listShareLinks(project.id),
+      headers(),
       searchParams,
     ]);
+
+  /*
+    공개 링크 주소를 만든다.
+
+    **출처를 환경변수에 고정하지 않는다.** localhost와 Vercel Preview와
+    배포가 각각 다른 주소를 쓴다. 요청에서 읽는 것이 이 저장소의 방식이다.
+    (`originFromHeaders`)
+
+    출처를 못 읽으면 주소를 만들지 않는다. **반쪽 주소를 보여주면 그것을
+    복사해 보내게 된다.**
+  */
+  const live = liveLink(shareLinks);
+  const origin = originFromHeaders(requestHeaders);
+  const liveShareUrl =
+    live !== null && origin !== null ? `${origin}/p/${live.token}` : null;
 
   const returnTo = `/projects/${project.id}`;
   const linkedIds = new Set(linkedSources.map((source) => source.id));
@@ -182,6 +205,18 @@ export default async function ProjectDetailPage({
             group: "기록",
           })),
         ]}
+      />
+
+      {/*
+        링크로 공개하기. (설계 문서 16-B절)
+
+        **자료 목록보다 위에 둔다.** 무엇을 공개하는지는 프로젝트 전체에
+        걸린 일이고, 목록 아래에 있으면 긴 화면에서 스크롤해야 만난다.
+      */}
+      <SharePanel
+        projectId={project.id}
+        liveUrl={liveShareUrl}
+        historyCount={shareLinks.length}
       />
 
       <Panel title={`연결된 자료 ${linkedSources.length}건`}>
