@@ -68,12 +68,25 @@ export async function saveAudioProfile(formData: FormData): Promise<void> {
   const fileId = formValue(formData.get("sourceFileId"));
   const checksum = formValue(formData.get("fileChecksum"));
 
+  /*
+    **어느 파일의 전사문인지 없으면 담지 않는다.** (2026-10-05)
+
+    처음에는 자료 하나에 한 줄이라 파일이 없어도 담을 수 있었다. 이제
+    파일이 줄을 가리므로, 파일 없이 담으면 **가리킬 자리가 없는 줄**이
+    쌓이고 그것은 화면에 보이지도 않는다.
+  */
+  if (!fileId) {
+    redirectWithQuery(returnTo, {
+      error: "어느 녹음의 전사문인지 알 수 없습니다. 자료에 녹음 파일을 먼저 붙여 주세요.",
+    });
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("audio_profiles").upsert(
     {
       source_id: sourceId,
-      source_file_id: fileId ?? null,
+      source_file_id: fileId,
       transcript: transcript.transcript,
       transcript_checksum:
         transcript.transcript === null ? null : (checksum ?? null),
@@ -88,7 +101,12 @@ export async function saveAudioProfile(formData: FormData): Promise<void> {
         17-V.6절이 미룬 자리다.
       */
     },
-    { onConflict: "source_id" },
+    /*
+      **파일마다 하나다.** (2026-10-05) 자료 단위로 묶어두었더니, 한 자료에
+      녹음이 여럿일 때 두 번째에 적으면 첫 번째가 덮였다. 오류가 나지 않아
+      적은 사람은 앞의 것이 사라진 줄 몰랐다.
+    */
+    { onConflict: "source_file_id" },
   );
 
   if (error) {
@@ -136,7 +154,7 @@ export async function saveRecordingFacts(input: {
     그때 앞서 적어둔 전사문까지 지워지면 되살릴 길이 없다. 그래서 담는
     칸을 셋으로 좁힌다.
 
-    `onConflict`로 자료 하나에 한 줄을 지킨다. 표의 unique와 같은 자리다.
+    `onConflict`로 **파일 하나에 한 줄**을 지킨다. 표의 unique와 같은 자리다.
   */
   const { error } = await supabase.from("audio_profiles").upsert(
     {
@@ -145,7 +163,8 @@ export async function saveRecordingFacts(input: {
       duration_seconds: duration.seconds,
       voice_scope: input.voiceScope,
     },
-    { onConflict: "source_id" },
+    // 파일마다 하나다. 위와 같은 까닭이다. (2026-10-05)
+    { onConflict: "source_file_id" },
   );
 
   if (error) {

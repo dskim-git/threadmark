@@ -48,7 +48,7 @@ import { getBookProfile } from "@/lib/books/queries";
 import { getYoutubeProfile } from "@/lib/youtube/queries";
 import { getMediaProfile, listWatchProviders } from "@/lib/media/queries";
 import { getPlaceProfile } from "@/lib/places/queries";
-import { getAudioProfile } from "@/lib/audio/queries";
+import { getAudioProfiles } from "@/lib/audio/queries";
 import { Panel, Reveal } from "@/app/(app)/panel";
 import { NodePicker } from "@/app/(app)/projects/node-picker";
 import { listPlacementsOfSource } from "@/lib/projects/placement-queries";
@@ -147,7 +147,7 @@ export default async function SourceDetailPage({
     mediaProfile,
     watchProviders,
     placeProfile,
-    audioProfile,
+    audioProfiles,
     placements,
     relations,
     allSources,
@@ -176,7 +176,7 @@ export default async function SourceDetailPage({
     // 장소가 아닌 자료에는 조회하지 않는다.
     source.type === "place" ? getPlaceProfile(source.id) : null,
     // 음성이 아닌 자료에는 조회하지 않는다.
-    source.type === "audio" ? getAudioProfile(source.id) : null,
+    source.type === "audio" ? getAudioProfiles(source.id) : new Map(),
     listPlacementsOfSource(source.id),
     listSourceRelations(source.id),
     listSources(),
@@ -623,35 +623,35 @@ export default async function SourceDetailPage({
       {/*
         음성 칸. 음성 유형일 때만 보여준다. (설계 문서 17절, 17-V 4차례)
 
-        **붙어 있는 음성 파일 하나를 함께 넘긴다.** 전사문이 어느 파일의
-        것인지 적어야 파일이 교체되었을 때 알릴 수 있다. (9.2절)
-        여럿이면 처음 것이다. 17-V.2절이 `한 자료에 녹음 하나`를 전제로
-        적어둔 자리이고, 그 전제가 깨지는 것이 보이면 그때 고친다.
+        **붙어 있는 음성 파일을 전부 넘긴다.** 전사문은 **파일마다** 하나다.
+        (2026-10-05) 17-V.2절이 `한 자료에 녹음 하나`를 전제로 적어두고
+        나갈 길을 함께 남겼는데, 사용자가 쓰다가 그 전제가 깨지는 것을
+        찾았다.
       */}
-      {source.type === "audio"
-        ? (() => {
-            const audioFile = files.find((file) =>
-              file.mimeType.startsWith("audio/"),
-            );
+      {source.type === "audio" ? (
+        <AudioPanel
+          sourceId={source.id}
+          returnTo={returnTo}
+          profiles={audioProfiles}
+          /*
+            **붙은 음성 파일을 전부 넘긴다.** (2026-10-05, 사용자가 찾음)
 
-            return (
-              <AudioPanel
-                sourceId={source.id}
-                profile={audioProfile}
-                returnTo={returnTo}
-                file={
-                  audioFile
-                    ? {
-                        id: audioFile.id,
-                        fileName: audioFile.fileName,
-                        checksum: audioFile.checksum,
-                      }
-                    : null
-                }
-              />
-            );
-          })()
-        : null}
+            처음에는 첫 번째 것 하나만 넘겼고, 그래서 **한 자료에 녹음이
+            여럿일 때 첫 번째에만 전사문이 붙었다.** 두 번째에 적으면
+            첫 번째 것이 덮였고 오류는 나지 않았다.
+
+            차례는 `listSourceFiles`가 정한 대로(올린 순서) 둔다.
+            여기서 다시 정렬하지 않는다.
+          */
+          files={files
+            .filter((file) => file.mimeType.startsWith("audio/"))
+            .map((file) => ({
+              id: file.id,
+              fileName: file.fileName,
+              checksum: file.checksum,
+            }))}
+        />
+      ) : null}
 
       {/*
         장소 칸. 장소 유형일 때만 보여준다. (설계 문서 17-1절)

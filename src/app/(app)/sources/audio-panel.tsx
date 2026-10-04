@@ -23,39 +23,109 @@ import { useSourceEditing } from "./source-editing";
  *
  * > 전사문, AI 요약, 확인 여부를 별도 필드로 둔다.
  *
- * **AI 요약은 아직 없다.** 요약할 거리가 전사문이고, 전사문을 사람이 적는
- * 동안에는 요약할 것이 적다. 그리고 Claude는 소리를 받지 않아 AI 전사가
- * 회사를 하나 더 들이는 일이다. (17-V.6절)
+ * **녹음 파일마다 한 칸이다.** (2026-10-05, 사용자가 찾음)
+ *
+ * 처음에는 자료 하나에 한 칸이었고, 그래서 **한 자료에 녹음이 여럿일 때
+ * 첫 번째 것에만 전사문이 붙었다.** 두 번째에 적으면 첫 번째 것이 덮였고
+ * 오류는 나지 않았다. 적은 사람은 앞의 것이 사라진 줄 몰랐다.
+ *
+ * 블루프린트 17-V.2절이 그 전제와 나갈 길을 함께 적어 두었다. **적어둔
+ * 덕에 무엇을 해야 하는지 다시 생각하지 않았다.**
+ *
+ * **전사문은 직접 적는다.** 말을 자동으로 글로 바꿔 주지 않는다. 그러려면
+ * 그 일을 하는 다른 회사의 서비스를 연결해야 하고, 밖으로 녹음을 보내는
+ * 일이라 아직 하지 않았다. (17-V.6절)
  *
  * **지우는 단추를 두지 않는다.** 표에 삭제 표시가 없어서 지우면 되살릴 수
  * 없다. 권한과 정책에서도 막혀 있다. 비우고 저장하면 글만 비워진다.
- * (17-V.2절)
- *
- * 다른 갈래 칸과 같은 모양이다. 읽을 때는 담긴 것만 보이고, 연필을 누르면
- * 입력칸이 열린다.
  */
+
+export type AudioFile = {
+  id: string;
+  fileName: string;
+  checksum: string | null;
+};
+
 export function AudioPanel({
   sourceId,
-  profile,
+  files,
+  profiles,
   returnTo,
-  file,
 }: {
   sourceId: string;
-  /** 아직 아무것도 담지 않았으면 null. */
-  profile: AudioProfile | null;
+  /** 이 자료에 붙은 음성 파일 **전부.** 올린 차례대로다. */
+  files: readonly AudioFile[];
+  /** 파일 번호로 찾는 전사문. 아직 적지 않은 파일은 없다. */
+  profiles: ReadonlyMap<string, AudioProfile>;
   returnTo: string;
-  /**
-   * 이 자료에 붙은 음성 파일. 없을 수 있다.
-   *
-   * **전사문이 어느 파일의 것인지 적는 데 쓴다.** 파일이 없으면 적을
-   * 자리가 없으므로 그 값을 비워 보낸다.
-   */
-  file: { id: string; fileName: string; checksum: string | null } | null;
 }) {
   const editing = useSourceEditing();
 
+  /*
+    **붙은 녹음이 없으면 칸을 만들지 않는다.**
+
+    적을 자리가 없고, 빈 칸을 보여주면 "여기 뭘 적지"가 된다. 녹음을
+    붙이는 길은 `파일` 칸에 있다.
+  */
+  if (files.length === 0) {
+    return null;
+  }
+
+  return (
+    <Panel
+      title="음성"
+      help="audio-listen"
+      helpLabel="음성 메모"
+      hint={
+        editing
+          ? "들으면서 직접 옮겨 적는 칸입니다. 말을 자동으로 글로 바꿔 주지는 않습니다. 적어둔 글은 검색으로 찾을 수 있고, 공개되지는 않습니다."
+          : undefined
+      }
+    >
+      {files.map((file) => (
+        <AudioFileSection
+          key={file.id}
+          sourceId={sourceId}
+          file={file}
+          profile={profiles.get(file.id) ?? null}
+          returnTo={returnTo}
+          editing={editing}
+          /*
+            녹음이 하나뿐이면 파일 이름을 머리말로 내걸지 않는다.
+            칸 이름이 이미 `음성`이고, 한 줄이 더 생길 뿐이다.
+          */
+          showName={files.length > 1}
+        />
+      ))}
+    </Panel>
+  );
+}
+
+/**
+ * 녹음 하나의 전사문.
+ *
+ * **상태를 파일마다 따로 든다.** 한 곳에서 모아 들면 파일을 바꿀 때마다
+ * 적던 글이 섞인다. 기록 카드가 카드마다 따로 접히는 것과 같은 생각이다.
+ */
+function AudioFileSection({
+  sourceId,
+  file,
+  profile,
+  returnTo,
+  editing,
+  showName,
+}: {
+  sourceId: string;
+  file: AudioFile;
+  profile: AudioProfile | null;
+  returnTo: string;
+  editing: boolean;
+  showName: boolean;
+}) {
   const [transcript, setTranscript] = useState(profile?.transcript ?? "");
-  const [voiceScope, setVoiceScope] = useState(profile?.voiceScope ?? "");
+  const [voiceScope, setVoiceScope] = useState<string>(
+    profile?.voiceScope ?? "",
+  );
 
   /*
     전사문을 적은 뒤에 파일이 교체되었는가. (설계 문서 9.2절)
@@ -66,11 +136,19 @@ export function AudioPanel({
   */
   const stale =
     profile !== null &&
-    file !== null &&
     transcriptIsStale({
       storedChecksum: profile.transcriptChecksum,
       fileChecksum: file.checksum,
     });
+
+  const heading = showName ? (
+    <h3
+      title={file.fileName}
+      className="truncate text-xs font-medium text-zinc-600 dark:text-zinc-400"
+    >
+      {file.fileName}
+    </h3>
+  ) : null;
 
   const staleNotice = stale ? (
     <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
@@ -81,7 +159,8 @@ export function AudioPanel({
 
   if (!editing) {
     return (
-      <Panel title="음성" help="audio-listen" helpLabel="음성 메모">
+      <section className="flex flex-col gap-2">
+        {heading}
         {staleNotice}
 
         <RecordedFields
@@ -111,22 +190,25 @@ export function AudioPanel({
             },
           ]}
         />
-      </Panel>
+      </section>
     );
   }
 
   return (
-    <Panel
-      title="음성"
-      help="audio-listen"
-      helpLabel="음성 메모"
-      hint="들으면서 **직접** 옮겨 적는 칸입니다. 말을 자동으로 글로 바꿔 주지는 않습니다. 적어둔 글은 검색으로 찾을 수 있고, 공개되지는 않습니다."
-    >
+    <section className="flex flex-col gap-4 rounded-xl border border-black/[.06] p-4 dark:border-white/[.1]">
+      {heading}
       {staleNotice}
 
       <form action={saveAudioProfile} className="flex flex-col gap-4">
         <input type="hidden" name="sourceId" value={sourceId} />
         <input type="hidden" name="returnTo" value={returnTo} />
+
+        {/*
+          **어느 녹음의 전사문인지.** 이 값이 줄을 가린다. (2026-10-05)
+          파일마다 한 줄이라, 이것이 없으면 담을 자리를 찾을 수 없다.
+        */}
+        <input type="hidden" name="sourceFileId" value={file.id} />
+        <input type="hidden" name="fileChecksum" value={file.checksum ?? ""} />
 
         {/*
           길이는 녹음할 때 담긴다. 여기서 손으로 고치게 하지 않는다.
@@ -138,13 +220,6 @@ export function AudioPanel({
           value={profile?.durationSeconds ?? ""}
         />
 
-        {/*
-          전사문이 어느 파일의 것인지. 파일이 붙어 있을 때만 적는다.
-          비어 있으면 서버가 비운 채로 담는다.
-        */}
-        <input type="hidden" name="sourceFileId" value={file?.id ?? ""} />
-        <input type="hidden" name="fileChecksum" value={file?.checksum ?? ""} />
-
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
             누구의 목소리인가
@@ -154,8 +229,8 @@ export function AudioPanel({
             **고르는 자리에 동의를 붙여 둔다.** (17-V.5절) 안내문을 따로
             띄우는 것보다 고르는 그 순간에 붙어 있는 편이 읽힌다.
 
-            비워둘 수 있게 한다. 혼자 쓰는 녹음에는 이 구분이 쓸모없을 수
-            있다. 다만 **비어 있으면 나중에도 공개할 수 없다.**
+            비워둘 수 있다. 혼자 쓰는 녹음에는 이 구분이 쓸모없을 수 있다.
+            다만 **비어 있으면 나중에도 공개할 수 없다.**
           */}
           <div className="flex flex-col gap-2">
             {VOICE_SCOPES.map((scope) => (
@@ -207,9 +282,6 @@ export function AudioPanel({
           <span className="text-xs text-zinc-500">
             {transcript.length.toLocaleString("ko-KR")} /{" "}
             {MAX_TRANSCRIPT_LENGTH.toLocaleString("ko-KR")}자
-            {file === null
-              ? " · 이 자료에 붙은 녹음 파일이 없습니다"
-              : ` · ${file.fileName}`}
           </span>
         </label>
 
@@ -226,11 +298,10 @@ export function AudioPanel({
             지우면 되살릴 수 없다. 비우고 저장하면 글만 비워진다.
           */}
           <span className="text-xs text-zinc-500">
-            전사문은 공개되지 않습니다. 녹음에 다른 분의 목소리가 담겼을 수
-            있기 때문입니다.
+            전사문은 공개되지 않습니다.
           </span>
         </div>
       </form>
-    </Panel>
+    </section>
   );
 }

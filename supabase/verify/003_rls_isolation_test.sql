@@ -9157,6 +9157,116 @@ end
 $$;
 
 
+
+-- -----------------------------------------------------------------------------
+-- 148. 한 자료의 녹음 둘에 각각 전사문을 담을 수 있다 (열려야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **사용자가 쓰다가 찾은 고장이다.** (2026-10-05)
+--
+-- > 한 자료에 여러 음성 파일이 있을 수 있는데 지금은 한 자료 내에서 첫번째
+-- > 저장된 음성 파일에만 전사문이 저장되는것 같아.
+--
+-- 처음에 `source_id`에 unique를 걸어 **자료 하나에 한 줄**이었다. 두 번째
+-- 녹음에 적으면 upsert가 첫 번째 줄을 덮었고 **오류는 나지 않았다.**
+-- 적은 사람은 앞의 것이 사라진 줄 모른다.
+--
+-- **막는 것만 쓰고 여는 것을 안 써서 생긴 자리다.** (보안 원칙 6)
+-- 144·146·147은 전부 막는 것이었고, 145는 한 줄만 보았다. 둘을 함께 담아
+-- 본 검사가 없었다.
+--
+-- 아래에서 둘을 함께 본다.
+--   1. 같은 자료의 **다른 파일 둘**에 각각 담긴다 (열려야 하는 것)
+--   2. **같은 파일에 둘**은 담기지 않는다 (막아야 하는 것)
+do $$
+declare
+  v_owner  uuid;
+  v_source uuid;
+  v_file_a uuid;
+  v_file_b uuid;
+  v_rows   integer := 0;
+  v_text_a text;
+  v_text_b text;
+  v_blocked boolean := false;
+begin
+  select user_id into v_owner
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  insert into public.sources (owner_id, type, title)
+  values (v_owner, 'audio'::public.source_type, 'RLS 검사용 녹음 둘')
+  returning id into v_source;
+
+  insert into public.source_files
+    (owner_id, source_id, status, file_name, mime_type, byte_size, drive_file_id)
+  values
+    (v_owner, v_source, 'ready'::public.source_file_status,
+     '첫째 녹음.webm', 'audio/webm', 1024, 'drive-check-148-a')
+  returning id into v_file_a;
+
+  insert into public.source_files
+    (owner_id, source_id, status, file_name, mime_type, byte_size, drive_file_id)
+  values
+    (v_owner, v_source, 'ready'::public.source_file_status,
+     '둘째 녹음.webm', 'audio/webm', 2048, 'drive-check-148-b')
+  returning id into v_file_b;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text,
+    true
+  );
+
+  insert into public.audio_profiles (source_id, source_file_id, transcript)
+  values (v_source, v_file_a, '첫째 녹음을 옮긴 글');
+
+  insert into public.audio_profiles (source_id, source_file_id, transcript)
+  values (v_source, v_file_b, '둘째 녹음을 옮긴 글');
+
+  select count(*) into v_rows
+  from public.audio_profiles where source_id = v_source;
+
+  select transcript into v_text_a
+  from public.audio_profiles where source_file_id = v_file_a;
+
+  select transcript into v_text_b
+  from public.audio_profiles where source_file_id = v_file_b;
+
+  -- 같은 파일에 둘은 안 된다. 그것이 덮이면 앞의 글을 잃는다.
+  begin
+    insert into public.audio_profiles (source_id, source_file_id, transcript)
+    values (v_source, v_file_a, '같은 파일에 또 담은 글');
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  delete from public.audio_profiles where source_id = v_source;
+  delete from public.source_files where source_id = v_source;
+  delete from public.sources where id = v_source;
+
+  if v_rows <> 2 then
+    raise exception
+      '검사 148 실패: 한 자료의 녹음 둘에 전사문이 각각 담기지 않았습니다. 담긴 줄은 %개입니다.',
+      v_rows;
+  end if;
+
+  if v_text_a is distinct from '첫째 녹음을 옮긴 글'
+     or v_text_b is distinct from '둘째 녹음을 옮긴 글' then
+    raise exception
+      '검사 148 실패: 녹음마다 다른 전사문이 담기지 않았습니다. 하나가 다른 하나를 덮었습니다.';
+  end if;
+
+  if not v_blocked then
+    raise exception
+      '검사 148 실패: 같은 녹음에 전사문을 둘 담을 수 있었습니다. 앞의 글을 잃습니다.';
+  end if;
+end
+$$;
+
+
 -- =============================================================================
 -- 모두 통과
 -- =============================================================================
@@ -9261,6 +9371,18 @@ select
   (select count(*) from public.audio_profiles
     where verification_status
           <> 'user_written'::public.capture_verification_status)        as 기계가_옮긴_전사문,
+  /*
+    **녹음이 여럿인 자료.** (2026-10-05)
+
+    전사문이 자료마다 하나였을 때 **두 번째 녹음에 적으면 첫 번째가
+    덮였다.** 그 고장이 이 숫자가 0이 아닐 때만 보인다. 0이면 그 자리를
+    눌러본 적이 없다는 뜻이고, 검사 148이 대신 봐 준다.
+  */
+  (select count(*) from (
+    select source_id from public.source_files
+    where mime_type like 'audio/%'
+    group by source_id having count(*) > 1
+  ) t)                                                                  as 녹음_여럿인_자료,
   (select count(*) from public.place_profiles)                          as 장소,
   (select count(*) from public.place_profiles
     where latitude is not null)                                         as 좌표_있는_장소,
