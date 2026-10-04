@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { installStreamAsyncIterator } from "@/lib/pdf/stream-async-iterator";
 
+import { bindTextSelection } from "./text-selection";
+
 import "./text-layer.css";
 
 /**
@@ -228,6 +230,15 @@ export function PdfReader({
   /** 진행 중인 그리기. 페이지를 빠르게 넘길 때 앞의 것을 멈추는 데 쓴다. */
   const renderRef = useRef<{ cancel: () => void } | null>(null);
   const textRenderRef = useRef<PdfTextLayer | null>(null);
+
+  /*
+    고르는 동작을 뗄 때 부를 함수. (2026-10-04)
+
+    쪽마다 매달고 다음 쪽을 그리기 전에 뗀다. **떼지 않으면 문서에 매단
+    것이 쌓여 쪽을 넘길수록 느려진다.** 그리고 지워진 쪽의 덮개를 붙잡고
+    있는 셈이라 엉뚱한 층을 덮으려 든다.
+  */
+  const unbindSelectionRef = useRef<(() => void) | null>(null);
   /** PDF.js 모듈. 글자 층을 만들 때 다시 쓴다. */
   const pdfjsRef = useRef<typeof import("pdfjs-dist") | null>(null);
 
@@ -349,6 +360,8 @@ export function PdfReader({
     // 페이지를 빠르게 넘기면 그리기가 겹쳐서 엉뚱한 쪽이 남는다.
     renderRef.current?.cancel();
     textRenderRef.current?.cancel();
+    unbindSelectionRef.current?.();
+    unbindSelectionRef.current = null;
 
     let target: PdfPage;
 
@@ -423,6 +436,21 @@ export function PdfReader({
     });
 
     textRenderRef.current = rendered.textLayer;
+
+    /*
+      글자를 그린 뒤에 고르는 동작을 매단다. (2026-10-04, 사용자가 찾음)
+
+      `pdfjs.TextLayer`는 글자만 그린다. 드래그가 자연스럽게 되게 하는
+      일은 pdf.js **뷰어 쪽**에 있고 우리는 그것을 쓰지 않는다. 그래서
+      `text-layer.css`에 `.selecting`과 `.endOfContent` 규칙만 있고
+      **그 규칙을 켜주는 코드가 없었다.** 까닭은 `text-selection.ts`에 적었다.
+
+      글자가 없는 쪽(스캔본)에는 매달지 않는다. 고를 것이 없다.
+    */
+    if (rendered.textLayer && textLayerRef.current) {
+      unbindSelectionRef.current = bindTextSelection(textLayerRef.current);
+    }
+
     setText(rendered.text);
 
     target.cleanup();
@@ -622,6 +650,16 @@ export function PdfReader({
       if (last.ready) {
         last.notify?.(last.page, last.zoom);
       }
+
+      /*
+        화면을 떠날 때도 고르는 동작을 뗀다. (2026-10-04)
+
+        쪽을 넘길 때는 다시 그리는 쪽에서 떼는데, **화면을 떠나면 다시
+        그릴 일이 없어 그 자리를 지나지 않는다.** 문서에 매단 것이 남아
+        사라진 쪽의 덮개를 붙잡고 있게 된다.
+      */
+      unbindSelectionRef.current?.();
+      unbindSelectionRef.current = null;
     };
   }, []);
 
