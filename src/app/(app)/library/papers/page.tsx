@@ -8,7 +8,7 @@ import { listPapers } from "@/lib/papers/queries";
 import { PAPER_SORTS, readPaperSort } from "@/lib/sources/sorting";
 
 export const metadata: Metadata = {
-  title: "논문 · ThreadMark",
+  title: "논문",
   description: "저장한 논문을 참고문헌 형태로 모아 봅니다.",
 };
 

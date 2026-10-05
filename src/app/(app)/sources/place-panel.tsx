@@ -454,9 +454,65 @@ export function PlacePanel({
     **좌표는 보여주지 않는다.** 숫자 두 줄이 사람에게 말해주는 것이 거의
     없고, 가는 길은 지도 링크가 맡는다. 고칠 때만 보인다.
   */
+  /*
+    지도와 링크. **읽을 때도 그린다.** (2026-10-05, 사용자 요청)
+
+    > 수정버튼을 누르지 않아도 지금 설정된 장소의 임베딩된 장소가 나오게
+    > 해줘. (…) 영상 자료랑 비슷하게 말이야.
+
+    **고치는 중에만 보이던 자리다.** 지도가 폼 안에 있어서, 읽기 먼저로
+    바꾸면서 함께 숨었다. (4-69) 그런데 **지도는 바꾸는 길이 아니라 담아둔
+    것 자체다.** 영상 자료가 재생기를 늘 보여주는 것과 같다.
+
+    찾아 고른 주소가 맞는 곳인지는 **글자로 봐서는 알 수 없다.** 17-2.1절이
+    지도를 그리기로 한 까닭이 그것이고, 그 까닭은 읽을 때도 그대로다.
+
+    **한 번만 만들어 둘 다 쓴다.** 두 벌로 적으면 한쪽만 고쳐진다.
+  */
+  const mapView = canLink ? (
+    <PlaceMap
+      key={`${latNumber},${lngNumber},${region}`}
+      latitude={latNumber}
+      longitude={lngNumber}
+      name={name.trim() === "" ? "담아둔 곳" : name}
+      region={region}
+    />
+  ) : null;
+
+  const mapLinks = canLink ? (
+    <div className="flex flex-wrap items-center gap-4">
+      <a
+        href={kakaoMapUrl(latNumber, lngNumber, name)}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
+      >
+        카카오맵에서 열기 →
+      </a>
+
+      <a
+        href={googleMapsUrl(latNumber, lngNumber)}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
+      >
+        구글 지도에서 열기 →
+      </a>
+
+      <span className="text-xs text-zinc-500">길찾기는 이쪽에서 됩니다.</span>
+    </div>
+  ) : null;
+
   if (!editing) {
     return (
       <Panel title="장소" help="place" helpLabel="장소">
+        {/*
+          **담아둔 것이 없으면 지도도 없다.** `canLink`가 좌표를 보고 정한다.
+          장소를 등록하지 않았으면 빈 칸과 이름만 남는다. (4-73)
+        */}
+        {mapView}
+        {mapLinks}
+
         <RecordedFields
           emptyText="이 장소에 대해 아직 적어둔 것이 없습니다."
           fields={[
@@ -975,26 +1031,17 @@ export function PlacePanel({
           못 그린다.** 어느 지도를 그릴지는 `PlaceMap`이 `region`을 보고
           정한다.
         */}
-        {canLink ? (
-          <PlaceMap
-            /*
-              좌표와 국내·해외를 `key`로 준다.
+        {/*
+          위에서 만들어 둔 지도를 그대로 쓴다. 읽을 때와 같은 것이다.
 
-              **다른 장소를 고르면 지도를 처음부터 다시 만든다.** 안 그러면
-              앞 장소에서 지도가 실패했을 때 그 안내문이 새 장소에도 남는다.
-              그 칸 안에서 손으로 되돌리는 것보다 이 편이 짧고 틀릴 데가 없다.
-
-              **국내·해외도 함께 넣는다.** 그리는 쪽이 바뀌는 값이다.
-              좌표만 넣으면 카카오맵이 실패한 자리에서 해외로 바꿨을 때
-              **구글 지도가 떴는데도 카카오 실패 안내문이 그대로 남는다.**
-            */
-            key={`${latNumber},${lngNumber},${region}`}
-            latitude={latNumber}
-            longitude={lngNumber}
-            name={name.trim() === "" ? "담아둔 곳" : name}
-            region={region}
-          />
-        ) : null}
+          `key`에 좌표와 국내·해외를 넣는 까닭은 **다른 장소를 고르면 지도를
+          처음부터 다시 만들기** 위해서다. 안 그러면 앞 장소에서 지도가
+          실패했을 때 그 안내문이 새 장소에도 남는다. 국내·해외도 넣는 것은
+          그리는 쪽이 바뀌는 값이기 때문이다. 좌표만 넣으면 카카오맵이
+          실패한 자리에서 해외로 바꿨을 때 **구글 지도가 떴는데도 카카오
+          실패 안내문이 그대로 남는다.**
+        */}
+        {mapView}
 
         {/*
           지도로 가는 링크. **지도 아래에 남긴다.** (2026-09-25, 사용자가 정함)
@@ -1011,31 +1058,8 @@ export function PlacePanel({
           해외가 부실하다. **어느 쪽이 나은지는 그 장소가 어디인지에
           달렸으므로 사용자가 고른다.** (17-1.3절)
         */}
-        {canLink ? (
-          <div className="flex flex-wrap items-center gap-4">
-            <a
-              href={kakaoMapUrl(latNumber, lngNumber, name)}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
-            >
-              카카오맵에서 열기 →
-            </a>
-
-            <a
-              href={googleMapsUrl(latNumber, lngNumber)}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="text-sm text-zinc-600 underline underline-offset-4 transition-colors hover:text-accent dark:text-zinc-400 dark:hover:text-accent-dark"
-            >
-              구글 지도에서 열기 →
-            </a>
-
-            <span className="text-xs text-zinc-500">
-              길찾기는 이쪽에서 됩니다.
-            </span>
-          </div>
-        ) : null}
+        {/* 위에서 만들어 둔 링크를 그대로 쓴다. 읽을 때와 같은 것이다. */}
+        {mapLinks}
 
         <div className="flex flex-wrap items-center gap-3">
           <button

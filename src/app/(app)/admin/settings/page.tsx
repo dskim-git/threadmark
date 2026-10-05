@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { updateApprovalSetting } from "./actions";
 
 export const metadata: Metadata = {
-  title: "가입 설정 · ThreadMark",
+  title: "가입 설정",
   description: "신규 가입 승인 정책을 관리합니다.",
 };
 

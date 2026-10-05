@@ -11,7 +11,7 @@ import { getSourceById } from "@/lib/sources/queries";
 import { DrawingWorkbench } from "./drawing-workbench";
 
 export const metadata: Metadata = {
-  title: "그림판 · ThreadMark",
+  title: "그림판",
 };
 
 /**

@@ -6,7 +6,7 @@ import { contactEmail } from "@/lib/legal/contact";
 import { PRIVACY_SECTIONS, SERVICE_URL } from "@/lib/legal/content";
 
 export const metadata: Metadata = {
-  title: "개인정보 처리방침 · ThreadMark",
+  title: "개인정보 처리방침",
   description:
     "ThreadMark가 무엇을 가지고 있고, 어디에 맡기고, 어떻게 지우는지 적어둔 글입니다.",
 };

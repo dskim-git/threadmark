@@ -8,7 +8,7 @@ import {
 } from "@/lib/legal/attribution";
 
 export const metadata: Metadata = {
-  title: "출처 표기 · ThreadMark",
+  title: "출처 표기",
   description: "ThreadMark가 자료를 가져오는 곳과 그 표기입니다.",
 };
 

@@ -9,7 +9,7 @@ import { getSourceById } from "@/lib/sources/queries";
 import { Recorder } from "./recorder";
 
 export const metadata: Metadata = {
-  title: "녹음 · ThreadMark",
+  title: "녹음",
 };
 
 /**

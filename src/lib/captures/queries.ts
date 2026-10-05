@@ -1,5 +1,6 @@
 import { requireActiveAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
+import { buildIlikeFilter, normalizeSearchTerm } from "@/lib/search/query";
 
 import {
   parseMusicTimeLocator,
@@ -168,6 +169,18 @@ export async function listCapturesForSource(
   sourceId: string,
   starredOnly = false,
   onlyIds?: readonly string[],
+  /**
+   * 이 글자가 든 기록만. (2026-10-05, 사용자 요청)
+   *
+   * **자료 안에서만 찾는다.** 앱 전체를 뒤지는 `글자로 찾기`(`/search`)와
+   * 다른 자리다. 한 자료에 기록이 마흔 건씩 쌓이면 그 안에서 한 줄을
+   * 눈으로 찾기 어렵다.
+   *
+   * 뒤지는 칸은 **앱 전체 검색과 같다.** 내가 적은 글, 인용한 원문,
+   * 옮긴 글이다. 같은 말로 찾는데 두 화면이 다른 것을 뒤지면, 한쪽에서
+   * 찾은 것이 다른 쪽에서 안 나온다.
+   */
+  term?: string | null,
 ): Promise<Capture[]> {
   await requireActiveAccount();
 
@@ -186,6 +199,22 @@ export async function listCapturesForSource(
 
   if (onlyIds !== undefined) {
     query = query.in("id", onlyIds);
+  }
+
+  /*
+    **막아 쓰는 일을 직접 하지 않는다.** 검색어에는 `%`나 `,`처럼 뜻이
+    있는 글자가 섞여 들어오고, 그대로 넘기면 **오류 없이 결과만
+    틀린다.** `search/query.ts`가 그 일을 하려고 있는 파일이다.
+  */
+  const needle = normalizeSearchTerm(term);
+
+  if (needle !== null) {
+    query = query.or(
+      buildIlikeFilter(
+        ["content", "original_text", "translated_text"],
+        needle,
+      ),
+    );
   }
 
   const { data, error } = await query;

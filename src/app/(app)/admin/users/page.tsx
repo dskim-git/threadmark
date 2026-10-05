@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { grantAiUsage, updateUserStatus } from "./actions";
 
 export const metadata: Metadata = {
-  title: "사용자 승인 · ThreadMark",
+  title: "사용자 승인",
   description: "가입 신청을 검토하고 승인 상태를 변경합니다.",
 };
 

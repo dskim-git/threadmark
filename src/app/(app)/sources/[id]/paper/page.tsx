@@ -12,7 +12,7 @@ import { getSourceById } from "@/lib/sources/queries";
 import { PaperForm } from "../../paper-form";
 
 export const metadata: Metadata = {
-  title: "논문 정보 · ThreadMark",
+  title: "논문 정보",
 };
 
 /**

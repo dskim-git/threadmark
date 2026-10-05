@@ -7,7 +7,7 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { listProjects } from "@/lib/projects/queries";
 
 export const metadata: Metadata = {
-  title: "프로젝트 · ThreadMark",
+  title: "프로젝트",
   description: "자료를 활용하는 목적 단위를 관리합니다.",
 };
 

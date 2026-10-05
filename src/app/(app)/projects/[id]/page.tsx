@@ -41,7 +41,7 @@ import { OutlinePanel } from "../outline-panel";
 import { SharePanel } from "../share-panel";
 
 export const metadata: Metadata = {
-  title: "프로젝트 · ThreadMark",
+  title: "프로젝트",
 };
 
 export default async function ProjectDetailPage({

@@ -6,7 +6,7 @@ import { contactEmail } from "@/lib/legal/contact";
 import { SERVICE_URL, TERMS_SECTIONS } from "@/lib/legal/content";
 
 export const metadata: Metadata = {
-  title: "서비스 약관 · ThreadMark",
+  title: "서비스 약관",
   description:
     "ThreadMark가 무엇을 해드리고 무엇은 약속드리지 못하는지 적어둔 글입니다.",
 };

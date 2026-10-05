@@ -33,7 +33,7 @@ import {
 import { toggleSourceStar } from "../sources/actions";
 
 export const metadata: Metadata = {
-  title: "내 자료 · ThreadMark",
+  title: "내 자료",
   description: "저장한 자료를 모아 봅니다.",
 };
 

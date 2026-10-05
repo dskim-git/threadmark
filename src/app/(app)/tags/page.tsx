@@ -10,7 +10,7 @@ import { deleteTag, renameTag } from "./actions";
 import { TagName } from "./tag-name";
 
 export const metadata: Metadata = {
-  title: "태그 · ThreadMark",
+  title: "태그",
   description: "붙여둔 태그를 모아 보고 이름을 고칩니다.",
 };
 

@@ -6,7 +6,16 @@ import { getAccount } from "@/lib/auth/account";
 import { canAccessProtectedArea } from "@/lib/auth/status";
 
 export const metadata: Metadata = {
-  title: "ThreadMark",
+  /*
+    **이 화면만 틀을 비껴간다.** (2026-10-05)
+
+    첫 화면은 앱 그 자체라 이름이 따로 없다. 틀을 그대로 받으면
+    `ThreadMark · ThreadMark`가 된다. 오류가 나지 않고 탭만 이상해진다.
+    `absolute`가 틀을 쓰지 않는다는 뜻이다.
+
+    검사가 이것을 잡았다. (`tests/page-title.test.mjs`)
+  */
+  title: { absolute: "ThreadMark" },
   description:
     "자료와 그때 떠오른 생각을 출처와 함께 남기고, 프로젝트로 이어 쓰는 개인 지식 작업 공간입니다.",
 };

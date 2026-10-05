@@ -9,7 +9,7 @@ import { SEARCH_LIMIT, search } from "@/lib/search/queries";
 import { getSourceTypeLabel, isReadingCandidate } from "@/lib/sources/types";
 
 export const metadata: Metadata = {
-  title: "찾기 · ThreadMark",
+  title: "찾기",
   description: "담아둔 자료와 기록에서 글자로 찾습니다.",
 };
 

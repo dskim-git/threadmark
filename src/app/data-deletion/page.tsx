@@ -6,7 +6,7 @@ import { contactEmail } from "@/lib/legal/contact";
 import { DELETION_SECTIONS } from "@/lib/legal/content";
 
 export const metadata: Metadata = {
-  title: "계정·자료 삭제 안내 · ThreadMark",
+  title: "계정·자료 삭제 안내",
   description: "ThreadMark 계정과 담아둔 자료를 지우는 방법입니다.",
 };
 

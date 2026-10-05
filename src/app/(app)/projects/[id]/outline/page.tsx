@@ -22,7 +22,7 @@ import { getProjectById } from "@/lib/projects/queries";
 import { getSourceTypeLabel } from "@/lib/sources/types";
 
 export const metadata: Metadata = {
-  title: "조망 · ThreadMark",
+  title: "조망",
 };
 
 /**

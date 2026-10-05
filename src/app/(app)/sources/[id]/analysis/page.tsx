@@ -11,7 +11,7 @@ import { getSourceById } from "@/lib/sources/queries";
 import { AnalysisForm } from "../../analysis-form";
 
 export const metadata: Metadata = {
-  title: "논문 분석 · ThreadMark",
+  title: "논문 분석",
 };
 
 /**

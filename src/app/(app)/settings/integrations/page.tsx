@@ -14,7 +14,7 @@ import {
 } from "./actions";
 
 export const metadata: Metadata = {
-  title: "연결 설정 · ThreadMark",
+  title: "연결 설정",
   description: "외부 서비스 연결을 관리합니다.",
 };
 

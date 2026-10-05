@@ -6,7 +6,7 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { SearchLinks } from "./search-links";
 
 export const metadata: Metadata = {
-  title: "연구 검색 · ThreadMark",
+  title: "연구 검색",
   description: "논문 검색 사이트로 한 번에 갑니다.",
 };
 

@@ -7,7 +7,7 @@ import { createProject } from "../actions";
 import { ProjectForm } from "../project-form";
 
 export const metadata: Metadata = {
-  title: "새 프로젝트 · ThreadMark",
+  title: "새 프로젝트",
   description: "자료를 활용하는 목적 단위를 새로 만듭니다.",
 };
 

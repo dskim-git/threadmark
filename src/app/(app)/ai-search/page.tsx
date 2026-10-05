@@ -8,7 +8,7 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { AskForm } from "./ask-form";
 
 export const metadata: Metadata = {
-  title: "AI에게 물어보기 · ThreadMark",
+  title: "AI에게 물어보기",
   description: "담아둔 자료와 기록에서 물음에 답합니다.",
 };
 

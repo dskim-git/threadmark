@@ -24,7 +24,7 @@ import {
 } from "@/lib/tags/queries";
 
 export const metadata: Metadata = {
-  title: "빠른 기록 · ThreadMark",
+  title: "빠른 기록",
   description: "자료에 붙이지 않은 기록을 모아 봅니다.",
 };
 

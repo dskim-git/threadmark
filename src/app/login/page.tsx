@@ -5,7 +5,7 @@ import { sanitizeNextPath } from "@/lib/auth/request-url";
 import { signInWithGoogle } from "./actions";
 
 export const metadata: Metadata = {
-  title: "로그인 · ThreadMark",
+  title: "로그인",
   description: "ThreadMark에 로그인합니다.",
 };
 

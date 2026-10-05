@@ -6,7 +6,7 @@ import { getAccount } from "@/lib/auth/account";
 import { GUIDE_SECTIONS } from "@/lib/guide/content";
 
 export const metadata: Metadata = {
-  title: "사용법 · ThreadMark",
+  title: "사용법",
   description: "ThreadMark를 처음 쓰는 분을 위한 안내입니다.",
 };
 

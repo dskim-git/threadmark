@@ -9,7 +9,7 @@ import { updateProject } from "../../actions";
 import { ProjectForm } from "../../project-form";
 
 export const metadata: Metadata = {
-  title: "프로젝트 수정 · ThreadMark",
+  title: "프로젝트 수정",
 };
 
 export default async function EditProjectPage({

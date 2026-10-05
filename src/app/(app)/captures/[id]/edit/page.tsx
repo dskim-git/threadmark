@@ -12,7 +12,7 @@ import { PlacedWhere } from "@/app/(app)/projects/placed-where";
 import { CaptureForm } from "../../capture-form";
 
 export const metadata: Metadata = {
-  title: "기록 수정 · ThreadMark",
+  title: "기록 수정",
 };
 
 export default async function EditCapturePage({

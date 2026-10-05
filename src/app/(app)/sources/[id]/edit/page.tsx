@@ -9,7 +9,7 @@ import { updateSource } from "../../actions";
 import { SourceForm } from "../../source-form";
 
 export const metadata: Metadata = {
-  title: "자료 수정 · ThreadMark",
+  title: "자료 수정",
 };
 
 export default async function EditSourcePage({

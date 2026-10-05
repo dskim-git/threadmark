@@ -9,7 +9,7 @@ import { listSources } from "@/lib/sources/queries";
 import { getSourceTypeLabel, isReadingCandidate } from "@/lib/sources/types";
 
 export const metadata: Metadata = {
-  title: "홈 · ThreadMark",
+  title: "홈",
   description: "담아둔 것과 이어서 할 일을 봅니다.",
 };
 

@@ -61,16 +61,6 @@ export function AudioPanel({
 }) {
   const editing = useSourceEditing();
 
-  /*
-    **붙은 녹음이 없으면 칸을 만들지 않는다.**
-
-    적을 자리가 없고, 빈 칸을 보여주면 "여기 뭘 적지"가 된다. 녹음을
-    붙이는 길은 `파일` 칸에 있다.
-  */
-  if (files.length === 0) {
-    return null;
-  }
-
   return (
     <Panel
       title="음성"
@@ -82,6 +72,19 @@ export function AudioPanel({
           : undefined
       }
     >
+      {/*
+        **붙은 녹음이 없어도 칸은 남는다.** (2026-10-05, 사용자가 정함)
+
+        처음에는 칸째로 숨겼는데, 그러면 **무엇을 담는 자리인지 알 길이
+        없다.** 비었다는 말 한 줄이 그 칸의 내용이다. 다른 칸들과 같다.
+      */}
+      {files.length === 0 ? (
+        <p className="text-sm leading-6 text-zinc-500">
+          이 자료에 붙은 녹음이 없습니다. 아래 `파일` 칸에서 녹음을 올리거나
+          `녹음하기`로 바로 녹음할 수 있습니다.
+        </p>
+      ) : null}
+
       {files.map((file) => (
         <AudioFileSection
           key={file.id}

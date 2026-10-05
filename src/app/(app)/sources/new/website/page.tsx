@@ -7,7 +7,7 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { WebsiteForm } from "../../website-form";
 
 export const metadata: Metadata = {
-  title: "웹사이트 담기 · ThreadMark",
+  title: "웹사이트 담기",
   description: "읽은 웹페이지를 주소로 담습니다.",
 };
 

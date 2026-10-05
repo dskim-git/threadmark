@@ -15,7 +15,7 @@ import { getDriveConnectionSummary } from "@/lib/drive/connection";
 import { saveAppearance } from "./actions";
 
 export const metadata: Metadata = {
-  title: "설정 · ThreadMark",
+  title: "설정",
   description: "계정과 연결을 확인합니다.",
 };
 

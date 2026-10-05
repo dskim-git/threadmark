@@ -6,7 +6,7 @@ import { requireAccount } from "@/lib/auth/account";
 import { canAccessProtectedArea, getStatusNotice } from "@/lib/auth/status";
 
 export const metadata: Metadata = {
-  title: "승인 상태 · ThreadMark",
+  title: "승인 상태",
   description: "ThreadMark 가입 승인 상태를 안내합니다.",
 };
 

@@ -9,7 +9,7 @@ import { canAccessProtectedArea } from "@/lib/auth/status";
 import { deleteMyAccount } from "./actions";
 
 export const metadata: Metadata = {
-  title: "계정 지우기 · ThreadMark",
+  title: "계정 지우기",
   description: "ThreadMark 계정과 담아둔 자료를 모두 지웁니다.",
 };
 

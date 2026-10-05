@@ -36,7 +36,7 @@ import { ImageReaderView } from "./image-reader-view";
 import { ReaderView, type PanelTab } from "./reader-view";
 
 export const metadata: Metadata = {
-  title: "읽기 · ThreadMark",
+  title: "읽기",
 };
 
 /**

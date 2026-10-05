@@ -9,7 +9,7 @@ import {
 } from "@/lib/sharing/public-payload";
 
 export const metadata: Metadata = {
-  title: "공개된 프로젝트 · ThreadMark",
+  title: "공개된 프로젝트",
   /*
     **검색에 걸리지 않게 한다.**
 

@@ -9,7 +9,7 @@ import { isSourceType } from "@/lib/sources/types";
 import { NewSourceForm } from "../new-source-form";
 
 export const metadata: Metadata = {
-  title: "자료 등록 · ThreadMark",
+  title: "자료 등록",
   description: "새 자료를 등록합니다.",
 };
 

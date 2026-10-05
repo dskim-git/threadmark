@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { createCapture } from "@/app/(app)/captures/actions";
 import { CaptureForm } from "@/app/(app)/captures/capture-form";
 import { CaptureList } from "@/app/(app)/captures/capture-list";
+import { CaptureTools } from "@/app/(app)/captures/capture-tools";
 import { linkSourceToProject, unlinkSourceFromProject } from "@/app/(app)/projects/actions";
 import { AutoNotice } from "@/app/(app)/auto-notice";
 import { HelpButton } from "@/app/(app)/help-button";
@@ -15,7 +16,6 @@ import {
   SourceEditing,
   WhenEditing,
   WhenReading,
-  WhenRecorded,
 } from "@/app/(app)/sources/source-editing";
 import { StarFilter } from "@/app/(app)/star-filter";
 import { requireActiveAccount } from "@/lib/auth/account";
@@ -94,7 +94,7 @@ import { PaperSummary } from "../paper-summary";
 import { ProjectUsePanel } from "../project-use-panel";
 
 export const metadata: Metadata = {
-  title: "자료 · ThreadMark",
+  title: "자료",
 };
 
 export default async function SourceDetailPage({
@@ -123,6 +123,15 @@ export default async function SourceDetailPage({
     이 자료의 기록을 태그로 거른다. (설계 문서 20-1절)
     모르는 태그 이름이면 거르지 않는다. 자료 화면 자체는 그대로 열려야 한다.
   */
+  /*
+    기록에서 찾을 말. (2026-10-05, 사용자 요청)
+
+    **다듬는 일을 여기서 하지 않는다.** `normalizeSearchTerm`이 조회 쪽에서
+    한 번 더 하고, 그것이 진짜 막는 자리다. 여기서는 주소에 다시 실을 값과
+    화면에 보여줄 값만 든다.
+  */
+  const captureTerm = firstValue(query.q)?.trim() || null;
+
   const tagSlug = firstValue(query.tag);
   const activeTag = tagSlug ? await getTagBySlug(tagSlug) : null;
   const taggedCaptureIds = activeTag
@@ -154,7 +163,12 @@ export default async function SourceDetailPage({
     sourceTags,
     allTags,
   ] = await Promise.all([
-    listCapturesForSource(source.id, starredOnly, taggedCaptureIds),
+    listCapturesForSource(
+      source.id,
+      starredOnly,
+      taggedCaptureIds,
+      captureTerm,
+    ),
     countCaptureStars(source.id),
     listProjectsForSource(source.id),
     listProjectChips(),
@@ -206,7 +220,11 @@ export default async function SourceDetailPage({
   const detailPath = `/sources/${source.id}`;
 
   /** 지금 고른 것을 지키면서 하나만 바꾼 주소. */
-  const captureListHref = (next: { starred?: boolean; tag?: string | null }) => {
+  const captureListHref = (next: {
+    starred?: boolean;
+    tag?: string | null;
+    term?: string | null;
+  }) => {
     const params = new URLSearchParams();
 
     if (next.starred ?? starredOnly) {
@@ -217,6 +235,18 @@ export default async function SourceDetailPage({
 
     if (nextTag) {
       params.set("tag", nextTag);
+    }
+
+    /*
+      찾는 말도 주소가 든다. (2026-10-05, 사용자 요청)
+
+      **다른 거르기와 같은 자리에 둔다.** 별과 태그가 이미 여기 있고,
+      찾기만 다른 길로 가면 셋을 함께 쓸 때 어느 쪽이 이기는지 알 수 없다.
+    */
+    const nextTerm = next.term === undefined ? (captureTerm ?? null) : next.term;
+
+    if (nextTerm) {
+      params.set("q", nextTerm);
     }
 
     const text = params.toString();
@@ -530,7 +560,6 @@ export default async function SourceDetailPage({
         놓인 데가 없으면 자리를 만들지 않는다. 빈 칸이 늘어나면 정작 있는
         것이 눈에 안 들어온다.
       */}
-      <WhenRecorded has={placements.length > 0}>
       <section className="flex flex-col gap-3 rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.145] dark:bg-zinc-950">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="min-w-0 flex-1 text-sm font-medium text-black dark:text-zinc-50">
@@ -556,15 +585,16 @@ export default async function SourceDetailPage({
         </div>
 
         {/*
-          **놓인 데가 없다는 말은 고치는 중에만 한다.** 읽을 때는 이 칸
-          자체가 보이지 않는다. (위 `WhenRecorded`)
+          **놓인 데가 없어도 칸은 남는다.** (2026-10-05, 사용자가 정함)
+
+          처음에 비면 칸째로 숨겼는데, 사용자가 **그 자리가 보여야 한다**고
+          했다. `프로젝트`라는 이름이 거기 있어야 무엇을 담는 자리인지
+          안다. 비었다는 말 한 줄이 그 칸의 내용이다.
         */}
         {placements.length === 0 ? (
-          <WhenEditing>
-            <p className="text-sm leading-6 text-zinc-500">
-              아직 어느 프로젝트의 자리에도 놓지 않았습니다.
-            </p>
-          </WhenEditing>
+          <p className="text-sm leading-6 text-zinc-500">
+            아직 어느 프로젝트의 자리에도 놓지 않았습니다.
+          </p>
         ) : null}
 
         {placements.length > 0 ? (
@@ -590,7 +620,6 @@ export default async function SourceDetailPage({
           </>
         ) : null}
       </section>
-      </WhenRecorded>
 
       {/*
         책 칸. 책 유형일 때만 보여준다. (설계 문서 12절)
@@ -691,7 +720,6 @@ export default async function SourceDetailPage({
         있다는 것을 알 방법이 없다.
       */}
       {source.type === "media" ? (
-        <WhenRecorded has={watchProviders.length > 0}>
         <WatchPanel
           sourceId={source.id}
           providers={watchProviders}
@@ -700,7 +728,6 @@ export default async function SourceDetailPage({
           ready={mediaProfile !== null}
           returnTo={returnTo}
         />
-        </WhenRecorded>
       ) : null}
 
       {/*
@@ -792,7 +819,6 @@ export default async function SourceDetailPage({
         </section>
       ) : null}
 
-      <WhenRecorded has={linkedProjects.length > 0}>
       <Panel title="프로젝트">
         {linkedProjects.length > 0 ? (
           <ul className="flex flex-wrap gap-2">
@@ -831,11 +857,7 @@ export default async function SourceDetailPage({
             ))}
           </ul>
         ) : (
-          <WhenEditing>
-            <p className="text-sm text-zinc-500">
-              연결된 프로젝트가 없습니다.
-            </p>
-          </WhenEditing>
+          <p className="text-sm text-zinc-500">연결된 프로젝트가 없습니다.</p>
         )}
 
         {/*
@@ -876,7 +898,6 @@ export default async function SourceDetailPage({
           </WhenEditing>
         ) : null}
       </Panel>
-      </WhenRecorded>
 
       {/*
         프로젝트별 활용 계획. 논문 유형일 때만 보여준다. (설계 문서 8.3절)
@@ -886,7 +907,6 @@ export default async function SourceDetailPage({
         안내와 연결하는 자리가 멀어진다.
       */}
       {source.type === "paper" ? (
-        <WhenRecorded has={paperUses.length > 0}>
         <Panel
           title="프로젝트별 활용 계획"
           hint="이 논문을 각 프로젝트에서 어떻게 쓸지 적습니다. 논문이 무엇을 말하는지는 논문 분석에, 내 원고의 어디에 넣을지는 여기에 적습니다."
@@ -897,7 +917,6 @@ export default async function SourceDetailPage({
             uses={paperUses}
           />
         </Panel>
-        </WhenRecorded>
       ) : null}
 
       {/*
@@ -911,9 +930,6 @@ export default async function SourceDetailPage({
         어느 쪽에서 적었는지에 따라 같은 사실이 다른 말로 남는다.
         화살표가 없으면 목록에서 그 둘을 구별할 수 없다.
       */}
-      <WhenRecorded
-        has={relations.outgoing.length > 0 || relations.incoming.length > 0}
-      >
       <Panel title="관련 자료">
         {relations.outgoing.length > 0 || relations.incoming.length > 0 ? (
           <ul className="flex flex-col gap-2">
@@ -1004,9 +1020,7 @@ export default async function SourceDetailPage({
             ))}
           </ul>
         ) : (
-          <WhenEditing>
-            <p className="text-sm text-zinc-500">아직 이어둔 자료가 없습니다.</p>
-          </WhenEditing>
+          <p className="text-sm text-zinc-500">아직 이어둔 자료가 없습니다.</p>
         )}
 
         {relatableSources.length > 0 ? (
@@ -1158,7 +1172,6 @@ export default async function SourceDetailPage({
         </Reveal>
         </WhenEditing>
       </Panel>
-      </WhenRecorded>
 
       {/*
         파일 영역. 설계 문서 10.3절.
@@ -1166,7 +1179,6 @@ export default async function SourceDetailPage({
         Drive에 연결되지 않아도 이 자료의 나머지 기능은 그대로 쓸 수 있다.
         그래서 화면을 막지 않고 안내만 보여준다. (설계 문서 10.4절 마지막 줄)
       */}
-      <WhenRecorded has={files.length > 0}>
       <Panel title="파일" help="drive" helpLabel="파일 보관">
         {/*
           **읽을 때도 파일 목록은 그대로 보인다.** `열기`와 `Drive에서
@@ -1233,25 +1245,72 @@ export default async function SourceDetailPage({
         )}
         </WhenEditing>
       </Panel>
-      </WhenRecorded>
 
       <section className="flex flex-col gap-4 border-t border-black/[.08] pt-8 dark:border-white/[.145]">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
-              기록 {captureCounts.total}건
-            </h2>
-            <HelpButton topic="capture-types" label="기록의 종류" />
-          </div>
+        {/*
+          찾기와 새 기록. **단추는 줄의 맨 오른쪽, 펼쳐지는 칸은 줄 아래
+          전체 너비다.** (사용자가 가리킨 자리)
 
-          <StarFilter
-            allHref={captureListHref({ starred: false })}
-            starredHref={starredPath}
-            total={captureCounts.total}
-            starred={captureCounts.starred}
-            starredOnly={starredOnly}
+          `새 기록` 칸은 화면 맨 아래에 늘 펴져 있었다. 기록 마흔 건을 다
+          지나야 닿는 자리이고, **읽으러 온 사람에게는 늘 펴진 폼이 하나 더
+          있는 것**이었다. 자료 화면을 읽기 먼저로 고친 것과 같은 생각이다.
+          (4-69)
+
+          **머리말 줄을 `CaptureTools`가 그린다.** 단추만 돌려받고 펼쳐지는
+          칸을 이 자리에서 내보냈더니, 그 칸이 줄의 칸 하나가 되어 제목
+          오른쪽에 세로로 길게 섰다. 두 단으로 나뉜 것처럼 보였다.
+        */}
+        <CaptureTools
+          titleSlot={
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
+                기록 {captureCounts.total}건
+              </h2>
+              <HelpButton topic="capture-types" label="기록의 종류" />
+            </div>
+          }
+          filterSlot={
+            <StarFilter
+              allHref={captureListHref({ starred: false })}
+              starredHref={starredPath}
+              total={captureCounts.total}
+              starred={captureCounts.starred}
+              starredOnly={starredOnly}
+            />
+          }
+          term={captureTerm ?? ""}
+          action={detailPath}
+          clearHref={captureListHref({ term: null })}
+          /*
+            지금 걸려 있는 별·태그를 함께 들고 간다. 빠뜨리면 찾는
+            순간 별만 보던 것이 풀린다.
+          */
+          keep={{
+            ...(starredOnly ? { [STARRED_PARAM]: STARRED_ON } : {}),
+            ...(tagSlug ? { tag: tagSlug } : {}),
+          }}
+            >
+            <CaptureForm
+              action={createCapture}
+              submitLabel="기록하기"
+              /*
+                새로 적은 기록에는 아직 별이 없다. 별만 보는 중에
+                적었다고 걸러진 자리로 돌려보내면 방금 적은 것이
+                보이지 않는다. 찾는 중에도 같다.
+              */
+              returnTo={detailPath}
+              compact
+              values={{
+                sourceId: source.id,
+                captureType: "quote",
+                content: "",
+                originalText: "",
+                translatedText: "",
+                translationLanguage: "",
+              }}
           />
-        </div>
+        </CaptureTools>
+
         <CaptureList
           captures={captures}
           returnTo={returnTo}
@@ -1275,35 +1334,21 @@ export default async function SourceDetailPage({
             files.map((file) => [file.id, file.checksum]),
           )}
           emptyText={
-            activeTag
-              ? `\`${activeTag.name}\` 태그를 단 기록이 없습니다.`
-              : starredOnly
-                ? "별을 단 기록이 없습니다."
-                : "아직 이 자료에 남긴 기록이 없습니다."
+            /*
+              **왜 비었는지를 말한다.** 걸러서 빈 것과 처음부터 없는 것은
+              다른 일이고, 그 둘을 같은 말로 적으면 "내 기록이 사라졌나"를
+              묻게 된다.
+            */
+            captureTerm
+              ? `\`${captureTerm}\`이 든 기록이 없습니다.`
+              : activeTag
+                ? `\`${activeTag.name}\` 태그를 단 기록이 없습니다.`
+                : starredOnly
+                  ? "별을 단 기록이 없습니다."
+                  : "아직 이 자료에 남긴 기록이 없습니다."
           }
         />
       </section>
-
-      <Panel title="새 기록">
-        <CaptureForm
-          action={createCapture}
-          submitLabel="기록하기"
-          /*
-            새로 적은 기록에는 아직 별이 없다. 별만 보는 중에 적었다고
-            걸러진 자리로 돌려보내면 방금 적은 것이 보이지 않는다.
-          */
-          returnTo={detailPath}
-          compact
-          values={{
-            sourceId: source.id,
-            captureType: "quote",
-            content: "",
-            originalText: "",
-            translatedText: "",
-            translationLanguage: "",
-          }}
-        />
-      </Panel>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-black/[.08] pt-6 dark:border-white/[.145]">
         {/*
