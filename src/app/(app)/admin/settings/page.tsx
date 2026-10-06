@@ -2,11 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AutoNotice } from "@/app/(app)/auto-notice";
-import { getApprovalSetting } from "@/lib/admin/settings";
+import {
+  AI_BUDGET_MAX_USD,
+  AI_BUDGET_MIN_USD,
+  getAiBudgetSetting,
+  getApprovalSetting,
+} from "@/lib/admin/settings";
 import { requireAdminAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
-import { updateApprovalSetting } from "./actions";
+import { updateAiBudget, updateApprovalSetting } from "./actions";
 
 export const metadata: Metadata = {
   title: "가입 설정",
@@ -18,9 +23,17 @@ const MESSAGES: Record<string, string> = {
   update_failed: "설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   approval_on: "이제 신규 가입자는 승인 대기 상태가 됩니다.",
   approval_off: "이제 신규 가입자는 자동으로 승인됩니다.",
+  budget_invalid: `한 달 예산은 ${AI_BUDGET_MIN_USD} 이상 ${AI_BUDGET_MAX_USD} 이하의 숫자로 적어 주세요.`,
+  budget_failed: "예산을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  budget_updated: "한 달 AI 예산을 바꿨습니다.",
 };
 
-const ERROR_KEYS = new Set(["invalid_request", "update_failed"]);
+const ERROR_KEYS = new Set([
+  "invalid_request",
+  "update_failed",
+  "budget_invalid",
+  "budget_failed",
+]);
 
 export default async function AdminSettingsPage({
   searchParams,
@@ -30,15 +43,28 @@ export default async function AdminSettingsPage({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const [setting, pendingResult] = await Promise.all([
+  const [setting, pendingResult, budget, aiAllowedResult] = await Promise.all([
     getApprovalSetting(),
     supabase
       .from("profiles")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending"),
+    getAiBudgetSetting(),
+    /*
+      AI를 허용받은 사람 수. **한 사람 몫이 이 수로 나뉜다.** (19-F)
+
+      관리자는 `profiles_select_admin` 정책으로 전체를 본다. 쓰는 사람은
+      자기 줄만 보여서 `ai_monthly_budget_share()` 함수가 대신 나눠 준다.
+      여기서는 관리자가 보는 화면이라 직접 센다.
+    */
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("ai_enabled", true),
   ]);
 
   const pendingCount = pendingResult.count ?? 0;
+  const aiAllowedCount = aiAllowedResult.count ?? 0;
 
   const key = firstValue(params.error) ?? firstValue(params.notice);
   const message = key ? (MESSAGES[key] ?? null) : null;
@@ -114,6 +140,69 @@ export default async function AdminSettingsPage({
             {setting.updatedAt ? (
               <span className="text-xs text-zinc-500">
                 마지막 변경 {formatDateTime(setting.updatedAt)}
+              </span>
+            ) : null}
+          </div>
+        </form>
+      </section>
+
+      <section className="flex flex-col gap-5 rounded-2xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950">
+        <form action={updateAiBudget} className="flex flex-col gap-5">
+          <label className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-black dark:text-zinc-50">
+              한 달 AI 예산 (USD)
+            </span>
+            <span className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              AI 기능에 한 달에 쓸 돈입니다.{" "}
+              <strong className="font-medium">
+                Anthropic Console에 걸어둔 예산과 같은 값으로 둡니다.
+              </strong>{" "}
+              여기가 더 크면 이 한도가 아무것도 막지 못하고, 어느 날 갑자기
+              기능이 통째로 멈춥니다.
+            </span>
+            <input
+              type="number"
+              name="budgetUsd"
+              step="0.0001"
+              min={AI_BUDGET_MIN_USD}
+              max={AI_BUDGET_MAX_USD}
+              defaultValue={budget.budgetUsd ?? ""}
+              required
+              className="h-11 w-40 rounded-lg border border-black/[.08] bg-white px-3 text-sm text-black dark:border-white/[.145] dark:bg-black dark:text-zinc-50"
+            />
+          </label>
+
+          {/*
+            **누르기 전에 결과를 보여준다.** 이 숫자 하나가 모두의 몫을
+            정하는데, 몇 명이 나눠 쓰는지를 모르면 얼마를 적어야 할지
+            알 수 없다.
+          */}
+          <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            지금 AI를 허용받은 사람은 <strong>{aiAllowedCount}명</strong>
+            입니다.{" "}
+            {budget.budgetUsd === null ? (
+              <>예산을 읽지 못해 한 사람 몫을 셈할 수 없습니다.</>
+            ) : (
+              <>
+                한 사람 몫은{" "}
+                <strong>
+                  ${(budget.budgetUsd / Math.max(1, aiAllowedCount)).toFixed(4)}
+                </strong>
+                입니다. 허용하는 사람이 늘면 각자의 몫이 줄어듭니다.
+              </>
+            )}
+          </p>
+
+          <div className="flex items-center gap-4">
+            <button
+              type="submit"
+              className="h-11 rounded-full border border-solid border-black/[.08] px-5 text-sm font-medium text-black transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:text-zinc-50 dark:hover:bg-white/[.06]"
+            >
+              저장
+            </button>
+            {budget.updatedAt ? (
+              <span className="text-xs text-zinc-500">
+                마지막 변경 {formatDateTime(budget.updatedAt)}
               </span>
             ) : null}
           </div>
