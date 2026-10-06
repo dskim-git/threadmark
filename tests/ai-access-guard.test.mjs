@@ -35,6 +35,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { AI_FEATURES } from "../src/lib/ai/usage-summary.ts";
+
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const migrationsDir = path.join(repoRoot, "supabase", "migrations");
 
@@ -383,5 +385,60 @@ test("허용이 없다는 말은 한 곳에서만 온다", () => {
       !source.includes(message),
       `${name}이 허용 안내문을 손으로 베껴 적었다. aiBlockedMessage를 쓴다. 베껴 적으면 말을 고칠 때 한 곳이 뒤처진다.`,
     );
+  }
+});
+
+/**
+ * 돈을 쓰는 자리는 전부 장부를 보고, 전부 장부에 적는다. (19-F 2차례)
+ *
+ * **2026-10-06까지 다섯 가운데 둘이 장부 밖에 있었다.** 번역과 논문 서지
+ * 보조다. 둘 다 `rate-limit.ts`의 연타 한도만 걸려 있었고, 그 파일이 스스로
+ * "진짜 상한은 데이터베이스에 둔다"고 적어 두었다. **적어둔 할 일이
+ * 적어둔 자리에서 그대로 남아 있었다.**
+ *
+ * 혼자 쓸 때는 드러나지 않는다. 사람이 늘면 그 둘로 예산이 샌다.
+ *
+ * 보는 것이 둘이다
+ *   `decideAiCallNow`  부르기 전에 몫이 남았는지 본다
+ *   `recordAiUsage`    부른 뒤에 얼마나 썼는지 적는다
+ *
+ * **둘 다 있어야 한다.** 보기만 하고 안 적으면 장부가 늘 비어 있어 한도가
+ * 걸리지 않는다. 적기만 하고 안 보면 넘겨 쓴다.
+ */
+test("돈을 쓰는 자리는 전부 한 달 장부를 본다", () => {
+  for (const { name, source } of paidCallers()) {
+    assert.match(
+      source,
+      /\bdecideAiCallNow\s*\(/,
+      `${name}이 돈을 쓰는데 한 달 몫을 보지 않는다. 이 길로는 얼마든지 쓸 수 있다.`,
+    );
+  }
+});
+
+test("돈을 쓰는 자리는 전부 장부에 적는다", () => {
+  for (const { name, source } of paidCallers()) {
+    assert.match(
+      source,
+      /\brecordAiUsage\s*\(/,
+      `${name}이 돈을 쓰고도 장부에 적지 않는다. 쓴 돈이 안 세어져 한도가 걸리지 않는다.`,
+    );
+  }
+});
+
+test("장부에 적는 갈래가 앱이 아는 갈래다", () => {
+  /*
+    **글자를 손으로 적는 자리다.** `feature: "serach"`처럼 한 글자가 틀리면
+    열거형이 거부하고 그 동작까지 통째로 되돌아간다. 타입이 막아 주지만,
+    **타입을 비껴가는 길**(as, 변수)이 생길 수 있어 글로도 본다.
+  */
+  const known = new Set(AI_FEATURES);
+
+  for (const { name, source } of paidCallers()) {
+    for (const match of source.matchAll(/feature:\s*"([a-z_]+)"/g)) {
+      assert.ok(
+        known.has(match[1]),
+        `${name}이 '${match[1]}'로 적는데 앱이 모르는 갈래다. 아는 것은 ${[...known].join(", ")}이다.`,
+      );
+    }
   }
 });

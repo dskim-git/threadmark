@@ -27,6 +27,24 @@ import {
 // 갈래 목록
 // -----------------------------------------------------------------------------
 
+/**
+ * 장부 한 줄.
+ *
+ * **모델과 토큰이 필요해졌다.** (19-F 2차례) 한도를 쓴 돈으로 세면서
+ * `tallyByOwner`가 그 셋을 함께 본다. 검사마다 적으면 읽기 어려워져
+ * 도움 함수로 뺀다. 돈을 보는 검사만 값을 따로 준다.
+ */
+function row(owner_id, feature, extra = {}) {
+  return {
+    owner_id,
+    feature,
+    model: "claude-sonnet-5",
+    input_tokens: 0,
+    output_tokens: 0,
+    ...extra,
+  };
+}
+
 test("갈래마다 화면에 보일 이름이 있다", () => {
   // 이름이 빠지면 그 자리에 undefined가 그대로 나온다.
   for (const feature of AI_FEATURES) {
@@ -60,10 +78,10 @@ test("한 번도 부르지 않은 사람의 셈은 모두 0이다", () => {
 
 test("사람별로 나누고 갈래별로 센다", () => {
   const tallies = tallyByOwner([
-    { owner_id: "a", feature: "search" },
-    { owner_id: "a", feature: "search" },
-    { owner_id: "a", feature: "translation" },
-    { owner_id: "b", feature: "placement" },
+    row("a", "search"),
+    row("a", "search"),
+    row("a", "translation"),
+    row("b", "placement"),
   ]);
 
   assert.equal(tallies.get("a").total, 3);
@@ -77,7 +95,7 @@ test("사람별로 나누고 갈래별로 센다", () => {
 
 test("줄이 없는 사람은 열쇠 자체가 없다", () => {
   // 0으로 채워 돌려주면 "누가 있는지"를 이 함수가 안다는 뜻이 된다. 모른다.
-  const tallies = tallyByOwner([{ owner_id: "a", feature: "search" }]);
+  const tallies = tallyByOwner([row("a", "search")]);
 
   assert.equal(tallies.has("b"), false);
 });
@@ -88,9 +106,9 @@ test("모르는 갈래도 전체 횟수에는 들어간다", () => {
     세면 그 줄이 조용히 사라져 한도 셈과 화면이 어긋난다.
   */
   const tallies = tallyByOwner([
-    { owner_id: "a", feature: "search" },
-    { owner_id: "a", feature: "embedding" },
-    { owner_id: "a", feature: "embedding" },
+    row("a", "search"),
+    row("a", "embedding"),
+    row("a", "embedding"),
   ]);
 
   assert.equal(tallies.get("a").total, 3);
@@ -100,7 +118,7 @@ test("모르는 갈래도 전체 횟수에는 들어간다", () => {
 
 test("아는 갈래는 모르는 쪽으로 새지 않는다", () => {
   const tallies = tallyByOwner(
-    AI_FEATURES.map((feature) => ({ owner_id: "a", feature })),
+    AI_FEATURES.map((feature) => row("a", feature)),
   );
 
   assert.equal(tallies.get("a").unknown, 0);

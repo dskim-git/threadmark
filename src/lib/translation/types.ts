@@ -80,6 +80,18 @@ export type TranslationOutcome = {
   targetLanguage: TranslationLanguageCode;
   /** ISO 8601 문자열. 데이터베이스의 translated_at에 들어간다. */
   translatedAt: string;
+  /**
+   * 쓴 토큰. (19-F 2차례)
+   *
+   * **장부에 적으려고 받는다.** 2026-10-06까지 번역은 장부 밖에 있었고,
+   * 연타 한도만 걸려 있었다. 그 한도는 세는 자리가 서버의 기억이라
+   * 헐겁다. 돈을 막으려면 얼마나 썼는지를 알아야 한다.
+   *
+   * 못 받았으면 0이다. **0은 "안 썼다"가 아니라 "모른다"에 가깝지만**,
+   * 응답에 토큰이 없는 경우는 요청이 실패했을 때뿐이라 그렇게 둔다.
+   */
+  inputTokens: number;
+  outputTokens: number;
 };
 
 /**

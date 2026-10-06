@@ -12,6 +12,8 @@ import {
 } from "@/lib/papers/crossref-lookup";
 import {
   extractPaperFromText,
+  AI_EXTRACT_PROVIDER,
+  getExtractModel,
   isAiExtractConfigured,
   MAX_EXTRACT_INPUT_LENGTH,
 } from "@/lib/papers/ai-extract";
@@ -19,6 +21,7 @@ import { findDois } from "@/lib/papers/doi-scan";
 import { readPdfHeadText } from "@/lib/papers/pdf-text";
 import { normalizeDoi } from "@/lib/papers/schema";
 import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
+import { decideAiCallNow, recordAiUsage } from "@/lib/ai/usage-queries";
 import { takeSlot } from "@/lib/translation/rate-limit";
 
 /**
@@ -415,6 +418,33 @@ export async function extractWithAi(input: unknown): Promise<ImportResult> {
     return { ok: false, message: limited };
   }
 
+  /*
+    **한 달 장부를 본다.** (19-F 2차례)
+
+    2026-10-06까지 이 길은 장부 밖에 있었고 갈래 값조차 없었다. 위의 연타
+    한도만 걸려 있었는데, 그것은 세는 자리가 서버의 기억이라 헐겁다.
+
+    **글을 꺼내기 전에 묻는다.** PDF에서 글을 꺼내는 일은 돈이 들지 않지만,
+    몫을 다 쓴 사람에게 "읽었는데 못 보냅니다"를 보여줄 이유가 없다.
+  */
+  const budget = await decideAiCallNow();
+
+  if (budget === null) {
+    // 모르면 거부한다. (AGENTS.md 5절 7번)
+    return {
+      ok: false,
+      message: "얼마나 쓰셨는지 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  if (!budget.allowed) {
+    return {
+      ok: false,
+      message:
+        "이번 달에 쓸 수 있는 AI 몫을 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다. 더 쓰셔야 하면 관리자에게 요청해 주세요.",
+    };
+  }
+
   const read = await readHeadText(account.userId, parsed.data.sourceFileId);
 
   if (!read.ok) {
@@ -422,6 +452,20 @@ export async function extractWithAi(input: unknown): Promise<ImportResult> {
   }
 
   const result = await extractPaperFromText(read.text);
+
+  /*
+    **실패해도 남긴다.** 밖에 다녀온 뒤의 실패에는 돈이 들었을 수 있다.
+    모델 이름은 돌아온 값을 쓴다. 성공했을 때만 오므로 실패에는 기본값을
+    적는다. **장부의 모델 칸이 비면 단가를 고를 수 없다.**
+  */
+  await recordAiUsage({
+    feature: "paper_extract",
+    provider: AI_EXTRACT_PROVIDER,
+    model: result.ok ? result.model : getExtractModel(),
+    inputTokens: result.ok ? result.inputTokens : 0,
+    outputTokens: result.ok ? result.outputTokens : 0,
+    outcome: result.ok ? "ok" : "failed",
+  });
 
   return result.ok
     ? { ok: true, kind: "paper", paper: result.paper }

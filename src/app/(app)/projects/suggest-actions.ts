@@ -90,7 +90,7 @@ export async function suggestPlacements(
 
   if (!decision.allowed) {
     return fail(
-      `이번 달에 ${decision.limit}번까지 물어볼 수 있는데 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다.`,
+      "이번 달에 쓸 수 있는 AI 몫을 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다. 더 쓰셔야 하면 관리자에게 요청해 주세요.",
       0,
     );
   }
@@ -105,7 +105,7 @@ export async function suggestPlacements(
   if (outline.length === 0) {
     return fail(
       "먼저 뼈대에 자리를 만들어 주세요. 놓을 자리가 있어야 고를 수 있습니다.",
-      decision.remaining,
+      decision.remainingCalls,
     );
   }
 
@@ -204,7 +204,7 @@ export async function suggestPlacements(
   if (items.length === 0) {
     return fail(
       "자리를 못 찾은 재료가 없습니다. 먼저 이 프로젝트에 자료나 기록을 이어 주세요.",
-      decision.remaining,
+      decision.remainingCalls,
     );
   }
 
@@ -220,7 +220,7 @@ export async function suggestPlacements(
   });
 
   if (!result.ok) {
-    return fail(result.message, decision.remaining - 1);
+    return fail(result.message, decision.remainingCalls - 1);
   }
 
   if (result.dangling > 0) {
@@ -257,6 +257,6 @@ export async function suggestPlacements(
     suggestions,
     skipped: items.length - suggestions.length,
     error: null,
-    remaining: decision.remaining - 1,
+    remaining: decision.remainingCalls - 1,
   };
 }

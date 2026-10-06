@@ -58,7 +58,7 @@ export async function countAiRemaining(): Promise<number | null> {
 
   const decision = await decideAiCallNow();
 
-  return decision === null ? null : decision.remaining;
+  return decision === null ? null : decision.remainingCalls;
 }
 
 export async function askAboutMyNotes(
@@ -116,7 +116,7 @@ export async function askAboutMyNotes(
   if (!decision.allowed) {
     return fail(
       question,
-      `이번 달에 ${decision.limit}번까지 물어볼 수 있는데 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다.`,
+      "이번 달에 쓸 수 있는 AI 몫을 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다. 더 쓰셔야 하면 관리자에게 요청해 주세요.",
       0,
     );
   }
@@ -131,7 +131,7 @@ export async function askAboutMyNotes(
     return fail(
       question,
       "물음과 겹치는 기록을 찾지 못했습니다. 담아둔 글에 있는 낱말로 물어보세요.",
-      decision.remaining,
+      decision.remainingCalls,
     );
   }
 
@@ -148,7 +148,7 @@ export async function askAboutMyNotes(
   });
 
   if (!result.ok) {
-    return fail(question, result.message, decision.remaining - 1);
+    return fail(question, result.message, decision.remainingCalls - 1);
   }
 
   /*
@@ -173,6 +173,6 @@ export async function askAboutMyNotes(
     answer: result.answer,
     cited,
     error: null,
-    remaining: decision.remaining - 1,
+    remaining: decision.remainingCalls - 1,
   };
 }

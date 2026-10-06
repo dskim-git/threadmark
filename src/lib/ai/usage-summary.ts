@@ -6,10 +6,17 @@
  *   "받아온 줄을 어떻게 묶는가"가 있고, 그것이 틀리면 **오류 없이 숫자만
  *   틀린다.** 그런 자리는 검사로 붙잡아야 해서 따로 뺐다.
  *
- * **이 파일은 아무것도 import하지 않는다.** `npm test`는 `node --test`로
- *   도는데 `@/` 별칭도 확장자 없는 상대 경로도 풀지 못한다. 검사가 부르는
- *   모듈은 잎사귀로 둔다. (AGENTS.md 2절)
+ * **들여오는 것은 순수 모듈뿐이고 확장자를 붙인다.** `npm test`는
+ *   `node --test`로 도는데 `@/` 별칭도 **확장자 없는** 상대 경로도 풀지
+ *   못한다. 검사가 부르는 모듈은 잎사귀로 둔다. (AGENTS.md 2절)
+ *
+ *   2026-10-06까지 이 줄은 "아무것도 import하지 않는다"였다. **못 하는
+ *   것이 아니라 확장자를 붙여야 하는 것이었다.** `tsconfig`의
+ *   `allowImportingTsExtensions`가 켜져 있다. 데이터베이스를 무는 모듈을
+ *   들여오면 안 되는 것은 그대로다.
  */
+
+import { spentUsd } from "./pricing.ts";
 
 /**
  * 장부에 남는 갈래. 데이터베이스의 `ai_feature`와 같은 값이다.
@@ -18,7 +25,16 @@
  * 마이그레이션을 따로 하나 만들고(`ALTER TYPE ... ADD VALUE`는 같은
  * 트랜잭션에서 쓸 수 없다), 그것을 올린 뒤 여기에 더한다.
  */
-export const AI_FEATURES = ["translation", "search", "placement"] as const;
+export const AI_FEATURES = [
+  "translation",
+  "search",
+  "placement",
+  /*
+    논문 첫 장을 AI가 읽어 서지를 뽑는다. (19-F 2차례)
+    **한 번 상한이 $0.07이라 싸지 않다.** 2026-10-06에 장부에 이었다.
+  */
+  "paper_extract",
+] as const;
 
 export type AiFeature = (typeof AI_FEATURES)[number];
 
@@ -33,11 +49,19 @@ export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   translation: "번역",
   search: "검색",
   placement: "자리 추천",
+  paper_extract: "논문 서지",
 };
 
 export type FeatureTally = {
   /** 몇 번 불렀는가. **모르는 갈래도 여기에 들어 있다.** */
   total: number;
+  /**
+   * 이번 달에 쓴 돈(USD). (19-F 2차례)
+   *
+   * **모르는 갈래의 줄도 여기 들어간다.** 갈래를 모르는 것과 돈이 안 드는
+   * 것은 다른 일이다. 갈래를 몰라도 토큰은 적혀 있다.
+   */
+  spentUsd: number;
   /** 아는 갈래별 횟수. */
   byFeature: Record<AiFeature, number>;
   /**
@@ -54,7 +78,8 @@ export type FeatureTally = {
 export function emptyTally(): FeatureTally {
   return {
     total: 0,
-    byFeature: { translation: 0, search: 0, placement: 0 },
+    spentUsd: 0,
+    byFeature: { translation: 0, search: 0, placement: 0, paper_extract: 0 },
     unknown: 0,
   };
 }
@@ -70,7 +95,13 @@ function isAiFeature(value: string): value is AiFeature {
  * 이 함수가 누가 있는지 모르기 때문이다. 사람 목록은 부르는 쪽이 안다.
  */
 export function tallyByOwner(
-  rows: readonly { owner_id: string; feature: string }[],
+  rows: readonly {
+    owner_id: string;
+    feature: string;
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+  }[],
 ): Map<string, FeatureTally> {
   const tallies = new Map<string, FeatureTally>();
 
@@ -83,6 +114,7 @@ export function tallyByOwner(
     }
 
     tally.total += 1;
+    tally.spentUsd += spentUsd(row.model, row.input_tokens, row.output_tokens);
 
     if (isAiFeature(row.feature)) {
       tally.byFeature[row.feature] += 1;

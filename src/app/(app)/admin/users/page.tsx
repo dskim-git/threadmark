@@ -427,8 +427,16 @@ function UsagePanel({
           읽히는데, 물음이 생기는 곳은 숫자와 `허용량 더하기` 옆이다.
         */}
         <HelpButton topic="admin-ai-usage" label="AI 사용량과 허용량" />
+        {/*
+          **돈과 횟수를 함께 보여준다.** (19-F 2차례)
+
+          막는 것은 돈이다. 그런데 관리자가 `몇 번 더`를 적어 풀어주므로,
+          **남은 것을 번으로도 말해야** 얼마를 더 줄지 가늠할 수 있다.
+          번은 한 번 상한으로 나눈 **어림**이라 그렇게 적는다.
+        */}
         <span className="text-sm text-zinc-700 dark:text-zinc-300">
-          {usage.limit}번 중 {usage.used}번 씀 · {usage.remaining}번 남음
+          {formatUsd(usage.allowanceUsd)} 중 {formatUsd(usage.spentUsd)} 씀 ·{" "}
+          {formatUsd(usage.remainingUsd)} 남음 (어림 {usage.remainingCalls}번)
         </span>
       </div>
 
@@ -518,6 +526,17 @@ function messageFor(value: string | string[] | undefined): string | null {
   const key = Array.isArray(value) ? value[0] : value;
 
   return key ? (MESSAGES[key] ?? null) : null;
+}
+
+/**
+ * 달러를 사람이 읽을 모양으로. (19-F 2차례)
+ *
+ * **센트 아래 두 자리까지 보여준다.** 한 번 부르는 값이 $0.09 어름이라
+ * 센트까지만 끊으면 **여러 번 써도 숫자가 안 움직인다.** 움직이지 않는
+ * 숫자는 고장처럼 보인다.
+ */
+function formatUsd(value: number): string {
+  return `$${value.toFixed(4)}`;
 }
 
 function actionLabel(action: string): string {

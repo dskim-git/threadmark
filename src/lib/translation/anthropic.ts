@@ -160,6 +160,9 @@ export function createAnthropicTranslationProvider(): TranslationProvider {
           model,
           targetLanguage: request.targetLanguage,
           translatedAt: new Date().toISOString(),
+          // 장부에 적을 값이다. (19-F 2차례)
+          inputTokens: response.usage.input_tokens ?? 0,
+          outputTokens: response.usage.output_tokens ?? 0,
         };
       } catch (error) {
         /*

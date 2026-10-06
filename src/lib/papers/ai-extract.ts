@@ -117,11 +117,35 @@ function fenceText(text: string): string {
 }
 
 export type ExtractResult =
-  | { ok: true; paper: ImportedPaper; model: string }
+  | {
+      ok: true;
+      paper: ImportedPaper;
+      model: string;
+      /**
+       * 쓴 토큰. (19-F 2차례) **장부에 적으려고 받는다.**
+       *
+       * 2026-10-06까지 이 길은 장부 밖에 있었고 갈래 값조차 없었다.
+       * 한 번 상한이 $0.07이라 싸지 않다.
+       */
+      inputTokens: number;
+      outputTokens: number;
+    }
   | { ok: false; message: string };
 
 export function isAiExtractConfigured(): boolean {
   return (process.env.ANTHROPIC_API_KEY ?? "").trim().length > 0;
+}
+
+/**
+ * 어느 모델로 읽는가.
+ *
+ * **한 곳에서 정한다.** (19-F 2차례) 전에는 `extractPaperFromText` 안에
+ * 인라인으로 적혀 있었는데, 장부에 모델 이름을 남기려면 부르는 쪽도 같은
+ * 값을 알아야 한다. 두 곳에 적으면 **실패했을 때 장부에 다른 모델이
+ * 적히고**, 그러면 단가를 엉뚱하게 고른다.
+ */
+export function getExtractModel(): string {
+  return (process.env.ANTHROPIC_MODEL ?? "").trim() || "claude-sonnet-5";
 }
 
 /** 빈 글과 공백만 있는 글을 null로 바꾼다. */
@@ -183,7 +207,7 @@ export async function extractPaperFromText(
     };
   }
 
-  const model = (process.env.ANTHROPIC_MODEL ?? "").trim() || "claude-sonnet-5";
+  const model = getExtractModel();
   const client = new Anthropic({ apiKey });
 
   try {
@@ -226,6 +250,8 @@ export async function extractPaperFromText(
     return {
       ok: true,
       model,
+      inputTokens: response.usage.input_tokens ?? 0,
+      outputTokens: response.usage.output_tokens ?? 0,
       paper: {
         title: text(parsed.title),
         authors: toAuthors(parsed.authors),

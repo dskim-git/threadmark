@@ -93,7 +93,7 @@ export async function suggestForNode(
   if (!decision.allowed) {
     return fail(
       nodeId.data,
-      `이번 달에 ${decision.limit}번까지 물어볼 수 있는데 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다.`,
+      "이번 달에 쓸 수 있는 AI 몫을 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다. 더 쓰셔야 하면 관리자에게 요청해 주세요.",
       0,
     );
   }
@@ -111,7 +111,7 @@ export async function suggestForNode(
   const node = outline.find((item) => item.id === nodeId.data);
 
   if (!node) {
-    return fail(nodeId.data, "그 자리를 찾지 못했습니다.", decision.remaining);
+    return fail(nodeId.data, "그 자리를 찾지 못했습니다.", decision.remainingCalls);
   }
 
   // 위 자리를 이어 붙인다. 뼈대에서는 위치가 곧 뜻이다.
@@ -145,7 +145,7 @@ export async function suggestForNode(
     return fail(
       nodeId.data,
       "자리 이름에서 찾을 낱말을 뽑지 못했습니다. 이름을 조금 더 적거나 이 자리에 쓸 글을 적어 주세요.",
-      decision.remaining,
+      decision.remainingCalls,
     );
   }
 
@@ -173,7 +173,7 @@ export async function suggestForNode(
     return fail(
       nodeId.data,
       "이 자리의 낱말과 겹치는 것을 담아둔 것에서 찾지 못했습니다.",
-      decision.remaining,
+      decision.remainingCalls,
     );
   }
 
@@ -197,7 +197,7 @@ export async function suggestForNode(
   });
 
   if (!result.ok) {
-    return fail(nodeId.data, result.message, decision.remaining - 1);
+    return fail(nodeId.data, result.message, decision.remainingCalls - 1);
   }
 
   const fits: Fit[] = [];
@@ -228,6 +228,6 @@ export async function suggestForNode(
     */
     looked: pool.map((item) => item.origin),
     error: null,
-    remaining: decision.remaining - 1,
+    remaining: decision.remainingCalls - 1,
   };
 }

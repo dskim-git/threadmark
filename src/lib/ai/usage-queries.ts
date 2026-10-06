@@ -17,11 +17,12 @@ import { requireActiveAccount, requireAdminAccount } from "@/lib/auth/account";
 import { createClient } from "@/lib/supabase/server";
 
 import {
+  allowanceWithGrants,
   decideAiCall,
-  limitWithGrants,
   monthStart,
   type AiCallDecision,
 } from "./limits";
+import { spentUsd } from "./pricing";
 import {
   emptyTally,
   sumGrantsByOwner,
@@ -47,6 +48,9 @@ export type AiOutcome = "ok" | "failed";
  * **셀 수 없으면 null이다.** 0이 아니다. 0을 돌려주면 장부를 못 읽었을 때
  * 한도가 통째로 사라진다. 부르는 쪽이 null을 받으면 막는다.
  * (AGENTS.md 5절 7번 "모르면 거부한다")
+ *
+ * **한도를 정하는 값이 아니다.** 2026-10-06부터 한도는 쓴 돈으로 센다.
+ * (ADR 0003) 이 함수는 관리자 화면이 "몇 번 불렀나"를 보여줄 때만 쓴다.
  */
 export async function countAiCallsThisMonth(
   now: Date = new Date(),
@@ -67,6 +71,50 @@ export async function countAiCallsThisMonth(
   }
 
   return count ?? null;
+}
+
+/**
+ * 이번 달에 쓴 돈을 셈한다. (19-F 2차례)
+ *
+ * **합을 데이터베이스에서 내지 않는다.** 모델마다 단가가 달라서, 돈으로
+ * 바꾸는 일은 단가표를 아는 쪽에서 해야 한다. 단가를 SQL에 적으면 같은
+ * 표가 두 곳이 되고 **한쪽만 고쳐진다.**
+ *
+ * 한 사람의 한 달 줄은 많아야 수백 개다. 받아서 더하는 편이 낫다.
+ *
+ * **셈할 수 없으면 null이다.** 0이 아니다. 0을 돌려주면 장부를 못 읽었을
+ * 때 "한 푼도 안 썼다"가 되어 한도가 통째로 사라진다.
+ *
+ * 모르는 모델은 `spentUsd`가 **가장 비싼 단가로** 친다. 싸게 치면 쓴 돈이
+ * 실제보다 적게 보이고, 그것이 가장 나쁘다.
+ */
+export async function sumAiSpendThisMonth(
+  now: Date = new Date(),
+): Promise<number | null> {
+  await requireActiveAccount();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("ai_usage_events")
+    .select("model, input_tokens, output_tokens")
+    .gte("created_at", monthStart(now).toISOString());
+
+  if (error) {
+    console.error("[ThreadMark] AI 사용 장부 조회 실패:", error.message);
+
+    return null;
+  }
+
+  if (data === null) {
+    return null;
+  }
+
+  return data.reduce(
+    (total, row) =>
+      total + spentUsd(row.model, row.input_tokens, row.output_tokens),
+    0,
+  );
 }
 
 /**
@@ -173,15 +221,63 @@ export async function sumAiGrantsThisMonth(
 export async function decideAiCallNow(
   now: Date = new Date(),
 ): Promise<AiCallDecision | null> {
-  const used = await countAiCallsThisMonth(now);
+  const spent = await sumAiSpendThisMonth(now);
 
-  if (used === null) {
+  if (spent === null) {
+    return null;
+  }
+
+  /*
+    내 몫이 얼마인지 묻는다. 예산도 인원도 보통 사람에게 안 보여서
+    `ai_monthly_budget_share()`가 숫자 하나로 돌려준다. (19-F 2차례)
+
+    **못 읽으면 막는다.** 몫을 모르면 얼마까지 쓸 수 있는지 알 수 없고,
+    그때 통과시키면 한도가 없는 것과 같다. (보안 원칙 7)
+  */
+  const share = await readMonthlyBudgetShare();
+
+  if (share === null) {
     return null;
   }
 
   const granted = await sumAiGrantsThisMonth(now);
 
-  return decideAiCall(used, limitWithGrants(granted));
+  return decideAiCall(spent, allowanceWithGrants(share, granted));
+}
+
+/**
+ * 내 몫이 얼마인지 데이터베이스에 묻는다. (19-F 2차례)
+ *
+ * **셈을 여기서 하지 않는다.** 예산은 `app_settings`에 있고 관리자만 읽는다.
+ * 허용받은 사람 수는 `profiles`에 있고 자기 줄만 보인다. 둘 다 보통 사람
+ * 손에 없으므로 `ai_monthly_budget_share()`가 나눈 값만 돌려준다.
+ *
+ * **못 읽으면 null이다.** 0이 아니다. 0을 돌려주면 "예산이 0"과 "못
+ * 읽었다"가 같아지는데, 앞엣것은 관리자가 정한 것이고 뒤엣것은 고장이다.
+ */
+async function readMonthlyBudgetShare(): Promise<number | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("ai_monthly_budget_share");
+
+  if (error) {
+    console.error("[ThreadMark] AI 몫 조회 실패:", error.message);
+
+    return null;
+  }
+
+  /*
+    `numeric`은 글자로 올 수 있다. 자리수가 커도 안 잃으려고 그렇게 온다.
+    **숫자가 아니면 막는다.** `Number("")`가 0이 되므로 빈 글자까지 함께
+    가린다.
+  */
+  const value = typeof data === "string" ? Number(data) : data;
+
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
 }
 
 /**
@@ -196,10 +292,14 @@ export type AdminUserUsage = {
   unknownFeatureCalls: number;
   /** 이번 달에 더해받은 허용량의 합. 되돌린 줄까지 더한 값이다. */
   granted: number;
-  /** 쓸 수 있는 횟수. 기본 한도 + 허용량. */
-  limit: number;
-  /** 남은 횟수. */
-  remaining: number;
+  /** 이번 달에 쓴 돈(USD). (19-F 2차례) */
+  spentUsd: number;
+  /** 쓸 수 있는 돈(USD). 한 사람 몫 + 더해받은 것. */
+  allowanceUsd: number;
+  /** 남은 돈(USD). */
+  remainingUsd: number;
+  /** 남은 돈으로 **어림 몇 번** 더 부를 수 있는가. */
+  remainingCalls: number;
   /** 이번 달 허용량 줄. 최근 것이 앞이다. */
   grants: readonly AdminGrantRow[];
 };
@@ -214,11 +314,18 @@ export type AdminGrantRow = {
   createdAt: string;
 };
 
-/** 이번 달에 아무 일도 없었던 사람. */
+/**
+ * 이번 달에 아무 일도 없었던 사람.
+ *
+ * **몫을 `null`로 둔다.** 이 값은 화면이 "아직 아무것도 없다"를 그릴 때
+ * 쓰는 틀이고, 그 사람의 몫이 얼마인지는 부르는 쪽이 채워 넣는다. 여기서
+ * 숫자를 지어내면 **쓸 수 있는 양이 실제와 다른 값으로 굳는다.**
+ */
 export const EMPTY_USER_USAGE: AdminUserUsage = buildUserUsage(
   emptyTally(),
   0,
   [],
+  null,
 );
 
 /*
@@ -260,7 +367,18 @@ export async function listUsageByUser(
   const supabase = await createClient();
   const since = monthStart(now).toISOString();
 
-  const eventRows: { owner_id: string; feature: string }[] = [];
+  /*
+    **모델과 토큰까지 읽는다.** (19-F 2차례) 갈래별 횟수만으로는 쓴 돈을
+    셈할 수 없고, 한도는 이제 돈으로 건다. 둘을 따로 읽으면 같은 줄을 두
+    번 받게 된다.
+  */
+  const eventRows: {
+    owner_id: string;
+    feature: string;
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+  }[] = [];
   let readAllEvents = false;
 
   for (let from = 0; from < USAGE_MAX_ROWS; from += USAGE_PAGE_SIZE) {
@@ -270,7 +388,7 @@ export async function listUsageByUser(
     */
     const { data, error } = await supabase
       .from("ai_usage_events")
-      .select("owner_id, feature")
+      .select("owner_id, feature, model, input_tokens, output_tokens")
       .gte("created_at", since)
       .order("id", { ascending: true })
       .range(from, from + USAGE_PAGE_SIZE - 1);
@@ -347,6 +465,12 @@ export async function listUsageByUser(
   const tallies = tallyByOwner(eventRows);
   const sums = sumGrantsByOwner(grantRows);
 
+  /*
+    **한 번만 묻는다.** 몫은 예산을 인원으로 나눈 값이라 **모두에게 같다.**
+    사람마다 물으면 같은 답을 사람 수만큼 받는다.
+  */
+  const share = await readMonthlyBudgetShare();
+
   const summaries = new Map<string, AdminUserUsage>();
 
   for (const ownerId of new Set([...tallies.keys(), ...sums.keys()])) {
@@ -364,6 +488,7 @@ export async function listUsageByUser(
             grantedBy: row.granted_by,
             createdAt: row.created_at,
           })),
+        share,
       ),
     );
   }
@@ -374,25 +499,34 @@ export async function listUsageByUser(
 /**
  * 센 것과 더해준 것을 한도 셈에 넣어 화면이 쓸 모양으로 만든다.
  *
- * **한도 셈을 여기서 다시 쓰지 않는다.** `decideAiCall`과 `limitWithGrants`를
- * 그대로 부른다. 화면에 보이는 남은 횟수와 실제로 막는 자리가 다른 셈을
- * 쓰면, 한쪽만 고쳐도 아무도 모른다. `decideAiCallNow`가 쓰는 것과 같은
- * 함수를 쓴다.
+ * **한도 셈을 여기서 다시 쓰지 않는다.** `decideAiCall`과
+ * `allowanceWithGrants`를 그대로 부른다. 화면에 보이는 남은 양과 실제로
+ * 막는 자리가 다른 셈을 쓰면, 한쪽만 고쳐도 아무도 모른다.
+ * `decideAiCallNow`가 쓰는 것과 같은 함수를 쓴다.
+ *
+ * @param shareUsd 한 사람 몫. 못 읽었으면 `null`이고, 그러면 쓸 수 있는
+ *   양이 0으로 보인다. **관리자 화면에서 0이 보이면 예산 설정을 본다.**
  */
 function buildUserUsage(
   tally: FeatureTally,
   granted: number,
   grants: readonly AdminGrantRow[],
+  shareUsd: number | null,
 ): AdminUserUsage {
-  const decision = decideAiCall(tally.total, limitWithGrants(granted));
+  const decision = decideAiCall(
+    tally.spentUsd,
+    allowanceWithGrants(shareUsd, granted),
+  );
 
   return {
     used: tally.total,
     byFeature: tally.byFeature,
     unknownFeatureCalls: tally.unknown,
     granted,
-    limit: decision.limit,
-    remaining: decision.remaining,
+    spentUsd: decision.spentUsd,
+    allowanceUsd: decision.allowanceUsd,
+    remainingUsd: decision.remainingUsd,
+    remainingCalls: decision.remainingCalls,
     grants,
   };
 }

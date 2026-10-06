@@ -4,9 +4,12 @@ import { requireActiveAccount } from "@/lib/auth/account";
 import { firstIssueMessage } from "@/lib/captures/schema";
 import {
   createAnthropicTranslationProvider,
+  ANTHROPIC_PROVIDER_NAME,
+  getAnthropicModel,
   isTranslationConfigured,
 } from "@/lib/translation/anthropic";
 import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
+import { decideAiCallNow, recordAiUsage } from "@/lib/ai/usage-queries";
 import {
   takeTranslationSlot,
   TRANSLATION_MAX_PER_WINDOW,
@@ -105,10 +108,59 @@ export async function translateSelection(input: {
     };
   }
 
+  /*
+    **한 달 장부를 본다.** (19-F 2차례)
+
+    2026-10-06까지 번역은 장부 밖에 있었다. 위의 연타 한도만 걸려 있었고,
+    그것은 세는 자리가 서버의 기억이라 Vercel에서 헐겁게 걸린다.
+    `rate-limit.ts`가 스스로 "진짜 상한은 데이터베이스에 둔다"고 적어둔
+    자리이고, 여기가 그 자리다.
+
+    **연타 한도 다음에 본다.** 장부를 읽는 것은 왕복이 한 번 더 드는 일이라,
+    연타로 쏟아지는 요청을 먼저 쳐낸 뒤에 묻는다.
+  */
+  const budget = await decideAiCallNow();
+
+  if (budget === null) {
+    // 모르면 거부한다. (AGENTS.md 5절 7번)
+    return {
+      ok: false,
+      reason: "failed",
+      message: "얼마나 쓰셨는지 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  if (!budget.allowed) {
+    return {
+      ok: false,
+      reason: "rate_limited",
+      message:
+        "이번 달에 쓸 수 있는 AI 몫을 다 쓰셨습니다. 다음 달 1일에 다시 채워집니다. 더 쓰셔야 하면 관리자에게 요청해 주세요.",
+    };
+  }
+
   const provider = createAnthropicTranslationProvider();
 
-  return provider.translate({
+  const result = await provider.translate({
     text: parsed.data.text,
     targetLanguage: parsed.data.targetLanguage as TranslationLanguageCode,
   });
+
+  /*
+    **실패해도 남긴다.** 실패한 요청에도 돈이 들 수 있다. 다만 요청이
+    아예 못 나간 경우(설정 없음·길이 초과)는 위에서 걸러졌으므로, 여기
+    오는 실패는 밖에 다녀온 뒤의 실패다.
+
+    토큰을 모르면 0으로 남는다. **줄 자체는 남겨야** 갈래별 횟수가 맞는다.
+  */
+  await recordAiUsage({
+    feature: "translation",
+    provider: ANTHROPIC_PROVIDER_NAME,
+    model: getAnthropicModel(),
+    inputTokens: result.ok ? result.inputTokens : 0,
+    outputTokens: result.ok ? result.outputTokens : 0,
+    outcome: result.ok ? "ok" : "failed",
+  });
+
+  return result;
 }
