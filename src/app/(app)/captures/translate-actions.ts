@@ -6,6 +6,7 @@ import {
   createAnthropicTranslationProvider,
   isTranslationConfigured,
 } from "@/lib/translation/anthropic";
+import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
 import {
   takeTranslationSlot,
   TRANSLATION_MAX_PER_WINDOW,
@@ -49,11 +50,23 @@ export async function translateSelection(input: {
 }): Promise<TranslateSelectionResult> {
   const account = await requireActiveAccount();
 
-  if (!isTranslationConfigured()) {
+  /*
+    설정과 허용을 한 자리에서 가린다. (19-F)
+
+    **번역도 돈이 든다.** 들어가는 글은 AI 검색의 5분의 1이지만 나오는
+    글의 상한이 두 배라 한 번에 드는 값이 비슷하다. 싸다고 생각하기 쉬운
+    자리여서 허용 밖에 두지 않는다. (VERIFICATION 4-76절)
+  */
+  const availability = aiAvailability({
+    configured: isTranslationConfigured(),
+    allowed: account.aiEnabled,
+  });
+
+  if (availability !== "ok") {
     return {
       ok: false,
-      reason: "not_configured",
-      message: "번역 기능이 아직 설정되지 않았습니다.",
+      reason: availability === "not_configured" ? "not_configured" : "not_allowed",
+      message: aiBlockedMessage(availability) ?? "",
     };
   }
 

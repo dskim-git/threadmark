@@ -134,7 +134,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         자리와 찾은 결과가 그대로 남는다. 화면마다 따로 두면 옮길 때마다
         처음으로 돌아가고, 그러면 띄워두는 뜻이 없다.
       */}
-      <SearchDock aiConfigured={isAiSearchConfigured()} />
+      {/*
+        **허용까지 함께 본다.** (19-F) 허용 못 받은 사람에게 창을 띄우면
+        물음을 적고 나서야 안 된다는 것을 알게 된다. 까닭은 메뉴에 있는
+        `/ai-search`가 적어 준다.
+      */}
+      <SearchDock
+        aiConfigured={isAiSearchConfigured() && account.aiEnabled}
+      />
     </div>
   );
 }

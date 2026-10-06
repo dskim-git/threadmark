@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
 import { isAiSearchConfigured } from "@/lib/ai/anthropic";
 import {
   MAX_PLACEMENT_ITEMS,
@@ -50,7 +51,7 @@ export async function suggestPlacements(
   _previous: SuggestState,
   formData: FormData,
 ): Promise<SuggestState> {
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const projectId = idSchema.safeParse(formValue(formData.get("projectId")));
 
@@ -58,11 +59,19 @@ export async function suggestPlacements(
     return fail("어느 프로젝트인지 알 수 없습니다.", null);
   }
 
-  if (!isAiSearchConfigured()) {
-    return fail(
-      "AI 기능이 아직 설정되지 않았습니다. 운영자에게 알려 주세요.",
-      null,
-    );
+  /*
+    설정과 허용을 한 자리에서 가린다. (19-F) 열쇠가 없으면 허용을 받아도
+    아무 일이 안 일어나므로 설정을 먼저 말한다.
+  */
+  const blocked = aiBlockedMessage(
+    aiAvailability({
+      configured: isAiSearchConfigured(),
+      allowed: account.aiEnabled,
+    }),
+  );
+
+  if (blocked) {
+    return fail(blocked, null);
   }
 
   /*

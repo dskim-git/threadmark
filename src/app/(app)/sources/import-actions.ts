@@ -18,6 +18,7 @@ import {
 import { findDois } from "@/lib/papers/doi-scan";
 import { readPdfHeadText } from "@/lib/papers/pdf-text";
 import { normalizeDoi } from "@/lib/papers/schema";
+import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
 import { takeSlot } from "@/lib/translation/rate-limit";
 
 /**
@@ -315,8 +316,23 @@ export async function previewPdfTextForAi(
 ): Promise<ImportResult> {
   const account = await requireActiveAccount();
 
-  if (!isAiExtractConfigured()) {
-    return { ok: false, message: "AI 기능이 아직 설정되지 않았습니다." };
+  /*
+    설정과 허용을 한 자리에서 가린다. (19-F)
+
+    **앞의 세 길은 막지 않는다.** PDF에서 DOI 찾기, DOI 직접 넣기, 제목으로
+    찾기는 Crossref라 돈이 들지 않는다. 막는 것은 AI가 첫 장을 읽는 길뿐이다.
+    돈이 안 드는 길까지 함께 잠그면 **허용 못 받은 사람은 서지를 아예 못
+    가져온다.**
+  */
+  const blocked = aiBlockedMessage(
+    aiAvailability({
+      configured: isAiExtractConfigured(),
+      allowed: account.aiEnabled,
+    }),
+  );
+
+  if (blocked) {
+    return { ok: false, message: blocked };
   }
 
   const parsed = z.object({ sourceFileId: z.uuid() }).safeParse(input);
@@ -368,8 +384,23 @@ export async function previewPdfTextForAi(
 export async function extractWithAi(input: unknown): Promise<ImportResult> {
   const account = await requireActiveAccount();
 
-  if (!isAiExtractConfigured()) {
-    return { ok: false, message: "AI 기능이 아직 설정되지 않았습니다." };
+  /*
+    설정과 허용을 한 자리에서 가린다. (19-F)
+
+    **앞의 세 길은 막지 않는다.** PDF에서 DOI 찾기, DOI 직접 넣기, 제목으로
+    찾기는 Crossref라 돈이 들지 않는다. 막는 것은 AI가 첫 장을 읽는 길뿐이다.
+    돈이 안 드는 길까지 함께 잠그면 **허용 못 받은 사람은 서지를 아예 못
+    가져온다.**
+  */
+  const blocked = aiBlockedMessage(
+    aiAvailability({
+      configured: isAiExtractConfigured(),
+      allowed: account.aiEnabled,
+    }),
+  );
+
+  if (blocked) {
+    return { ok: false, message: blocked };
   }
 
   const parsed = z.object({ sourceFileId: z.uuid() }).safeParse(input);

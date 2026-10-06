@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { HelpButton } from "@/app/(app)/help-button";
+import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
 import { isAiSearchConfigured } from "@/lib/ai/anthropic";
 import { requireActiveAccount } from "@/lib/auth/account";
 
@@ -30,9 +31,23 @@ export const metadata: Metadata = {
  *   메뉴에 있어서, 감추면 빈 화면만 남기 때문이다.
  */
 export default async function AiSearchPage() {
-  await requireActiveAccount("/ai-search");
+  const account = await requireActiveAccount("/ai-search");
 
-  const configured = isAiSearchConfigured();
+  /*
+    못 쓰는 까닭이 둘이고 **답이 서로 다르다.** (19-F)
+
+      설정이 없다  운영자가 열쇠를 넣어야 한다. 쓰는 사람이 할 일이 없다
+      허용이 없다  관리자에게 요청하면 풀린다
+
+    한 가지 말로 뭉뚱그리면 "요청하면 되는 것"과 "기다려도 안 되는 것"을
+    가를 수 없다. `aiAvailability`가 그 순서와 갈래를 들고 있다.
+  */
+  const availability = aiAvailability({
+    configured: isAiSearchConfigured(),
+    allowed: account.aiEnabled,
+  });
+
+  const configured = availability === "ok";
 
   return (
     <div className="flex flex-col gap-8">
@@ -51,7 +66,7 @@ export default async function AiSearchPage() {
 
       {configured ? null : (
         <p className="rounded-xl border border-black/[.08] bg-white px-4 py-3 text-sm leading-6 text-zinc-600 dark:border-white/[.145] dark:bg-zinc-950 dark:text-zinc-400">
-          이 기능은 아직 설정되지 않았습니다. 운영자에게 알려 주세요. 그동안은{" "}
+          {aiBlockedMessage(availability)} 그동안은{" "}
           <Link
             href="/search"
             className="underline underline-offset-2 hover:text-accent dark:hover:text-accent-dark"

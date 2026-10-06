@@ -61,7 +61,7 @@ export default async function ReaderPage({
   params,
   searchParams,
 }: PageProps<"/sources/[id]/reader">) {
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const { id } = await params;
   const source = await getSourceById(id);
@@ -404,7 +404,7 @@ export default async function ReaderPage({
                 번역을 쓸 수 있는지는 서버만 안다. API 키가 있는지를
                 브라우저에 내려보내지 않고, "쓸 수 있는가"만 내려보낸다.
               */
-              translationEnabled={isTranslationConfigured()}
+              translationEnabled={isTranslationConfigured() && account.aiEnabled}
               /* 분석 화면에서 `논문을 옆에 두고 적기`로 건너올 때 쓴다. */
               initialTab={readPanelTab(firstValue(query.panel))}
               showAnalysis={isPaper}

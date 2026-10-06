@@ -89,13 +89,19 @@ export type TranslationOutcome = {
  * 화면이 "이건 다시 해볼 만한가"를 판단할 수 없다.
  *
  *   not_configured  번역 기능이 켜져 있지 않다. 사용자가 할 수 있는 일이 없다.
+ *   not_allowed     관리자가 아직 허용하지 않았다. **요청하면 풀린다.** (19-F)
  *   too_long        고른 글이 길다. 짧게 다시 고르면 된다.
  *   rate_limited    너무 자주 눌렀다. 잠시 뒤 다시 하면 된다.
  *   refused         번역기가 이 글을 다루기를 거부했다.
  *   failed          그 밖의 실패. 잠시 뒤 다시.
+ *
+ * `not_configured`와 `not_allowed`를 가르는 까닭은 **사용자가 할 수 있는
+ * 일이 다르기 때문이다.** 앞엣것은 기다리는 수밖에 없고 뒤엣것은 요청하면
+ * 된다. 한 갈래로 묶으면 그 차이가 사라진다.
  */
 export type TranslationFailureReason =
   | "not_configured"
+  | "not_allowed"
   | "too_long"
   | "rate_limited"
   | "refused"

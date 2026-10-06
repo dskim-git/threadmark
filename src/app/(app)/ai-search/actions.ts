@@ -8,6 +8,7 @@ import {
 import { citedIndices, danglingIndices } from "@/lib/ai/answer";
 import { gatherCandidates } from "@/lib/ai/candidates";
 import { extractKeywords, normalizeQuestion } from "@/lib/ai/question";
+import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
 import {
   decideAiCallNow,
   recordAiUsage,
@@ -69,7 +70,7 @@ export async function askAboutMyNotes(
     창** 양쪽에서 부른다. 창에서 부른 것을 `/ai-search`로 되돌리면
     하던 일을 잃는데, 그 창은 하던 일을 잃지 않으려고 만든 것이다.
   */
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const question = normalizeQuestion(formData.get("question"));
 
@@ -77,12 +78,21 @@ export async function askAboutMyNotes(
     return fail("", "무엇이 궁금한지 적어 주세요.", null);
   }
 
-  if (!isAiSearchConfigured()) {
-    return fail(
-      question,
-      "AI로 물어보기가 아직 설정되지 않았습니다. 운영자에게 알려 주세요.",
-      null,
-    );
+  /*
+    설정과 허용을 한 자리에서 가린다. (19-F)
+
+    **순서가 있다.** 열쇠가 없으면 허용을 받아도 아무 일이 안 일어나므로
+    설정을 먼저 말한다. `aiAvailability`가 그 순서를 들고 있다.
+  */
+  const blocked = aiBlockedMessage(
+    aiAvailability({
+      configured: isAiSearchConfigured(),
+      allowed: account.aiEnabled,
+    }),
+  );
+
+  if (blocked) {
+    return fail(question, blocked, null);
   }
 
   /*

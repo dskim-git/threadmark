@@ -33,7 +33,7 @@ export default async function PaperProfilePage({
   params,
   searchParams,
 }: PageProps<"/sources/[id]/paper">) {
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const { id } = await params;
   const source = await getSourceById(id);
@@ -124,7 +124,7 @@ export default async function PaperProfilePage({
           AI를 쓸 수 있는지는 서버만 안다. API 키가 있는지를 브라우저에
           내려보내지 않고, "쓸 수 있는가"만 내려보낸다. (13-C와 같다)
         */
-        aiEnabled={isAiExtractConfigured()}
+        aiEnabled={isAiExtractConfigured() && account.aiEnabled}
         initial={{
           authors: profile ? formatAuthorsInput(profile.authors) : "",
           publicationYear: profile?.publicationYear?.toString() ?? "",

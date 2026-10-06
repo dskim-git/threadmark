@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { aiAvailability, aiBlockedMessage } from "@/lib/ai/access";
 import { isAiSearchConfigured } from "@/lib/ai/anthropic";
 import { gatherCandidates } from "@/lib/ai/candidates";
 import { askWhatFitsHere } from "@/lib/ai/placement-anthropic";
@@ -54,7 +55,7 @@ export async function suggestForNode(
   _previous: FitState,
   formData: FormData,
 ): Promise<FitState> {
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const projectId = idSchema.safeParse(formValue(formData.get("projectId")));
   const nodeId = idSchema.safeParse(formValue(formData.get("nodeId")));
@@ -63,12 +64,19 @@ export async function suggestForNode(
     return fail(null, "어느 자리인지 알 수 없습니다.", null);
   }
 
-  if (!isAiSearchConfigured()) {
-    return fail(
-      nodeId.data,
-      "AI 기능이 아직 설정되지 않았습니다. 운영자에게 알려 주세요.",
-      null,
-    );
+  /*
+    설정과 허용을 한 자리에서 가린다. (19-F) 열쇠가 없으면 허용을 받아도
+    아무 일이 안 일어나므로 설정을 먼저 말한다.
+  */
+  const blocked = aiBlockedMessage(
+    aiAvailability({
+      configured: isAiSearchConfigured(),
+      allowed: account.aiEnabled,
+    }),
+  );
+
+  if (blocked) {
+    return fail(nodeId.data, blocked, null);
   }
 
   const decision = await decideAiCallNow();

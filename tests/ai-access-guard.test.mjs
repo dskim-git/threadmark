@@ -226,3 +226,162 @@ test("AI 허용을 바꾼 일의 감사 갈래가 허용 목록에 있다", () =
     `${last.migration}의 감사 갈래 목록에서 ai_usage_granted가 사라졌다. 제약을 다시 쓰면서 옛 갈래를 떨어뜨렸다. 허용량 더하기가 통째로 막힌다.`,
   );
 });
+
+/**
+ * 돈을 쓰는 자리는 전부 허용을 본다. (19-F)
+ *
+ * **이 검사가 잡으려는 것은 여섯 번째 자리다.** 지금은 다섯이고, 나중에
+ * 누가 AI를 부르는 동작을 하나 더 만들면서 허용 확인을 빠뜨리면 **그
+ * 자리만 조용히 열린다.** 허용 못 받은 사람이 거기로 돈을 쓴다.
+ *
+ * 이 저장소가 같은 모양으로 여러 번 겪었다. `PROTECTED_TABLES`,
+ * `EXPORTED_TABLES`, `PROFILE_SEARCH_TARGETS`, 001의 DEFINER 목록이
+ * 전부 **한 곳을 잊어서** 생긴 자리다. (AGENTS.md 7절)
+ *
+ * **손으로 적은 목록과 견주지 않는다.** 그 목록 자체가 또 뒤처질 수 있다.
+ * 돈을 쓰는 함수 이름으로 파일을 찾아, 찾아낸 것 **전부**가 허용을 보는지
+ * 확인한다. 새 파일이 생기면 저절로 걸린다.
+ */
+
+const appDir = path.join(repoRoot, "src", "app");
+
+/** 부르면 Anthropic에 요청이 나가는 함수들. 이 이름이 곧 돈이다. */
+const PAID_CALLS = [
+  "createAnthropicAskProvider",
+  "askWhereToPlace",
+  "askWhatFitsHere",
+  "extractPaperFromText",
+  "createAnthropicTranslationProvider",
+];
+
+function walk(dir) {
+  const found = [];
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      found.push(...walk(full));
+    } else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) {
+      found.push(full);
+    }
+  }
+
+  return found;
+}
+
+function paidCallers() {
+  return walk(appDir)
+    .map((file) => ({ file, source: readFileSync(file, "utf8") }))
+    .filter(({ source }) =>
+      PAID_CALLS.some((name) => new RegExp(String.raw`\b${name}\b`).test(source)),
+    )
+    .map(({ file, source }) => ({
+      name: path.relative(repoRoot, file).split(path.sep).join("/"),
+      source,
+    }));
+}
+
+test("돈을 쓰는 자리를 찾아낼 수 있다", () => {
+  /*
+    **목록이 비는 날을 생각해 둔다.** (AGENTS.md 6절) 함수 이름이 바뀌면
+    찾는 것이 0개가 되고, 그러면 아래 검사가 **아무것도 보지 않으면서
+    통과한다.** 그 상태가 가장 나쁘다. 하나도 없으면 여기서 멈춘다.
+  */
+  const callers = paidCallers();
+
+  assert.ok(
+    callers.length >= 5,
+    `돈을 쓰는 자리를 ${callers.length}개 찾았다. 다섯 이상이어야 한다. PAID_CALLS의 함수 이름이 바뀌었는지 본다.`,
+  );
+});
+
+test("돈을 쓰는 자리는 전부 account.aiEnabled를 본다", () => {
+  /*
+    **글자 찾기로 쓰지 않는다.** `aiEnabled`라는 글자는 주석에도 있고 다른
+    뜻의 변수 이름일 수도 있다. (`paper/page.tsx`가 실제로 `aiEnabled`라는
+    이름을 설정 여부에 쓰고 있었다)
+
+    그래서 **`aiAvailability(...)` 호출의 괄호 안**을 떼어내, 그 안에서
+    `allowed: account.aiEnabled`를 찾는다. 가드를 부르면서 엉뚱한 값을
+    넘기는 것까지 걸린다.
+  */
+  for (const { name, source } of paidCallers()) {
+    const calls = [
+      ...source.matchAll(/aiAvailability\(\s*\{([\s\S]*?)\}\s*\)/g),
+    ].map((match) => match[1]);
+
+    assert.ok(
+      calls.length > 0,
+      `${name}이 돈을 쓰는데 aiAvailability로 허용을 보지 않는다. 허용 못 받은 사람이 이 자리로 돈을 쓴다.`,
+    );
+
+    assert.ok(
+      calls.some((args) => /allowed:\s*account\.aiEnabled\b/.test(args)),
+      `${name}의 aiAvailability가 account.aiEnabled를 보지 않는다. 가드를 부르면서 다른 값을 넘기고 있다.`,
+    );
+  }
+});
+
+test("가드를 부르기만 하고 넘어가지 않는다", () => {
+  /*
+    **망가뜨려 보다가 찾은 구멍이다.** (2026-10-06)
+
+    처음에는 위의 검사만 썼다. 그런데 `if (blocked) { return ... }` 한
+    덩어리를 지워도 **통과했다.** 가드를 부르는 것과 그 답으로 멈추는 것은
+    다른 일인데, 부르는 것만 보고 있었다.
+
+    그 상태가 가장 나쁘다. 코드에는 허용을 보는 줄이 멀쩡히 있어서, 읽는
+    사람은 막혀 있다고 믿는다. **실제로는 값만 셈하고 그대로 지나간다.**
+
+    그래서 **가드가 돌려준 값을 담은 이름**을 찾아, 그 이름이 `if` 안에
+    있고 그 `if`가 `return`으로 끝나는지를 본다. 멈추지 않는 가드는 가드가
+    아니다.
+  */
+  for (const { name, source } of paidCallers()) {
+    const bindings = [
+      ...source.matchAll(
+        /const\s+(\w+)\s*=\s*(?:aiBlockedMessage|aiAvailability)\(/g,
+      ),
+    ].map((match) => match[1]);
+
+    assert.ok(
+      bindings.length > 0,
+      `${name}이 가드의 답을 어디에도 담지 않는다.`,
+    );
+
+    const stops = bindings.some((binding) =>
+      new RegExp(
+        String.raw`if\s*\([^)]*\b${binding}\b[^)]*\)\s*\{[^}]*return`,
+      ).test(source),
+    );
+
+    assert.ok(
+      stops,
+      `${name}이 허용을 보고도 멈추지 않는다. 값만 셈하고 그대로 지나간다. 읽는 사람은 막혀 있다고 믿는데 실제로는 열려 있다.`,
+    );
+  }
+});
+
+test("허용이 없다는 말은 한 곳에서만 온다", () => {
+  /*
+    다섯 자리가 저마다 말을 적으면 **같은 일을 겪고도 화면마다 다른 말을
+    듣는다.** 쓰는 사람은 그것이 같은 까닭인지 알 수 없다.
+
+    그래서 말은 `access.ts`에 두고, 부르는 쪽은 `aiBlockedMessage`로 받는다.
+    여기서는 **그 말을 손으로 베껴 적은 자리가 없는지** 본다.
+  */
+  const message = readFileSync(
+    path.join(repoRoot, "src", "lib", "ai", "access.ts"),
+    "utf8",
+  ).match(/AI_NOT_ALLOWED_MESSAGE =\s*\n?\s*"([^"]+)"/)?.[1];
+
+  assert.ok(message, "AI_NOT_ALLOWED_MESSAGE를 떼어내지 못했다.");
+
+  for (const { name, source } of paidCallers()) {
+    assert.ok(
+      !source.includes(message),
+      `${name}이 허용 안내문을 손으로 베껴 적었다. aiBlockedMessage를 쓴다. 베껴 적으면 말을 고칠 때 한 곳이 뒤처진다.`,
+    );
+  }
+});

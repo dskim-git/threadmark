@@ -194,3 +194,97 @@ export async function grantAiUsage(formData: FormData): Promise<void> {
   revalidatePath("/admin/users");
   redirect("/admin/users?notice=granted");
 }
+
+/**
+ * 폼이 보내는 값은 전부 사용자가 조작할 수 있다. 서버에서 다시 본다.
+ *
+ * `enabled`를 글자로 받는다. 체크박스가 아니라 **단추 두 개**이기 때문이다.
+ * 체크박스는 끄면 칸 자체가 안 와서 "끄기"와 "요청이 깨짐"이 같은 모양이
+ * 된다. 돈이 드는 기능의 문을 여닫는 자리라 그 둘을 가른다.
+ */
+const aiAccessSchema = z.object({
+  userId: z.uuid(),
+  enabled: z.enum(["true", "false"]),
+});
+
+/**
+ * 한 사람의 AI 기능 허용을 켜거나 끈다. (19-F, 2026-10-06 사용자 요청)
+ *
+ * > 관리자가 판단해서 이 사용자가 AI 기능을 사용해도 된다고 생각이 되면
+ * > 관리자의 사용자 관리 메뉴에서 그 사용자가 AI 기능을 사용할 수 있도록
+ * > 버튼으로 허용해주는 식이지.
+ *
+ * 세 겹으로 막는다.
+ *   1. 이 함수의 requireAdminAccount
+ *   2. profiles_update_admin 정책 (RLS)
+ *   3. guard_profile_protected_columns 트리거
+ *
+ * **세 번째가 없으면 안 된다.** profiles의 수정 정책은 자기 줄을 고치는
+ * 것을 허용한다. 이름과 언어와 시간대를 스스로 바꾸기 때문이다. 그 문으로
+ * `ai_enabled`까지 지나가면 누구나 스스로 AI를 켠다. (003의 검사 149)
+ *
+ * 감사 기록은 이 함수가 남기지 않는다. 트리거가 남긴다. 애플리케이션이
+ * 기록을 맡으면 호출을 빠뜨렸을 때 드러나지 않는다.
+ *
+ * **자기 자신에게도 할 수 있다.** 승인 상태와 다른 점이고, 허용량 더하기와
+ * 같은 쪽이다. 승인 상태를 막는 까닭은 혼자뿐인 관리자가 스스로 잠기는
+ * 것을 막으려는 것인데, AI 허용은 스스로 끈 뒤 다시 켤 수 있어 잠기지
+ * 않는다.
+ *
+ * **지금 값과 같으면 아무 일도 하지 않는다.** 가드 트리거는 값이 실제로
+ * 바뀔 때만 개입하고 감사 기록도 그때만 남는다. 같은 값을 보내면 조용히
+ * 지나가면서 화면은 "허용했습니다"라고 말하는데, 그러면 눌렀는데 아무
+ * 기록이 없는 자리가 생긴다. 먼저 읽어서 갈라 말한다.
+ */
+export async function setAiAccess(formData: FormData): Promise<void> {
+  await requireAdminAccount("/admin/users");
+
+  const parsed = aiAccessSchema.safeParse({
+    userId: formData.get("userId"),
+    enabled: formData.get("enabled"),
+  });
+
+  if (!parsed.success) {
+    redirect("/admin/users?error=invalid_request");
+  }
+
+  const { userId } = parsed.data;
+  const enabled = parsed.data.enabled === "true";
+
+  const supabase = await createClient();
+
+  // 없는 사람에게 하려 한 것과 데이터베이스가 거절한 것을 갈라서 말한다.
+  const { data: target, error: readError } = await supabase
+    .from("profiles")
+    .select("id, ai_enabled")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (readError) {
+    console.error("[ThreadMark] 대상 사용자 조회 실패:", readError.message);
+    redirect("/admin/users?error=ai_access_failed");
+  }
+
+  if (!target) {
+    redirect("/admin/users?error=user_not_found");
+  }
+
+  if (target.ai_enabled === enabled) {
+    redirect("/admin/users?notice=ai_access_unchanged");
+  }
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ ai_enabled: enabled })
+    .eq("id", userId);
+
+  if (updateError) {
+    console.error("[ThreadMark] AI 허용 변경 실패:", updateError.message);
+    redirect("/admin/users?error=ai_access_failed");
+  }
+
+  revalidatePath("/admin/users");
+  redirect(
+    `/admin/users?notice=${enabled ? "ai_access_on" : "ai_access_off"}`,
+  );
+}

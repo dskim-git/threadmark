@@ -14,7 +14,7 @@ import { getStatusLabel, isAccountStatus } from "@/lib/auth/status";
 import type { AccountStatus } from "@/lib/auth/status";
 import { createClient } from "@/lib/supabase/server";
 
-import { grantAiUsage, updateUserStatus } from "./actions";
+import { grantAiUsage, setAiAccess, updateUserStatus } from "./actions";
 
 export const metadata: Metadata = {
   title: "사용자 승인",
@@ -33,6 +33,10 @@ const MESSAGES: Record<string, string> = {
     "몇 번 더 쓸 수 있게 할지와 사유를 모두 적어 주세요. 0번은 더할 수 없습니다.",
   grant_failed: "허용량을 더하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   granted: "허용량을 더했습니다.",
+  ai_access_on: "이제 AI 기능을 쓸 수 있습니다.",
+  ai_access_off: "AI 기능을 쓸 수 없게 했습니다.",
+  ai_access_unchanged: "이미 그 상태입니다.",
+  ai_access_failed: "AI 허용을 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.",
 };
 
 type UserRow = {
@@ -42,6 +46,8 @@ type UserRow = {
   status: AccountStatus;
   status_reason: string | null;
   requested_at: string;
+  /** AI 기능을 쓸 수 있는가. (19-F) 못 읽으면 거짓으로 본다. */
+  ai_enabled: boolean;
 };
 
 export default async function AdminUsersPage({
@@ -57,7 +63,9 @@ export default async function AdminUsersPage({
   const [usersResult, logsResult, usageByUser] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, email, display_name, status, status_reason, requested_at")
+      .select(
+        "id, email, display_name, status, status_reason, requested_at, ai_enabled",
+      )
       .order("requested_at", { ascending: true }),
     supabase
       .from("admin_audit_logs")
@@ -265,6 +273,8 @@ function UserCard({
         </p>
       ) : null}
 
+      <AiAccessPanel userId={user.id} enabled={user.ai_enabled} />
+
       <UsagePanel userId={user.id} usage={usage} nameById={nameById} />
 
       {isSelf ? (
@@ -307,6 +317,71 @@ function UserCard({
         </form>
       )}
     </li>
+  );
+}
+
+/**
+ * 이 사람이 AI 기능을 쓸 수 있는가. (19-F, 2026-10-06 사용자 요청)
+ *
+ * **사용량 칸 위에 둔다.** 물음의 순서가 그렇다. 쓸 수 있는가가 먼저이고
+ * 얼마나 썼는가가 그다음이다. 못 쓰는 사람의 사용량은 늘 0이라, 허용
+ * 여부를 모르고 그 0을 보면 "안 쓰는 사람"으로 읽힌다.
+ *
+ * **단추가 하나뿐이다.** 지금 상태의 반대만 보여준다. 둘 다 보여주면
+ * 지금이 어느 쪽인지를 단추 모양으로 읽어야 한다. 지금 상태는 글로 적고
+ * 단추는 바꾸는 일만 한다.
+ */
+function AiAccessPanel({
+  userId,
+  enabled,
+}: {
+  userId: string;
+  enabled: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-black/[.08] bg-zinc-50 p-4 dark:border-white/[.145] dark:bg-white/[.04]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-black dark:text-zinc-50">
+            AI 기능
+          </span>
+          <span className="text-xs leading-5 text-zinc-600 dark:text-zinc-400">
+            {enabled
+              ? "쓸 수 있습니다. AI에게 물어보기, 자리 추천, 번역, 논문 서지 AI 보조입니다."
+              : "쓸 수 없습니다. 가입하면 이 상태로 시작합니다."}
+          </span>
+        </div>
+
+        <form action={setAiAccess} className="shrink-0">
+          <input type="hidden" name="userId" value={userId} />
+          <input
+            type="hidden"
+            name="enabled"
+            value={enabled ? "false" : "true"}
+          />
+          <button
+            type="submit"
+            className={
+              enabled
+                ? "h-10 rounded-full border border-red-300 px-4 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
+                : "h-10 rounded-full border border-accent px-4 text-sm font-medium text-accent transition-colors hover:bg-accent-soft dark:border-accent-dark dark:text-accent-dark dark:hover:bg-accent-dark-soft"
+            }
+          >
+            {enabled ? "AI 기능 막기" : "AI 기능 허용하기"}
+          </button>
+        </form>
+      </div>
+
+      {/*
+        **허용받은 사람이 늘면 각자의 몫이 줄어든다.** 한 사람 몫은 한 달
+        예산을 허용받은 사람 수로 나눈 값이다. 누르기 전에 그것을 알려야
+        한다.
+      */}
+      <p className="text-xs leading-5 text-zinc-500">
+        한 달 예산은 허용받은 사람끼리 나눠 씁니다. 허용하는 사람이 늘면
+        각자 쓸 수 있는 양이 줄어듭니다.
+      </p>
+    </div>
   );
 }
 
@@ -452,6 +527,8 @@ function actionLabel(action: string): string {
     user_role_revoked: "역할 회수",
     app_setting_updated: "설정 변경",
     ai_usage_granted: "AI 허용량 더하기",
+    // 2026-10-06. 빠뜨리면 영문 갈래 이름이 그대로 보인다.
+    ai_access_changed: "AI 기능 허용 변경",
   };
 
   return labels[action] ?? action;

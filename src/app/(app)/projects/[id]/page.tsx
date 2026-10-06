@@ -48,7 +48,7 @@ export default async function ProjectDetailPage({
   params,
   searchParams,
 }: PageProps<"/projects/[id]">) {
-  await requireActiveAccount();
+  const account = await requireActiveAccount();
 
   const { id } = await params;
   const project = await getProjectById(id);
@@ -190,7 +190,7 @@ export default async function ProjectDetailPage({
         items={outline}
         placements={placements}
         tree={pickerTree}
-        aiConfigured={isAiSearchConfigured()}
+        aiConfigured={isAiSearchConfigured() && account.aiEnabled}
         linked={[
           ...linkedSources.map((source) => ({
             value: `source:${source.id}`,

@@ -30,6 +30,14 @@ export type Account = {
   /** user_roles를 기준으로 한 관리자 여부. 이메일로 판단하지 않는다. */
   isAdmin: boolean;
   /**
+   * AI 기능을 쓸 수 있는가. (19-F)
+   *
+   * **못 읽으면 거짓이다.** (보안 원칙 7) 돈이 드는 기능이라 모를 때는
+   * 막는 쪽으로 기운다. 아래 `readProfile`이 이 칸을 첫 번째 조회에만
+   * 넣어 두는 까닭도 같다.
+   */
+  aiEnabled: boolean;
+  /**
    * 화면 취향. (설계 문서 4.2절)
    *
    * 조회에 실패하거나 모르는 값이 들어 있으면 기본값이다. 보기에 관한 값이라
@@ -71,9 +79,20 @@ async function readProfile(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
+  /*
+    `ai_enabled`를 **첫 번째 조회에만** 둔다. (19-F)
+
+    두 번째 조회에도 넣으면, 그 칸이 없는 데이터베이스에서 둘 다 실패해
+    **앱 전체가 열리지 않는다.** 2026-09-24에 취향 칸으로 겪은 그대로다.
+
+    첫 번째만 두면 어긋났을 때 **AI만 꺼지고 앱은 선다.** 돈이 드는 기능이
+    꺼지는 것은 안전한 쪽이고, 로그인이 막히는 것은 그렇지 않다.
+  */
   const full = await supabase
     .from("profiles")
-    .select("email, display_name, status, theme_mode, theme_palette, theme_fonts")
+    .select(
+      "email, display_name, status, ai_enabled, theme_mode, theme_palette, theme_fonts",
+    )
     .eq("id", userId)
     .maybeSingle();
 
@@ -129,6 +148,7 @@ export const getAccount = cache(async (): Promise<Account | null> => {
       displayName: null,
       status: null,
       isAdmin: false,
+      aiEnabled: false,
       appearance: DEFAULT_APPEARANCE,
     };
   }
@@ -146,6 +166,12 @@ export const getAccount = cache(async (): Promise<Account | null> => {
     status: isAccountStatus(profile?.status) ? profile.status : null,
     // 판정에 실패하면 관리자가 아닌 것으로 본다.
     isAdmin: adminResult.error ? false : adminResult.data === true,
+    /*
+      **참일 때만 참이다.** 두 번째 조회로 돌아온 행에는 이 칸이 아예
+      없고, 그때는 거짓이 된다. 모르면 거부한다. (보안 원칙 7)
+    */
+    aiEnabled:
+      (profile as { ai_enabled?: unknown } | null)?.ai_enabled === true,
     /*
       취향 칸이 없으면 기본값이다. 위의 두 번째 시도로 돌아온 행에는
       이 칸이 아예 없다. 모르는 값과 없는 값을 같게 본다.
