@@ -188,7 +188,7 @@ export type Database = {
           {
             foreignKeyName: "audio_profiles_source_id_fkey"
             columns: ["source_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "sources"
             referencedColumns: ["id"]
           },
@@ -992,6 +992,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          ai_enabled: boolean
           approved_at: string | null
           avatar_url: string | null
           created_at: string
@@ -1013,6 +1014,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_enabled?: boolean
           approved_at?: string | null
           avatar_url?: string | null
           created_at?: string
@@ -1034,6 +1036,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_enabled?: boolean
           approved_at?: string | null
           avatar_url?: string | null
           created_at?: string

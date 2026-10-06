@@ -74,7 +74,7 @@ with checks(순번, 항목, 기대, 실제) as (
   -- public 스키마에 새 테이블이 생기면 RLS를 자동으로 켜주는 이벤트 트리거 함수이며,
   -- 2026-09-20에 함수 본문을 직접 확인했다. 우리가 만든 것이 아니므로 허용 목록에 둔다.
   union all
-  select 8, '인증·승인 DEFINER 함수 7개 모두 존재', '7',
+  select 8, '인증·승인 DEFINER 함수 8개 모두 존재', '8',
     (select count(*)::text
      from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
@@ -83,7 +83,11 @@ with checks(순번, 항목, 기대, 실제) as (
        and p.proname in (
          'is_admin', 'is_active_user', 'count_admins', 'handle_new_user',
          'audit_profile_status_change', 'audit_user_role_change',
-         'audit_app_setting_update'
+         'audit_app_setting_update',
+         -- 2026-10-06. AI 허용을 켜고 끈 일을 남기는 트리거 함수.
+         -- **세는 수를 함께 올렸다.** 목록에만 더하면 일곱을 찾고 여덟을
+         -- 기대하지 않아, 함수가 사라져도 이 검사는 통과한다.
+         'audit_profile_ai_access_change'
        ))
 
   union all
@@ -97,6 +101,11 @@ with checks(순번, 항목, 기대, 실제) as (
          'is_admin', 'is_active_user', 'count_admins', 'handle_new_user',
          'audit_profile_status_change', 'audit_user_role_change',
          'audit_app_setting_update',
+         -- 2026-10-06. AI 허용을 켜고 끈 일을 감사 기록에 남기는 트리거 함수.
+         -- authenticated에는 admin_audit_logs INSERT 권한이 없어 DEFINER다.
+         -- `log_ai_usage_grant`가 여기서 여드레 동안 빠져 있었던 자리라,
+         -- 이번에는 마이그레이션과 같은 걸음에 넣었다.
+         'audit_profile_ai_access_change',
          'rls_auto_enable',
          -- 삭제 표시 전용 함수들.
          -- 세 표의 조회 정책이 삭제된 행을 제외하는데, PostgREST는 갱신을 항상
@@ -192,7 +201,10 @@ with checks(순번, 항목, 기대, 실제) as (
        and not t.tgisinternal)
 
   union all
-  select 14, 'profiles 트리거 3개 (updated_at/가드/감사)', '3',
+  -- 2026-10-06. AI 허용을 남기는 감사 트리거가 붙어 넷이 되었다.
+  -- **이 수를 안 고치면 001이 바로 실패한다.** 그리고 그 실패는 고장이
+  -- 아니라 우리가 수를 안 고친 것이라, 진짜 실패를 가린다.
+  select 14, 'profiles 트리거 4개 (updated_at/가드/감사 둘)', '4',
     (select count(*)::text
      from pg_trigger t
      join pg_class c on c.oid = t.tgrelid

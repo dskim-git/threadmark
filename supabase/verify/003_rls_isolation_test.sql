@@ -9266,6 +9266,287 @@ begin
 end
 $$;
 
+-- -----------------------------------------------------------------------------
+-- 149. 자기 손으로 AI를 켤 수 없다 (막아야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 2026-10-06. AI 허용은 관리자가 주는 것이다. (사용자가 정함)
+--
+-- **정책만으로는 막히지 않는 자리다.** profiles의 UPDATE 정책은 자기 줄을
+-- 고치는 것을 허용한다. 이름·언어·시간대를 스스로 바꾸기 때문이다. 그 문으로
+-- `ai_enabled`까지 지나가면 **누구나 스스로 AI를 켠다.** 막는 것은 정책이
+-- 아니라 `guard_profile_protected_columns` 트리거다.
+--
+-- **지금 값을 읽어 다른 값으로 바꾸려 시도한다.** 늘 true로 바꾸려 하면,
+-- 이미 true인 계정에서는 값이 바뀌지 않아 트리거가 개입하지 않는다. 막히지
+-- 않는 것이 정상인데 검사는 실패로 읽는다. (6절 "검사는 데이터 상태에
+-- 기대지 않는다")
+do $$
+declare
+  v_user    uuid;
+  v_before  boolean;
+  v_after   boolean;
+  v_blocked boolean := false;
+begin
+  select p.id, p.ai_enabled into v_user, v_before
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  if v_user is null then
+    raise exception '검사 149 전제 실패: 관리자가 아닌 사용자가 필요합니다.';
+  end if;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  begin
+    update public.profiles
+       set ai_enabled = not v_before
+     where id = v_user;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  select ai_enabled into v_after
+  from public.profiles where id = v_user;
+
+  -- 혹시 바뀌었으면 되돌린다. 판정보다 먼저 한다.
+  if v_after is distinct from v_before then
+    update public.profiles set ai_enabled = v_before where id = v_user;
+  end if;
+
+  if not v_blocked and v_after is distinct from v_before then
+    raise exception
+      '검사 149 실패: 이용자가 스스로 AI 허용을 바꿀 수 있었습니다. 가입한 날부터 예산을 쓰게 됩니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 150. 관리자는 남의 AI 허용을 바꿀 수 있고 그 일이 기록에 남는다 (열어야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **막는 것만 보면 과잉 차단을 놓친다.** (5절 6번) 149가 통과하는 가장 쉬운
+-- 길은 아무도 못 바꾸게 하는 것이고, 그러면 허용해 줄 사람이 없어 기능이
+-- 통째로 죽는다. 그 상태는 조용하다. 관리자 화면에 단추가 있는데 눌러도
+-- 아무 일이 없다.
+--
+-- 감사 기록까지 함께 본다. 갈래 목록(`admin_audit_logs_action_check`)에
+-- `ai_access_changed`를 빠뜨리면 **제약이 거부하고 그 UPDATE까지 통째로
+-- 되돌아간다.** 2026-09-26에 허용량 더하기가 바로 그래서 안 됐다.
+-- (`20260926110000`)
+--
+-- 치우는 방법
+--   **내가 만든 줄만 지운다.** 검사 127은 갈래와 대상으로 지우는데, 그러면
+--   관리자가 실제로 허용해 준 기록까지 함께 사라진다. 여기서는 **이미 있는
+--   줄의 id를 먼저 모아 두고, 그 목록에 없는 줄**을 내가 만든 것으로 본다.
+--
+-- 시각으로 가르려다 한 번 틀렸다 (2026-10-06)
+--   처음에는 `clock_timestamp()`로 검사가 시작한 때를 잡고
+--   `created_at >= 그때`로 걸렀다. **003을 돌리자 검사 150이 실패했다.**
+--   감사 줄은 남아 있었는데 조건이 걸러냈다.
+--
+--   `admin_audit_logs.created_at`의 기본값은 `now()`이고 **`now()`는
+--   트랜잭션이 시작한 시각**이다. 스크립트 내내 같은 값이다. 반면
+--   `clock_timestamp()`는 실제 시계라 검사 150에 닿을 때쯤엔 그보다 뒤에
+--   있다. 그래서 `created_at >= v_started`가 **늘 거짓**이었다.
+--
+--   **시각으로 "내가 만든 것"을 가르려 하지 않는다.** 한쪽은 트랜잭션
+--   시각이고 한쪽은 시계라 견줄 수 있는 값이 아니다. id로 가른다.
+do $$
+declare
+  v_admin     uuid;
+  v_user      uuid;
+  v_before    boolean;
+  v_after     boolean;
+  v_known_ids uuid[];
+  v_new_ids   uuid[];
+  v_logged    integer := 0;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id, p.ai_enabled into v_user, v_before
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  if v_admin is null or v_user is null then
+    raise exception '검사 150 전제 실패: 관리자와 일반 사용자가 각각 필요합니다.';
+  end if;
+
+  -- 이미 있는 줄을 먼저 모은다. 비어 있으면 빈 배열이다. `null`을 두면
+  -- 아래 `not (id = any(...))`가 통째로 `null`이 되어 아무 줄도 안 걸린다.
+  select coalesce(pg_catalog.array_agg(id), '{}'::uuid[]) into v_known_ids
+  from public.admin_audit_logs
+  where action = 'ai_access_changed' and target_user_id = v_user;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    true
+  );
+
+  update public.profiles
+     set ai_enabled = not v_before
+   where id = v_user;
+
+  reset role;
+
+  select ai_enabled into v_after
+  from public.profiles where id = v_user;
+
+  select pg_catalog.array_agg(id) into v_new_ids
+  from public.admin_audit_logs
+  where action = 'ai_access_changed'
+    and target_user_id = v_user
+    and not (id = any(v_known_ids));
+
+  -- `COALESCE`에는 `pg_catalog.`을 붙일 수 없다. 함수가 아니라 SQL 구문이다.
+  -- (6절, 2026-10-04에 네 차례 막혔다)
+  v_logged := coalesce(pg_catalog.array_length(v_new_ids, 1), 0);
+
+  -- 되돌리기. 이것도 기록을 하나 더 남긴다.
+  update public.profiles set ai_enabled = v_before where id = v_user;
+
+  -- **앞서 모아둔 목록에 없는 줄만 지운다.** 되돌리기가 만든 줄까지
+  -- 함께 걸린다. 관리자가 실제로 허용해 준 기록은 그 목록 안에 있어
+  -- 건드리지 않는다.
+  delete from public.admin_audit_logs
+  where action = 'ai_access_changed'
+    and target_user_id = v_user
+    and not (id = any(v_known_ids));
+
+  if v_after is not distinct from v_before then
+    raise exception
+      '검사 150 실패: 관리자가 남의 AI 허용을 바꾸지 못했습니다. 허용해 줄 길이 없어집니다.';
+  end if;
+
+  if v_logged = 0 then
+    raise exception
+      '검사 150 실패: AI 허용을 바꾼 일이 감사 기록에 남지 않았습니다. 돈이 드는 기능의 문을 누가 언제 열었는지 알 수 없습니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 151. 내 AI 허용 여부는 내가 읽을 수 있다 (열어야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **이 값을 못 읽으면 화면이 단추를 잠글 수 없다.** 잠긴 줄 모르고 눌렀다가
+-- 서버에서 거부되는 모양이 되고, 쓰는 사람은 왜 안 되는지 알 수 없다.
+--
+-- 함께 보는 것이 하나 더 있다. **남의 허용 여부는 읽지 못해야 한다.** 누가
+-- AI를 쓰는지는 그 사람 일이다. 149가 바꾸는 것을 막고 이 검사가 읽는 쪽의
+-- 양쪽을 본다.
+do $$
+declare
+  v_user   uuid;
+  v_admin  uuid;
+  v_mine   integer := 0;
+  v_theirs integer := 0;
+begin
+  select user_id into v_admin
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  select p.id into v_user
+  from public.profiles p
+  where not exists (
+    select 1 from public.user_roles ur
+    where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+  )
+  limit 1;
+
+  if v_admin is null or v_user is null then
+    raise exception '검사 151 전제 실패: 관리자와 일반 사용자가 각각 필요합니다.';
+  end if;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_user, 'role', 'authenticated')::text,
+    true
+  );
+
+  select count(*) into v_mine
+  from public.profiles where id = v_user and ai_enabled is not null;
+
+  select count(*) into v_theirs
+  from public.profiles where id = v_admin;
+
+  reset role;
+
+  if v_mine = 0 then
+    raise exception
+      '검사 151 실패: 내 AI 허용 여부를 읽지 못했습니다. 화면이 단추를 잠글 수 없습니다.';
+  end if;
+
+  if v_theirs > 0 then
+    raise exception
+      '검사 151 실패: 남의 계정 줄이 보였습니다. 누가 AI를 쓰는지는 그 사람 일입니다.';
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 152. 한 달 AI 예산이 설정에 숫자로 들어 있다 (열어야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 이 줄이 없으면 한 사람 몫을 셈할 수 없다. `on conflict do nothing`으로
+-- 넣었으므로 **다른 모양의 줄이 먼저 있었으면 조용히 건너뛴다.** 그 상태를
+-- 여기서 잡는다.
+--
+-- 값이 숫자인지까지 본다. 글자가 들어 있으면 셈하는 쪽에서 `NaN`이 되고,
+-- **오류가 아니라 틀린 한도로 나타난다.** 제약이 막고 있지만 제약은 새로
+-- 들어오는 값만 본다. 제약을 붙이기 전에 들어간 줄은 그대로 남는다.
+--
+-- 읽는 사람을 가리는 것은 이미 검사 11·13·21이 본다. app_settings는 관리자만
+-- 읽고 쓴다. 여기서는 **줄이 있고 모양이 맞는지**만 본다.
+do $$
+declare
+  v_shape  text;
+  v_raw    text;
+  v_amount numeric;
+begin
+  select jsonb_typeof(value), (value #>> '{}')
+    into v_shape, v_raw
+  from public.app_settings where key = 'ai_monthly_budget_usd';
+
+  if v_raw is null then
+    raise exception
+      '검사 152 실패: 한 달 AI 예산 설정이 없습니다. 한 사람 몫을 셈할 수 없습니다.';
+  end if;
+
+  if v_shape is distinct from 'number' then
+    raise exception
+      '검사 152 실패: 한 달 AI 예산이 숫자가 아닙니다. 지금 모양은 %입니다.',
+      v_shape;
+  end if;
+
+  v_amount := v_raw::numeric;
+
+  if v_amount <= 0 then
+    raise exception
+      '검사 152 실패: 한 달 AI 예산이 0 이하입니다. 아무도 AI를 쓸 수 없습니다. (지금 %)',
+      v_amount;
+  end if;
+end
+$$;
+
+
 
 -- =============================================================================
 -- 모두 통과
@@ -9278,6 +9559,14 @@ select
   (select count(*) from public.admin_audit_logs)                        as 감사_기록,
   (select (value #>> '{}') from public.app_settings
     where key = 'require_user_approval')                                as 승인_필요_설정,
+  /*
+    AI 기능의 문. **둘을 나란히 둔다.** 한 사람 몫은 예산을 허용받은
+    사람 수로 나눈 값이라, 둘 중 하나만 보면 몫이 얼마인지 알 수 없다.
+    허용받은 사람이 늘면 각자의 몫이 줄어든다.
+  */
+  (select (value #>> '{}') from public.app_settings
+    where key = 'ai_monthly_budget_usd')                                as 한달_AI_예산_USD,
+  (select count(*) from public.profiles where ai_enabled)                as AI_허용받은_사람,
   (select count(*) from public.sources
     where deleted_at is null
       and status = 'active'::public.source_status)                      as 저장된_자료,
