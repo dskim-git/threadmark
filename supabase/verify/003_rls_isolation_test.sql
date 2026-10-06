@@ -9547,6 +9547,201 @@ end
 $$;
 
 
+-- -----------------------------------------------------------------------------
+-- 153. 쓰는 사람이 자기 몫을 셈할 수 있다 (열어야 하는 것)
+-- -----------------------------------------------------------------------------
+-- 2026-10-06. 한도를 쓴 돈으로 셈하기로 하면서 생긴 함수다. (19-F 2차례)
+--
+-- **셈에 드는 값 둘이 보통 사람에게 안 보인다.** `app_settings`는 관리자만
+-- 읽고 `profiles`는 자기 줄만 보인다. 그래서 DEFINER 함수를 두었다.
+--
+-- 여기서 막히면 **AI 기능이 통째로 죽는다.** 몫을 모르면 부르는 쪽이
+-- "모르면 거부한다"로 막기 때문이다. 그리고 그 상태는 조용하다. 화면에는
+-- "얼마나 쓰셨는지 확인하지 못했습니다"만 뜬다.
+--
+-- 돌려주는 값이 맞는지까지 본다. 부를 수 있는 것과 맞게 셈하는 것은 다른
+-- 일이다. **예산 ÷ 허용받은 사람 수**와 견준다.
+do $$
+declare
+  v_caller  uuid;
+  v_budget  numeric;
+  v_allowed integer;
+  v_share   numeric;
+begin
+  /*
+    승인된 계정이라야 한다. 함수가 `is_active_user()`를 보기 때문이다.
+    관리자가 아닌 승인된 계정이 있으면 그쪽으로 부른다. 없으면 관리자로
+    부른다. **이 검사가 보는 것은 셈이지 관리자 여부가 아니다.**
+  */
+  select p.id into v_caller
+  from public.profiles p
+  where p.status = 'active'::public.user_status
+    and not exists (
+      select 1 from public.user_roles ur
+      where ur.user_id = p.id and ur.role = 'admin'::public.app_role
+    )
+  limit 1;
+
+  if v_caller is null then
+    select user_id into v_caller
+    from public.user_roles where role = 'admin'::public.app_role limit 1;
+  end if;
+
+  select (value #>> '{}')::numeric into v_budget
+  from public.app_settings where key = 'ai_monthly_budget_usd';
+
+  select count(*) into v_allowed
+  from public.profiles where ai_enabled;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_caller, 'role', 'authenticated')::text,
+    true
+  );
+
+  select public.ai_monthly_budget_share() into v_share;
+
+  reset role;
+
+  if v_share is null then
+    raise exception
+      '검사 153 실패: 쓰는 사람이 자기 몫을 셈하지 못했습니다. AI 기능이 통째로 막힙니다.';
+  end if;
+
+  if v_share is distinct from (v_budget / greatest(1, v_allowed)) then
+    raise exception
+      '검사 153 실패: 몫이 예산을 인원으로 나눈 값과 다릅니다. 예산 %, 인원 %, 돌려준 값 %.',
+      v_budget, v_allowed, v_share;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 154. 허용받은 사람이 늘면 각자의 몫이 줄어든다 (열어야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **이것이 이 함수가 있는 까닭이다.** 예산을 나눠 쓰지 않으면 사람이 둘일
+-- 때 앱이 허락하는 양이 예산의 두 배가 된다. `limits.ts`가 적어둔
+-- "막는 자리가 둘일 때는 안쪽이 먼저 걸려야 한다"가 깨지는 자리다.
+--
+-- 검사 153은 **지금 인원으로** 셈이 맞는지만 본다. 인원을 세지 않고
+-- 예산을 그대로 돌려줘도 통과할 수 있다. 사람이 하나뿐이면 두 값이 같기
+-- 때문이다. **그래서 인원을 바꿔 보고 몫이 따라 바뀌는지 본다.**
+--
+-- 치우는 방법은 검사 150과 같다. 이미 있는 감사 줄의 id를 먼저 모아 두고,
+-- 그 목록에 없는 줄만 지운다. 시각으로 가르지 않는다.
+do $$
+declare
+  v_caller    uuid;
+  v_target    uuid;
+  v_before    boolean;
+  v_one       numeric;
+  v_two       numeric;
+  v_known_ids uuid[];
+begin
+  select user_id into v_caller
+  from public.user_roles where role = 'admin'::public.app_role limit 1;
+
+  -- 허용 여부를 뒤집어 볼 사람. 관리자 자신은 건드리지 않는다.
+  select p.id, p.ai_enabled into v_target, v_before
+  from public.profiles p
+  where p.id <> v_caller
+  limit 1;
+
+  if v_caller is null or v_target is null then
+    raise exception '검사 154 전제 실패: 사용자가 두 명 이상 필요합니다.';
+  end if;
+
+  select coalesce(pg_catalog.array_agg(id), '{}'::uuid[]) into v_known_ids
+  from public.admin_audit_logs
+  where action = 'ai_access_changed' and target_user_id = v_target;
+
+  -- 먼저 꺼 둔다. 이미 꺼져 있으면 그대로다.
+  update public.profiles set ai_enabled = false where id = v_target;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_caller, 'role', 'authenticated')::text,
+    true
+  );
+
+  select public.ai_monthly_budget_share() into v_one;
+
+  reset role;
+
+  -- 한 사람을 더 허용한다.
+  update public.profiles set ai_enabled = true where id = v_target;
+
+  set local role authenticated;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', v_caller, 'role', 'authenticated')::text,
+    true
+  );
+
+  select public.ai_monthly_budget_share() into v_two;
+
+  reset role;
+
+  -- 되돌린다. 판정보다 먼저 한다.
+  update public.profiles set ai_enabled = v_before where id = v_target;
+
+  delete from public.admin_audit_logs
+  where action = 'ai_access_changed'
+    and target_user_id = v_target
+    and not (id = any(v_known_ids));
+
+  if v_one is null or v_two is null then
+    raise exception
+      '검사 154 실패: 몫을 셈하지 못했습니다. 검사 153과 함께 봅니다.';
+  end if;
+
+  if v_two >= v_one then
+    raise exception
+      '검사 154 실패: 허용받은 사람을 늘렸는데 몫이 줄지 않았습니다. 인원을 세지 않고 있습니다. (한 명일 때 %, 늘린 뒤 %)',
+      v_one, v_two;
+  end if;
+end
+$$;
+
+
+-- -----------------------------------------------------------------------------
+-- 155. 로그인하지 않은 쪽은 몫을 물을 수 없다 (막아야 하는 것)
+-- -----------------------------------------------------------------------------
+-- **DEFINER 함수는 부르는 사람을 가리지 않는다.** 권한을 거둬들이지 않으면
+-- anon이 그대로 부른다. 그러면 로그인도 하지 않은 쪽이 이 서비스의 한 달
+-- 예산과 쓰는 사람 수를 어림할 수 있다.
+--
+-- 함수를 만들 때 `public`에서 권한을 거두고 `authenticated`에만 주었다.
+-- 거두는 줄을 빠뜨려도 오류가 나지 않으므로 여기서 눌러 본다.
+-- (검사 138이 공개 열쇠 표에서 같은 것을 본다)
+do $$
+declare
+  v_blocked boolean := false;
+  v_share   numeric;
+begin
+  set local role anon;
+  perform set_config('request.jwt.claims', '{}', true);
+
+  begin
+    select public.ai_monthly_budget_share() into v_share;
+  exception when others then
+    v_blocked := true;
+  end;
+
+  reset role;
+
+  if not v_blocked then
+    raise exception
+      '검사 155 실패: 로그인하지 않은 쪽이 한 사람 몫을 물을 수 있었습니다. (돌려준 값 %)',
+      v_share;
+  end if;
+end
+$$;
+
+
 
 -- =============================================================================
 -- 모두 통과
