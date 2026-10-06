@@ -1643,6 +1643,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ai_monthly_budget_share: { Args: never; Returns: number }
       assert_audio_file_owned: {
         Args: { p_file_id: string; p_owner_id: string; p_source_id: string }
         Returns: undefined
