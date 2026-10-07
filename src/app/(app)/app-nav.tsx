@@ -68,7 +68,25 @@ const SECTIONS: readonly Section[] = [
       { href: "/research/search", label: "연구 검색" },
     ],
   },
-  { href: "/projects", label: "프로젝트", owns: ["/projects"] },
+  {
+    href: "/projects",
+    label: "프로젝트",
+    owns: ["/projects", "/shared"],
+    children: [
+      { href: "/projects", label: "프로젝트 목록" },
+      /*
+        공개한 것을 모아 보는 자리. (19-G)
+
+        **`태그`와 같은 까닭으로 여기 둔다.** 공개하는 일은 프로젝트
+        화면에서 흐름 안에 일어나고, **무엇이 열려 있는지 보는 일은 어쩌다
+        한 번 마음먹고** 한다. 그 둘을 갈라 둔다.
+
+        프로젝트 아래에 두는 까닭은 **공개할 수 있는 것이 프로젝트뿐**이기
+        때문이다. (16-B절) 따로 떼면 무엇을 공유하는 곳인지 눌러봐야 안다.
+      */
+      { href: "/shared", label: "공유" },
+    ],
+  },
 ];
 
 const SETTINGS: Section = {

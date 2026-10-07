@@ -80,3 +80,67 @@ export async function listShareLinks(
 export function liveLink(links: readonly ShareLink[]): ShareLink | null {
   return links.find((link) => link.revokedAt === null) ?? null;
 }
+
+/** 지금 공개 중인 것 하나. 어느 프로젝트인지까지 안다. (19-G) */
+export type LiveShare = {
+  projectId: string;
+  projectName: string;
+  token: string;
+  createdAt: string;
+};
+
+/**
+ * 내가 지금 공개해 둔 것 전부. 최근에 켠 것부터. (19-G, 21절의 `/shared`)
+ *
+ * 왜 이 함수가 필요한가
+ *   공개하는 일은 프로젝트 화면이 한다. 그런데 **공개한 다음 날 그
+ *   프로젝트를 다시 열어볼 까닭이 없다.** 그래서 켜 둔 것이 있는지를
+ *   아무도 보지 않는다.
+ *
+ *   003 결과 표의 `지금_공개중`이 2026-10-06부터 `1`이었고 이틀 동안
+ *   그대로였다. **끄는 길이 어려워서가 아니라 보이는 자리가 없어서다.**
+ *   검사 글에만 보이고 앱에는 안 보이는 값이 하나 있었다. (4-82절)
+ *
+ * **꺼진 것은 안 가져온다.** 이 화면이 답하는 물음은 "지금 무엇이 열려
+ * 있는가" 하나다. 언제 켜고 껐는지는 프로젝트 화면이 보여준다. 둘을 한
+ * 목록에 섞으면 **지금 열린 것이 몇 개인지 세어야 알게 된다.**
+ *
+ * 소유자 확인을 여기서 또 하지 않는다. 정책이 본인의 줄만 돌려준다.
+ * 지운 프로젝트는 켜진 줄이 남지 않지만(003의 검사 137), 그래도 이름을
+ * 못 읽은 줄은 버린다. **이름 없이 주소만 보여주면 무엇을 끄는지 모른다.**
+ */
+export async function listLiveShares(): Promise<LiveShare[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("project_public_links")
+    .select("project_id, token, created_at, projects(name)")
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    console.error(
+      "[ThreadMark] 공개 중인 목록 조회 실패:",
+      error?.message ?? "결과가 없습니다",
+    );
+
+    return [];
+  }
+
+  return data.flatMap((row) => {
+    const name = row.projects?.name;
+
+    if (typeof name !== "string") {
+      return [];
+    }
+
+    return [
+      {
+        projectId: row.project_id,
+        projectName: name,
+        token: row.token,
+        createdAt: row.created_at,
+      },
+    ];
+  });
+}

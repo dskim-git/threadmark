@@ -114,6 +114,16 @@ export function SharePanel({
 
             <form action={unpublishProject}>
               <input type="hidden" name="projectId" value={projectId} />
+              {/*
+                **돌아올 곳을 적어 보낸다.** (19-G) 끄는 자리가 둘이
+                되면서 동작이 보낸 값을 보고 돌아간다. 안 보내면 `/home`
+                으로 떨어진다.
+              */}
+              <input
+                type="hidden"
+                name="returnTo"
+                value={`/projects/${projectId}`}
+              />
               <button
                 type="submit"
                 className="rounded-full border border-red-200 px-4 py-2 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"

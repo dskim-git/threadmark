@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireActiveAccount } from "@/lib/auth/account";
+import { sanitizeNextPath } from "@/lib/auth/request-url";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -107,13 +108,26 @@ export async function unpublishProject(formData: FormData): Promise<void> {
 
   if (error) {
     console.error("[ThreadMark] 프로젝트 공개 끄기 실패:", error.message);
-    redirectWithQuery(`/projects/${projectId}`, {
+    redirectWithQuery(sanitizeNextPath(formData.get("returnTo")), {
       error: "공개를 끄지 못했습니다. 잠시 후 다시 시도해 주세요.",
     });
   }
 
+  /*
+    돌아갈 곳을 폼이 정한다. (19-G)
+
+    끄는 자리가 둘이 되었다. 프로젝트 화면과 `/shared`다. 늘 프로젝트로
+    돌려보내면 **목록에서 끈 사람이 엉뚱한 화면에 떨어진다.** 끄고 나서
+    다음 줄을 보려던 참인데 한 프로젝트 안에 갇힌다.
+
+    **보낸 값을 그대로 믿지 않는다.** `sanitizeNextPath`가 같은 출처의
+    절대 경로만 통과시킨다. 안 그러면 이 폼이 **밖으로 보내는 길**이 된다.
+  */
+  const returnTo = sanitizeNextPath(formData.get("returnTo"));
+
   revalidatePath(`/projects/${projectId}`);
-  redirectWithQuery(`/projects/${projectId}`, {
+  revalidatePath("/shared");
+  redirectWithQuery(returnTo, {
     notice: "공개를 껐습니다. 전에 보낸 링크는 더 이상 열리지 않습니다.",
   });
 }
