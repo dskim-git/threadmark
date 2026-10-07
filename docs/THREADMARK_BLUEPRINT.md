@@ -2851,8 +2851,28 @@ ThreadMark의 생성형 AI 공급자는 **Anthropic Claude API**로 결정한다
 - 기본 모델은 `claude-sonnet-5`로 사용한다.
 - 비용 절감이 중요한 짧은 분류·태그 후보 생성에는 `claude-haiku-4-5-20251001` 사용을 선택적으로 검토한다.
 - Claude API 키는 Next.js 서버 전용 환경변수에만 저장하고 브라우저 코드, 로그, Git 저장소에 노출하지 않는다.
-- 초기 환경변수 이름은 `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BUDGET_USD`로 통일한다.
-- `ANTHROPIC_MODEL`의 초기값은 `claude-sonnet-5`, `ANTHROPIC_BUDGET_USD`의 초기값은 `5`로 둔다.
+- 초기 환경변수 이름은 `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, ~~`ANTHROPIC_BUDGET_USD`~~로 통일한다.
+- `ANTHROPIC_MODEL`의 초기값은 `claude-sonnet-5`, ~~`ANTHROPIC_BUDGET_USD`의 초기값은 `5`로 둔다.~~
+
+> **이 절의 예산·한도 부분은 2026-10-06에 뒤집혔다.**
+> **[ADR 0003](decisions/0003-ai-budget-by-tokens.md)을 먼저 읽는다.**
+>
+> | 이 절이 적은 것 | 지금 |
+> | --- | --- |
+> | 예산을 `ANTHROPIC_BUDGET_USD` 환경변수에 둔다 | `app_settings`의 `ai_monthly_budget_usd`에 있고 **관리자 화면에서 바꾼다**. 그 환경변수는 **코드가 한 줄도 읽지 않는다** |
+> | 한 사람 몫을 **횟수**로 센다 (18.1-1절) | **쓴 돈**으로 센다. 한 사람 몫은 `한 달 예산 ÷ AI 허용받은 사람 수`다 |
+>
+> **되돌리려 하기 전에 ADR을 읽는다.** 횟수로 세면 사람이 둘일 때 앱이
+> 허락하는 양이 예산의 두 배가 되고, 예산을 한 번 상한으로 나누면 열 사람에
+> 한 사람당 다섯 번이 되어 켜자마자 못 쓰는 기능이 된다. 그 셈이 ADR에 있다.
+>
+> **고치지 않고 줄을 그어 둔 까닭**은, 지운 글은 "그런 판단이 있었다"는
+> 사실까지 지우기 때문이다. ADR이 *무엇을* 뒤집었는지 알려면 뒤집힌 쪽도
+> 남아 있어야 한다. (2026-10-07에 적는다)
+
+- **Anthropic Console의 월 예산 상한(USD 5)은 그대로다.** 위에서 뒤집힌 것은
+  **앱이 세는 방식**이고, 바깥쪽 상한은 Console에 걸려 있다. 막는 자리가
+  둘이라는 것도 그대로다.
 
 초기 적용 범위:
 
@@ -2900,11 +2920,19 @@ Claude는 자체 임베딩 모델을 제공하지 않으므로 의미 검색용 
   올릴 때는 **Anthropic Console의 예산과 앱의 월 한도를 함께** 본다.
   한쪽만 고치면 예산에 먼저 걸려 기능이 통째로 멈춘다.
 
-- **앱의 월 한도는 예산에서 거꾸로 셈했다.** `src/lib/ai/limits.ts`에 셈을
+- ~~**앱의 월 한도는 예산에서 거꾸로 셈했다.**~~ `src/lib/ai/limits.ts`에 셈을
   적었다. 한 번에 $0.065 어름이고 USD 5면 일흔 번 남짓인데, 번역도 같은
   예산을 쓰므로 60으로 두었다. **막는 자리가 둘일 때는 안쪽이 먼저 걸려야
   한다.** 앱이 먼저 막으면 "이번 달 다 쓰셨습니다"가 나오고, Anthropic이
   먼저 막으면 기능이 그냥 고장 난 것처럼 보인다.
+
+  **횟수로 세는 부분은 2026-10-06에 뒤집혔다.**
+  [ADR 0003](decisions/0003-ai-budget-by-tokens.md)이다. `AI_MONTHLY_CALL_LIMIT`은
+  **지금 코드에 없다.** `limits.ts`는 쓴 토큰에 단가를 곱해 돈으로 세고,
+  한 사람 몫은 `한 달 예산 ÷ AI 허용받은 사람 수`다.
+
+  **`막는 자리가 둘일 때는 안쪽이 먼저 걸려야 한다`는 그대로 맞다.** 뒤집힌
+  것은 안쪽이 **무엇을 세는가**뿐이다.
 
 - **`/ai-search`는 이 목록에 처음부터 있던 경로다.** `/search`와 따로 둔
   까닭은 21절에 적었다.
@@ -3068,10 +3096,20 @@ RLS 테스트는 최소 두 명의 사용자와 anonymous role을 대상으로 �
 (2026-10-07에 적는다. 다르게 만들기로 한 것이 적혀 있지 않아 훑을 때마다
 빠진 것으로 보였다.)
 
-`/shared`는 **아직 없다.** 이 목록에 이름만 있고 설명이 없어 오래 눈에
-띄지 않았다. 공개하는 일 자체는 프로젝트 화면이 하고, 없는 것은 **지금
-무엇이 공개되어 있는지 한자리에서 보는 길**이다. 19-G로 표에 넣었다.
-(2026-10-07, `docs/VERIFICATION.md` 4-82절)
+~~`/shared`는 **아직 없다.**~~ **2026-10-07에 만들었다.** 이 목록에 이름만
+있고 설명이 없어 오래 눈에 띄지 않았다. 공개하는 일 자체는 프로젝트 화면이
+하고, 없던 것은 **지금 무엇이 공개되어 있는지 한자리에서 보는 길**이었다.
+(4-82절에서 찾고 4-83절에서 만들었다)
+
+**지금 열려 있는 것만 보여준다.** 켜고 끈 내력은 프로젝트 화면에 남긴다.
+여기에 섞으면 **몇 개가 열려 있는지를 알려고 목록을 세어야** 하는데, 그것이
+이 화면이 있는 유일한 까닭이다. 메뉴에서는 `프로젝트` 아래에 둔다. `태그`가
+`자료` 아래 있는 것과 같은 생각이다 — 하는 일은 흐름 안에서 일어나고
+정리하는 일은 어쩌다 한 번이다.
+
+**이 줄이 하루 동안 거짓말을 했다.** 만든 커밋(`fa48b01`)이 이 문단을 함께
+고치지 않았다. **설계 문서가 최우선 기준인데 그 문서가 "없다"고 적고 있으면,
+다음에 훑는 사람이 다시 만들려고 한다.** (2026-10-07에 고쳐 적는다)
 
 `/sources/new/website`도 원래 없었다. 11.2절의 흐름은 **주소를 넣고 읽어 온 뒤
 확인해서 담는** 세 걸음이라, 적어서 담는 보통의 자료 등록과 중간에 서버를
@@ -3284,9 +3322,19 @@ TMDB_API_READ_TOKEN=
 
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-sonnet-5
-ANTHROPIC_BUDGET_USD=5
+ANTHROPIC_SEARCH_MODEL=
 ```
 
+- **`ANTHROPIC_BUDGET_USD`를 목록에서 뺐다.** (2026-10-07) 한 달 예산은
+  이제 환경변수가 아니라 `app_settings`의 `ai_monthly_budget_usd`에 있고
+  관리자 화면에서 바꾼다. [ADR 0003](decisions/0003-ai-budget-by-tokens.md)이다.
+  **코드가 그 환경변수를 한 줄도 읽지 않는다.** 남겨두면 "여기를 고치면
+  예산이 바뀌겠구나" 하고 고쳤는데 아무 일도 안 일어난다.
+
+  이름이 `tests/secret-exposure.test.mjs`의 허용 목록에는 남아 있다. 그 목록은
+  **비밀값이 아닌 이름**을 적어 두는 곳이라 쓰이지 않아도 해롭지 않다.
+- **`ANTHROPIC_SEARCH_MODEL`을 목록에 넣었다.** 18.1-1절에서 더해 놓고
+  이 목록에는 안 적혀 있었다. 비어 있으면 `ANTHROPIC_MODEL`을 쓴다.
 - `.env.example`에는 이름과 설명만 둔다.
 - `.env.local`은 Git에서 제외한다.
 - Vercel Preview와 Production 값을 분리한다.
@@ -3343,6 +3391,33 @@ ANTHROPIC_BUDGET_USD=5
 9. 모바일에서 PDF와 메모 탭을 전환할 수 있다.
 10. MathLab의 Supabase 및 Vercel 환경에는 어떠한 변경도 발생하지 않는다.
 
+**이 열 가지가 어디서 지켜지는지 적어둔 자리가 없었다.** (2026-10-07에 더한다)
+
+목록만 있고 "그래서 지금 지켜지고 있나"에 답하는 길이 없었다. 훑어보니
+**빠진 것은 아니었고 흩어져 있었다.** 흩어진 것 자체는 괜찮은데, **흩어진
+것을 모으는 자리가 없으면 훑을 때마다 다시 흩어진 것을 찾게 된다.**
+
+| | 어디서 지키나 |
+| --- | --- |
+| 1 (사용자 격리) | `003_rls_isolation_test.sql`. **사람이 돌린다** |
+| 6 (선택 문장만 전송) | `tests/translation.test.mjs`. `npm test`가 돌린다 |
+| 2·3·4·5·8·9 | **눌러 확인**이고 `docs/VERIFICATION.md`에 흩어져 있다 |
+| 10 (MathLab) | `docs/VERIFICATION.md` 5절 |
+| **7 (권한 취소)** | **앞은 지켜지고 뒤는 아직 확인하지 못했다.** 아래 |
+
+**7번이 둘로 갈린다.** 앞("기존 Source와 Capture가 사라지지 않는다")은
+구조가 지킨다. Drive 연결이 끊기는 것과 자료가 지워지는 것 사이에 아무
+연결도 없다. 뒤("상태가 `revoked`로 바뀐다")는 **Google에서 실제로 권한을
+해제해 봐야 안다.** `docs/VERIFICATION.md` 5절의 `토큰 갱신 실패 처리`가
+그 항목이다.
+
+**그 확인은 지금 하면 안 된다.** 2026-10-07에 Drive를 다시 연결해 7일 수명을
+재기 시작했다. 권한을 해제하면 **그 시계가 같이 멈춘다.** 7일이 지난 뒤에
+한다. (4-84절)
+
+**1번과 6번만 기계가 지킨다는 것을 봐 둔다.** 나머지 여덟은 사람이 누르지
+않으면 아무도 깨진 것을 모른다.
+
 ### 배포 전 점검
 
 - lint 성공
@@ -3370,7 +3445,7 @@ ANTHROPIC_BUDGET_USD=5
 7. [완료] ThreadMark 전용 Supabase 무료 프로젝트 생성: 서울 리전, MathLab과 별도 프로젝트
 8. [완료] Supabase Auth URL 설정: Site URL `https://thread-mark.vercel.app`, Redirect URLs `http://localhost:3000/**`, `https://thread-mark.vercel.app/auth/callback`
 9. [완료] Google Cloud 전용 프로젝트 생성
-10. [완료] Google Auth Platform 구성: External, Testing, 테스트 사용자 등록
+10. [완료] Google Auth Platform 구성: External, ~~Testing, 테스트 사용자 등록~~ → **2026-10-07에 `Production`으로 올렸다.** 테스트 사용자 등록이 더 이상 필요 없다. (4.3절, `docs/VERIFICATION.md` 4-84절)
 11. [완료] Google Drive API와 Google Picker API 활성화
 12. [완료] 개발용 OAuth client 생성 및 localhost origin/callback 등록
 13. [완료] Picker API key 생성 및 웹사이트/API 제한 설정
@@ -3381,7 +3456,11 @@ ANTHROPIC_BUDGET_USD=5
 18. [완료] Anthropic Claude API 선택, ThreadMark 전용 Workspace·API 키 생성 및 월 예산 상한 USD 5 설정
 19. [완료] 별도 Vercel 프로젝트 연결 및 초기 Production 배포: https://thread-mark.vercel.app/
 20. [완료] 개발·Preview·Production 환경변수 분리: `.env.local` Git 제외, `.env.example` 커밋 `91a9a17`, Production Config·Secret 적용, Preview는 안전한 Config 5개만 허용
-21. 개인정보 처리방침과 데이터 삭제 절차 초안
+21. [완료] 개인정보 처리방침과 데이터 삭제 절차: 초안은 `docs/THREADMARK_PRIVACY_AND_DELETION_DRAFT.md`이고, 화면은 `/privacy`·`/data-deletion`·`/terms`다. 글은 `src/lib/legal/content.ts` 한 곳에 있고 `tests/legal-coverage.test.mjs`가 **밖으로 요청을 보내는 곳이 방침의 표에도 있는지**를 지킨다. (17-A·17-B)
+
+> **21번만 `[완료]`가 없었다.** 1~20번은 다 붙어 있었다. 17-B에서 끝낸
+> 일인데 이 줄을 안 고쳤다. **끝내고 안 적으면 다음에 읽는 사람에게는
+> 안 끝난 일이다.** (2026-10-07에 고쳐 적는다)
 
 ---
 
