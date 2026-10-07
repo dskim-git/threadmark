@@ -159,6 +159,19 @@ Google 로그인은 Supabase Auth가 처리하고 Google Drive 연결은 앱이 
 - client secret 보관 위치: Supabase 대시보드 Authentication > Providers > Google
 - 로그인 단계에서 Drive scope, offline 접근 및 refresh token을 요구하지 않는다.
 
+게시 상태 (`Google Auth Platform > 대상`):
+
+- 2026-10-07부터 **`프로덕션`**이다. 그전에는 `테스트 중`이라 쓸 사람을 한 명씩
+  테스터로 등록해야 했고 100명 한도가 있었다.
+- **이 상태는 클라이언트가 아니라 Cloud 프로젝트에 붙는다.** 위의 `ThreadMark Auth`와
+  10.6절의 `ThreadMark Local Web`이 한 프로젝트 안에 있어서 한 번에 둘 다 올라갔다.
+- **브랜딩(동의 화면의 앱 이름·로고)은 게시와 다른 절차다.** 브랜딩이 막혀도 게시
+  상태는 그대로다. 브랜딩은 홈페이지 주소의 소유 확인을 요구하며, 그 표식은
+  `src/app/layout.tsx`의 `verification.google`에 있다. Search Console의
+  `URL 접두어` 속성으로 확인했다. `도메인` 속성은 DNS를 손대야 해서 `vercel.app`으로는
+  길이 없다.
+- 확인 내용은 `docs/VERIFICATION.md` 4-84절에 있다.
+
 Supabase Auth URL 설정:
 
 - Site URL: `https://thread-mark.vercel.app`
