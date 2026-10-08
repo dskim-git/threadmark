@@ -170,7 +170,10 @@ Google 로그인은 Supabase Auth가 처리하고 Google Drive 연결은 앱이 
   `src/app/layout.tsx`의 `verification.google`에 있다. Search Console의
   `URL 접두어` 속성으로 확인했다. `도메인` 속성은 DNS를 손대야 해서 `vercel.app`으로는
   길이 없다.
-- 확인 내용은 `docs/VERIFICATION.md` 4-84절에 있다.
+- **브랜딩은 2026-10-08에 미뤘다.** 두 번 냈고 두 번 다
+  `홈페이지 URL의 웹사이트가 나에게 등록되어 있지 않다`로 거절됐다. 소유 확인을
+  받은 뒤에도 그랬다. **우리 도메인을 사면 그때 한다.** 기능과는 상관이 없다.
+- 확인 내용은 `docs/VERIFICATION.md` 4-84·4-86절에 있다.
 
 Supabase Auth URL 설정:
 
